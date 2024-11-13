@@ -41,3 +41,13 @@ Route::group(['middleware' => 'auth'], function () {
 	Route::put('profile/password', ['as' => 'profile.password', 'uses' => 'App\Http\Controllers\ProfileController@password']);
 });
 
+Route::resource('categorias', CategoriaController::class);
+Route::resource('bodegas', BodegaController::class);
+Route::prefix('productos')->group(function () {
+    Route::get('/cargar', [ProductoController::class, 'cargarVista'])->name('productos.cargar');
+    Route::post('/cargar', [ProductoController::class, 'cargarExcel']);
+    Route::get('/validar', [ProductoController::class, 'validarVista'])->name('productos.validar');
+    Route::get('/asignar', [ProductoController::class, 'asignarVista'])->name('productos.asignar');
+});
+
+
