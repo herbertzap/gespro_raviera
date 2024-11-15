@@ -11,10 +11,26 @@
                 <div class="table-responsive">
                     <table class="table tablesorter">
                         <thead class="text-primary">
-                            <!-- Encabezados de las columnas -->
+                            <tr>
+                                <th>KOFM</th>
+                                <th>NOKOFM</th>
+                                <th>KOPF</th>
+                                <th>NOKOPF</th>
+                                <th>KOHF</th>
+                                <th>NOKOHF</th>
+                            </tr>
                         </thead>
                         <tbody>
-                            <!-- Contenido de las filas -->
+                            @foreach($categorias as $categoria)
+                            <tr>
+                                <td>{{ $categoria->KOFM }}</td>
+                                <td>{{ $categoria->NOKOFM }}</td>
+                                <td>{{ $categoria->KOPF }}</td>
+                                <td>{{ $categoria->NOKOPF }}</td>
+                                <td>{{ $categoria->KOHF }}</td>
+                                <td>{{ $categoria->NOKOHF }}</td>
+                            </tr>
+                            @endforeach
                         </tbody>
                     </table>
                 </div>

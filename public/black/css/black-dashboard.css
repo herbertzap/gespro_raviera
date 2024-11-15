@@ -14333,7 +14333,7 @@ hr {
 }
 
 .table-responsive {
-  overflow: scroll;
+  overflow-y: auto;
   padding-bottom: 10px;
 }
 

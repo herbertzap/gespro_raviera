@@ -2,23 +2,22 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
-use DB;
 
 class CategoriaController extends Controller
 {
-    /**
-     * Display a listing of the categories.
-     *
-     * @return \Illuminate\View\View
-     */
     public function index()
     {
-        // Realiza una consulta a la base de datos SQL Server
-        // Suponiendo que tienes una conexión configurada para SQL Server
-        $categorias = DB::connection('sqlsrv')->table('nombre_de_la_tabla_de_categorias')->get();
+        // Realizar la consulta a la base de datos SQL Server
+        $categorias = DB::connection('sqlsrv')->select("
+            select FM.KOFM, FM.NOKOFM, PF.KOPF, PF.NOKOPF, HF.KOHF, HF.NOKOHF from TABFM FM 
+            inner join TABPF PF on FM.KOFM = PF.KOFM  
+            INNER JOIN TABHF HF  on PF.KOFM = HF.KOFM  
+            and PF.KOPF = HF.KOPF;
+        ");
 
-        // Retorna la vista y pasa los datos de categorías a la misma
+        // Pasar los datos a la vista
         return view('categorias.index', compact('categorias'));
     }
 }
