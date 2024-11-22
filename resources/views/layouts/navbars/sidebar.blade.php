@@ -52,6 +52,13 @@
                     <p>{{ __('Bodegas') }}</p>
                 </a>
             </li>
+            <li @if ($pageSlug == 'listas-precios') class="active " @endif>
+                <a href="{{ route('listasPrecios.index') }}">
+                <i class="tim-icons icon-tag"></i>
+                <p>{{ __('Listas de Precios') }}</p>
+                </a>
+            </li>
+
 
             <!-- Nueva sección: Productos -->
             <li>
@@ -62,6 +69,12 @@
                 </a>
                 <div class="collapse" id="Productos">
                     <ul class="nav pl-4">
+                        <li @if ($pageSlug == 'productos-publicados') class="active " @endif>
+                            <a href="{{ route('productos.publicados') }}">
+                                <i class="tim-icons icon-atom"></i>
+                                <p>{{ __('Productos Publicados') }}</p>
+                            </a>
+                        </li>
                         <li @if ($pageSlug == 'cargar_productos') class="active " @endif>
                             <a href="{{ route('productos.cargar') }}">
                                 <i class="tim-icons icon-upload"></i>
@@ -80,40 +93,15 @@
                                 <p>{{ __('Asignar a Bodegas') }}</p>
                             </a>
                         </li>
+                        <li @if ($pageSlug == 'asignar_productos') class="active " @endif>
+                            <a href="{{ route('productos.lista-precios') }}">
+                                <i class="tim-icons icon-send"></i>
+                                <p>{{ __('Lista Precios') }}</p>
+                            </a>
+                        </li>
                     </ul>
                 </div>
-            </li>
-
-            <li @if ($pageSlug == 'icons') class="active " @endif>
-                <a href="{{ route('pages.icons') }}">
-                    <i class="tim-icons icon-atom"></i>
-                    <p>{{ __('Icons') }}</p>
-                </a>
-            </li>
-            <li @if ($pageSlug == 'maps') class="active " @endif>
-                <a href="{{ route('pages.maps') }}">
-                    <i class="tim-icons icon-pin"></i>
-                    <p>{{ __('Maps') }}</p>
-                </a>
-            </li>
-            <li @if ($pageSlug == 'notifications') class="active " @endif>
-                <a href="{{ route('pages.notifications') }}">
-                    <i class="tim-icons icon-bell-55"></i>
-                    <p>{{ __('Notifications') }}</p>
-                </a>
-            </li>
-            <li @if ($pageSlug == 'tables') class="active " @endif>
-                <a href="{{ route('pages.tables') }}">
-                    <i class="tim-icons icon-puzzle-10"></i>
-                    <p>{{ __('Table List') }}</p>
-                </a>
-            </li>
-            <li @if ($pageSlug == 'typography') class="active " @endif>
-                <a href="{{ route('pages.typography') }}">
-                    <i class="tim-icons icon-align-center"></i>
-                    <p>{{ __('Typography') }}</p>
-                </a>
-            </li>
+            </li> 
         </ul>
     </div>
 </div>

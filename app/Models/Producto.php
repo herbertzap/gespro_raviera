@@ -8,13 +8,14 @@ use Illuminate\Database\Eloquent\Model;
 class Producto extends Model
 {
     use HasFactory;
+    protected $table = 'productos';
     protected $fillable = [
         'TIPR',
         'KOPR',
-        'NOKOPR',
         'KOPRRA',
-        'NOKOPRRA',
         'KOPRTE',
+        'NOKOPR',
+        'NOKOPRRA',
         'UD01PR',
         'UD02PR',
         'RLUD',
@@ -25,8 +26,8 @@ class Producto extends Model
         'PFPR',
         'HFPR',
         'DIVISIBLE',
-        'FECRPR',
         'DIVISIBLE2',
+        'FECRPR',
         'estado'
     ];
 }

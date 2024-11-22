@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\CategoriaController;
 use App\Http\Controllers\BodegaController;
 use App\Http\Controllers\ProductoController;
+use App\Http\Controllers\ListaPrecioController;
 
 
 /*
@@ -52,6 +53,30 @@ Route::prefix('productos')->group(function () {
     Route::post('/cargar', [ProductoController::class, 'cargarExcel']);
     Route::get('/validar', [ProductoController::class, 'validarVista'])->name('productos.validar');
     Route::get('/asignar', [ProductoController::class, 'asignarVista'])->name('productos.asignar');
+    Route::get('/editar/{id}', [ProductoController::class, 'editarProducto'])->name('productos.editar');
+    Route::put('/actualizar/{id}', [ProductoController::class, 'actualizarProducto'])->name('productos.actualizar');
+
 });
+
+Route::get('/productos/subcategorias/{categoriaPadre}', [ProductoController::class, 'obtenerSubcategorias']);
+Route::get('/productos/subcategorias-hijo/{categoriaPadre}/{subCategoria}', [ProductoController::class, 'obtenerSubcategoriasHijo']);
+Route::get('/productos/publicados', [ProductoController::class, 'productosPublicados'])->name('productos.publicados');
+Route::get('/productos/lista-precios', [ProductoController::class, 'listaPrecios'])->name('productos.lista-precios');
+Route::get('/listas-precios', [ListaPrecioController::class, 'index'])->name('listasPrecios.index');
+Route::get('/productos/lista-precios/{kolt}', [ListaPrecioController::class, 'productosPorLista'])->name('productos.listaPorPrecio');
+
+//editar valores y bodega de produto.
+Route::get('productos/editar-precios/{codigo}', [ProductoController::class, 'editarPrecios'])->name('productos.editar-precios');
+Route::get('productos/editar-bodegas/{codigo}', [ProductoController::class, 'editarBodegas'])->name('productos.editar-bodegas');
+Route::post('productos/actualizar-precios', [ProductoController::class, 'actualizarPrecios'])->name('productos.actualizar-precios');
+Route::post('productos/actualizar-bodegas', [ProductoController::class, 'actualizarBodegas'])->name('productos.actualizar-bodegas');
+
+
+
+
+
+
+
+
 
 

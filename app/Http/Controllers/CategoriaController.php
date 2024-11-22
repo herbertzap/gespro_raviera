@@ -10,14 +10,26 @@ class CategoriaController extends Controller
     public function index()
     {
         // Realizar la consulta a la base de datos SQL Server
-        $categorias = DB::connection('sqlsrv')->select("
-            select FM.KOFM, FM.NOKOFM, PF.KOPF, PF.NOKOPF, HF.KOHF, HF.NOKOHF from TABFM FM 
-            inner join TABPF PF on FM.KOFM = PF.KOFM  
-            INNER JOIN TABHF HF  on PF.KOFM = HF.KOFM  
-            and PF.KOPF = HF.KOPF;
+        $categorias_padre = DB::connection('sqlsrv')->select("
+            select FM.KOFM, FM.NOKOFM from TABFM FM;
+        ");
+
+        $categorias_sc = DB::connection('sqlsrv')->select("
+            SELECT PF.KOFM, FM.NOKOFM, PF.KOPF,PF.NOKOPF
+            FROM TABPF  PF
+            JOIN TABFM FM
+            ON PF.KOFM = FM.KOFM;
+        ");
+
+        $categorias_sch = DB::connection('sqlsrv')->select("
+            SELECT HF.KOFM, FM.NOKOFM, HF.KOPF,PF.NOKOPF, HF.KOHF, HF.NOKOHF FROM TABHF HF
+            JOIN TABFM FM
+            ON HF.KOFM = FM.KOFM
+            JOIN TABPF PF
+            ON HF.KOPF = PF.KOPF;
         ");
 
         // Pasar los datos a la vista
-        return view('categorias.index', compact('categorias'));
+        return view('categorias.index', compact('categorias_padre', 'categorias_sc','categorias_sch'));
     }
 }
