@@ -115,7 +115,7 @@ demo = {
       },
 
       tooltips: {
-        backgroundColor: '#f5f5f5',
+        backgroundColor: '#f1261a',
         titleFontColor: '#333',
         bodyFontColor: '#666',
         bodySpacing: 4,
@@ -137,7 +137,7 @@ demo = {
             suggestedMin: 60,
             suggestedMax: 125,
             padding: 20,
-            fontColor: "#2380f7"
+            fontColor: "#f1261a"
           }
         }],
 
@@ -150,7 +150,7 @@ demo = {
           },
           ticks: {
             padding: 20,
-            fontColor: "#2380f7"
+            fontColor: "#f1261a"
           }
         }]
       }
@@ -163,7 +163,7 @@ demo = {
       },
 
       tooltips: {
-        backgroundColor: '#f5f5f5',
+        backgroundColor: '#f1261a',
         titleFontColor: '#333',
         bodyFontColor: '#666',
         bodySpacing: 4,
@@ -185,7 +185,7 @@ demo = {
             suggestedMin: 60,
             suggestedMax: 125,
             padding: 20,
-            fontColor: "#9a9a9a"
+            fontColor: "#f1261a"
           }
         }],
 
@@ -198,7 +198,7 @@ demo = {
           },
           ticks: {
             padding: 20,
-            fontColor: "#9a9a9a"
+            fontColor: "#f1261a"
           }
         }]
       }
@@ -211,7 +211,7 @@ demo = {
       },
 
       tooltips: {
-        backgroundColor: '#f5f5f5',
+        backgroundColor: '#f1261a',
         titleFontColor: '#333',
         bodyFontColor: '#666',
         bodySpacing: 4,
@@ -259,7 +259,7 @@ demo = {
       },
 
       tooltips: {
-        backgroundColor: '#f5f5f5',
+        backgroundColor: '#f1261a',
         titleFontColor: '#333',
         bodyFontColor: '#666',
         bodySpacing: 4,
@@ -308,7 +308,7 @@ demo = {
       },
 
       tooltips: {
-        backgroundColor: '#f5f5f5',
+        backgroundColor: '#f1261a',
         titleFontColor: '#333',
         bodyFontColor: '#666',
         bodySpacing: 4,
@@ -363,13 +363,13 @@ demo = {
         label: "Data",
         fill: true,
         backgroundColor: gradientStroke,
-        borderColor: '#d048b6',
+        borderColor: '#f1261a',
         borderWidth: 2,
         borderDash: [],
         borderDashOffset: 0.0,
-        pointBackgroundColor: '#d048b6',
+        pointBackgroundColor: '#f1261a',
         pointBorderColor: 'rgba(255,255,255,0)',
-        pointHoverBackgroundColor: '#d048b6',
+        pointHoverBackgroundColor: '#f1261a',
         pointBorderWidth: 20,
         pointHoverRadius: 4,
         pointHoverBorderWidth: 15,

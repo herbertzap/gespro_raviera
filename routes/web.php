@@ -1,82 +1,115 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\CategoriaController;
-use App\Http\Controllers\BodegaController;
-use App\Http\Controllers\ProductoController;
-use App\Http\Controllers\ListaPrecioController;
+use App\Http\Controllers\{
+    CategoriaController,
+    BodegaController,
+    ProductoController,
+    ListaPrecioController,
+    LogController,
+    RoleController,
+    PermissionController,
+    UserController,
+    ProfileController,
+    PageController
+};
 
-
-/*
-|--------------------------------------------------------------------------
-| Web Routes
-|--------------------------------------------------------------------------
-|
-| Here is where you can register web routes for your application. These
-| routes are loaded by the RouteServiceProvider and all of them will
-| be assigned to the "web" middleware group. Make something great!
-|
-*/
-
+// Página de inicio
 Route::get('/', function () {
     return view('welcome');
 });
 
+// Autenticación
 Auth::routes();
 
-Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home');
-Auth::routes();
+// Página de inicio después del login
+Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home')->middleware('auth');
 
-Route::get('/home', 'App\Http\Controllers\HomeController@index')->name('home')->middleware('auth');
-
-Route::group(['middleware' => 'auth'], function () {
-		Route::get('icons', ['as' => 'pages.icons', 'uses' => 'App\Http\Controllers\PageController@icons']);
-		Route::get('maps', ['as' => 'pages.maps', 'uses' => 'App\Http\Controllers\PageController@maps']);
-		Route::get('notifications', ['as' => 'pages.notifications', 'uses' => 'App\Http\Controllers\PageController@notifications']);
-		Route::get('rtl', ['as' => 'pages.rtl', 'uses' => 'App\Http\Controllers\PageController@rtl']);
-		Route::get('tables', ['as' => 'pages.tables', 'uses' => 'App\Http\Controllers\PageController@tables']);
-		Route::get('typography', ['as' => 'pages.typography', 'uses' => 'App\Http\Controllers\PageController@typography']);
-		Route::get('upgrade', ['as' => 'pages.upgrade', 'uses' => 'App\Http\Controllers\PageController@upgrade']);
+// Grupo de rutas protegidas por autenticación
+Route::middleware(['auth'])->group(function () {
+    
+    // Rutas genéricas del sistema
+    Route::get('icons', [PageController::class, 'icons'])->name('pages.icons');
+    Route::get('maps', [PageController::class, 'maps'])->name('pages.maps');
+    Route::get('notifications', [PageController::class, 'notifications'])->name('pages.notifications');
+    Route::get('rtl', [PageController::class, 'rtl'])->name('pages.rtl');
+    Route::get('tables', [PageController::class, 'tables'])->name('pages.tables');
+    Route::get('typography', [PageController::class, 'typography'])->name('pages.typography');
+    Route::get('upgrade', [PageController::class, 'upgrade'])->name('pages.upgrade');
 });
 
-Route::group(['middleware' => 'auth'], function () {
-	Route::resource('user', 'App\Http\Controllers\UserController', ['except' => ['show']]);
-	Route::get('profile', ['as' => 'profile.edit', 'uses' => 'App\Http\Controllers\ProfileController@edit']);
-	Route::put('profile', ['as' => 'profile.update', 'uses' => 'App\Http\Controllers\ProfileController@update']);
-	Route::put('profile/password', ['as' => 'profile.password', 'uses' => 'App\Http\Controllers\ProfileController@password']);
+// **Gestión de Usuarios**
+Route::middleware(['auth'])->group(function () {
+    Route::resource('user', UserController::class);
+    Route::resource('users', UserController::class)->except('show');
+    Route::post('user/{user}/assign-role', [UserController::class, 'assignRole'])->name('user.assign-role');
 });
 
-Route::resource('categorias', CategoriaController::class);
-Route::resource('bodegas', BodegaController::class);
-Route::prefix('productos')->group(function () {
+// **Gestión de Roles**
+Route::middleware(['auth'])->group(function () {
+    Route::resource('roles', RoleController::class);
+    Route::post('roles/{role}/assign-permissions', [RoleController::class, 'assignPermissions'])->name('roles.assign-permissions');
+});
+
+// **Gestión de Permisos**
+Route::middleware(['auth'])->group(function () {
+    Route::resource('permissions', PermissionController::class);
+});
+
+// **Gestión de Perfiles**
+Route::middleware(['auth'])->group(function () {
+    Route::get('profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::put('profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::put('profile/password', [ProfileController::class, 'password'])->name('profile.password');
+});
+
+// **Gestión de Categorías**
+Route::middleware(['auth'])->group(function () {
+    Route::resource('categorias', CategoriaController::class);
+});
+
+// **Gestión de Bodegas**
+Route::middleware(['auth'])->group(function () {
+    Route::resource('bodegas', BodegaController::class);
+});
+
+// **Gestión de Productos**
+Route::middleware(['auth'])->group(function () {
     Route::get('/cargar', [ProductoController::class, 'cargarVista'])->name('productos.cargar');
-    Route::post('/cargar', [ProductoController::class, 'cargarExcel']);
+    Route::post('/cargar', [ProductoController::class, 'cargarExcel'])->name('productos.procesar');
     Route::get('/validar', [ProductoController::class, 'validarVista'])->name('productos.validar');
     Route::get('/asignar', [ProductoController::class, 'asignarVista'])->name('productos.asignar');
-    Route::get('/editar/{id}', [ProductoController::class, 'editarProducto'])->name('productos.editar');
-    Route::put('/actualizar/{id}', [ProductoController::class, 'actualizarProducto'])->name('productos.actualizar');
-
+    Route::get('/editar/{sku}', [ProductoController::class, 'editarProducto'])->name('productos.editar');
+    Route::put('/actualizar/{sku}', [ProductoController::class, 'actualizarProducto'])->name('productos.actualizar');
+    Route::get('/publicados', [ProductoController::class, 'productosPublicados'])->name('productos.publicados');
+    Route::get('/lista-precios', [ProductoController::class, 'listaPrecios'])->name('productos.lista-precios');
 });
 
-Route::get('/productos/subcategorias/{categoriaPadre}', [ProductoController::class, 'obtenerSubcategorias']);
-Route::get('/productos/subcategorias-hijo/{categoriaPadre}/{subCategoria}', [ProductoController::class, 'obtenerSubcategoriasHijo']);
-Route::get('/productos/publicados', [ProductoController::class, 'productosPublicados'])->name('productos.publicados');
-Route::get('/productos/lista-precios', [ProductoController::class, 'listaPrecios'])->name('productos.lista-precios');
-Route::get('/listas-precios', [ListaPrecioController::class, 'index'])->name('listasPrecios.index');
-Route::get('/productos/lista-precios/{kolt}', [ListaPrecioController::class, 'productosPorLista'])->name('productos.listaPorPrecio');
+// **Gestión de Listas de Precios**
+Route::middleware(['auth'])->group(function () {
+    Route::get('/listas-precios', [ListaPrecioController::class, 'index'])->name('listasPrecios.index');
+    Route::get('/productos/lista-precios/{kolt}', [ListaPrecioController::class, 'productosPorLista'])->name('productos.listaPorPrecio');
+});
 
-//editar valores y bodega de produto.
-Route::get('productos/editar-precios/{codigo}', [ProductoController::class, 'editarPrecios'])->name('productos.editar-precios');
-Route::get('productos/editar-bodegas/{codigo}', [ProductoController::class, 'editarBodegas'])->name('productos.editar-bodegas');
-Route::post('productos/actualizar-precios', [ProductoController::class, 'actualizarPrecios'])->name('productos.actualizar-precios');
-Route::post('productos/actualizar-bodegas', [ProductoController::class, 'actualizarBodegas'])->name('productos.actualizar-bodegas');
+// **Logs del Sistema**
+Route::middleware(['auth'])->group(function () {
+    Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
+});
 
+// **Subcategorías**
+Route::get('/productos/subcategorias/{categoriaPadre}', [ProductoController::class, 'obtenerSubcategorias'])->name('productos.subcategorias');
+Route::get('/productos/subcategorias-hijo/{categoriaPadre}/{subCategoria}', [ProductoController::class, 'obtenerSubcategoriasHijo'])->name('productos.subcategorias-hijo');
 
+// **Edición de Precios y Bodegas**
+Route::middleware(['auth'])->group(function () {
+    Route::get('editar-precios/{codigo}', [ProductoController::class, 'editarPrecios'])->name('productos.editar-precios');
+    Route::post('actualizar-precios', [ProductoController::class, 'actualizarPrecios'])->name('productos.actualizar-precios');
+    Route::get('editar-bodegas/{codigo}', [ProductoController::class, 'editarBodegas'])->name('productos.editar-bodegas');
+    Route::post('actualizar-bodegas', [ProductoController::class, 'actualizarBodegas'])->name('productos.actualizar-bodegas');
+});
 
-
-
-
-
-
-
-
+// **Operaciones Adicionales**
+Route::post('/bodegas/agregar', [ProductoController::class, 'agregarBodega'])->name('bodegas.agregar');
+Route::post('/listas/agregar', [ProductoController::class, 'agregarLista'])->name('listas.agregar');
+Route::delete('/bodegas/{bodega}', [ProductoController::class, 'eliminarBodega'])->name('bodegas.eliminar');
+Route::delete('/listas/{lista}', [ProductoController::class, 'eliminarLista'])->name('listas.eliminar');

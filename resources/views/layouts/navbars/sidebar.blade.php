@@ -4,7 +4,7 @@
             <a href="#" class="simple-text logo-mini">
             <img class="" src="{{ asset('black') }}/img/logo.webp" alt="">
             </a>
-            <a href="#" class="simple-text logo-normal">{{ __('GESPRO RIVERA') }}</a>
+            <a href="#" class="simple-text logo-normal">{{ __('GESPRO RAVIERA') }}</a>
         </div>
         <ul class="nav">
             <li @if ($pageSlug == 'dashboard') class="active " @endif>
@@ -13,29 +13,48 @@
                     <p>{{ __('Dashboard') }}</p>
                 </a>
             </li>
+
             <li>
-                <a data-toggle="collapse" href="#Usuarios" aria-expanded="true">
-                    <i class="fab fa-laravel" ></i>
-                    <span class="nav-link-text">{{ __('Usuarios') }}</span>
-                    <b class="caret mt-1"></b>
+               
+    <a data-toggle="collapse" href="#Usuarios" aria-expanded="true">
+        <i class="fab fa-laravel"></i>
+        <span class="nav-link-text">{{ __('Usuarios') }}</span>
+        <b class="caret mt-1"></b>
+    </a>
+    <div class="collapse show" id="Usuarios">
+        <ul class="nav pl-4">
+            <li @if ($pageSlug == 'profile') class="active " @endif>
+                <a href="{{ route('profile.edit') }}">
+                    <i class="tim-icons icon-single-02"></i>
+                    <p>{{ __('Perfil de usuario') }}</p>
                 </a>
-                <div class="collapse show" id="Usuarios">
-                    <ul class="nav pl-4">
-                        <li @if ($pageSlug == 'profile') class="active " @endif>
-                            <a href="{{ route('profile.edit') }}">
-                                <i class="tim-icons icon-single-02"></i>
-                                <p>{{ __('Perfil de usuario') }}</p>
-                            </a>
-                        </li>
-                        <li @if ($pageSlug == 'users') class="active " @endif>
-                            <a href="{{ route('user.index') }}">
-                                <i class="tim-icons icon-bullet-list-67"></i>
-                                <p>{{ __('Usuarios') }}</p>
-                            </a>
-                        </li>
-                    </ul>
-                </div>
             </li>
+            <li @if ($pageSlug == 'users') class="active " @endif>
+                <a href="{{ route('user.index') }}">
+                    <i class="tim-icons icon-bullet-list-67"></i>
+                    <p>{{ __('Usuarios') }}</p>
+                </a>
+            </li>
+
+            <li @if ($pageSlug == 'roles') class="active " @endif>
+                <a href="{{ route('roles.index') }}">
+                    <i class="tim-icons icon-settings"></i>
+                    <p>{{ __('Roles') }}</p>
+                </a>
+            </li>
+
+            <li @if ($pageSlug == 'permissions') class="active " @endif>
+                <a href="{{ route('permissions.index') }}">
+                    <i class="tim-icons icon-lock-circle"></i>
+                    <p>{{ __('Permisos') }}</p>
+                </a>
+            </li>
+
+        </ul>
+    </div>
+</li>
+
+
             
             <!-- Nueva sección: Categorías -->
             <li @if ($pageSlug == 'categorias') class="active " @endif>
@@ -81,18 +100,6 @@
                                 <p>{{ __('Cargar Productos') }}</p>
                             </a>
                         </li>
-                        <li @if ($pageSlug == 'validar_productos') class="active " @endif>
-                            <a href="{{ route('productos.validar') }}">
-                                <i class="tim-icons icon-check-2"></i>
-                                <p>{{ __('Validar Productos') }}</p>
-                            </a>
-                        </li>
-                        <li @if ($pageSlug == 'asignar_productos') class="active " @endif>
-                            <a href="{{ route('productos.asignar') }}">
-                                <i class="tim-icons icon-send"></i>
-                                <p>{{ __('Asignar a Bodegas') }}</p>
-                            </a>
-                        </li>
                         <li @if ($pageSlug == 'asignar_productos') class="active " @endif>
                             <a href="{{ route('productos.lista-precios') }}">
                                 <i class="tim-icons icon-send"></i>
@@ -102,6 +109,13 @@
                     </ul>
                 </div>
             </li> 
+
+            <li @if ($pageSlug == 'log') class="active " @endif>
+                <a href="{{ route('logs.index') }}">
+                <i class="tim-icons icon-tag"></i>
+                <p>{{ __('Registro de eventos') }}</p>
+                </a>
+            </li>
         </ul>
     </div>
 </div>

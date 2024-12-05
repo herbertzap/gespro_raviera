@@ -1,6 +1,14 @@
 @extends('layouts.app', ['page' => __('Productos Publicados'), 'pageSlug' => 'productos-publicados'])
-
 @section('content')
+
+@if(session('showModal'))
+<script>
+    $(document).ready(function() {
+        $('#productoNoEncontradoModal').modal('show');
+    });
+</script>
+@endif
+
 <div class="row">
     <div class="col-md-12">
         <div class="card">
@@ -79,10 +87,8 @@
                                 <td>{{ $producto->HFPR }}</td>
                                 <td>{{ $producto->FECRPR }}</td>
                                 <td>{{ $producto->DIVISIBLE }}</td>
-                                <td>
-                                    <a href="{{ route('productos.editar-precios', $producto->KOPR) }}" class="btn btn-warning btn-sm">Editar Precios</a>
-                                    <a href="{{ route('productos.editar-bodegas', $producto->KOPR) }}" class="btn btn-info btn-sm">Editar Bodegas</a>
-                                </td>
+                                <td><a href="{{ route('productos.editar', $producto->KOPR) }}" class="btn btn-primary btn-sm">Editar</a>
+                            </td>
                             </tr>
                             @endforeach
                         </tbody>
@@ -93,4 +99,25 @@
         </div>
     </div>
 </div>
+
+<!-- Modal Producto No Encontrado -->
+<div class="modal fade" id="productoNoEncontradoModal" tabindex="-1" role="dialog" aria-labelledby="productoNoEncontradoModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="productoNoEncontradoModalLabel">Producto No Encontrado</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                El producto no fue encontrado en las listas de precios. Por favor, verifica los filtros o intenta nuevamente.
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @endsection

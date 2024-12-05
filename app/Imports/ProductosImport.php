@@ -1,10 +1,9 @@
 <?php
 
 namespace App\Imports;
-
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use App\Models\Producto;
-use Maatwebsite\Excel\Concerns\ToModel;
-use Maatwebsite\Excel\Concerns\WithHeadingRow;
+
 use Carbon\Carbon;
 
 class ProductosImport implements ToModel, WithHeadingRow

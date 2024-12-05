@@ -13,14 +13,15 @@
                         {{ session('success') }}
                     </div>
                 @endif
+                @if(session('error'))
+                    <div style="color: red;">{{ session('error') }}</div>
+                @endif
                 <form action="{{ route('productos.cargar') }}" method="POST" enctype="multipart/form-data">
-                    @csrf
-                    <div class="form-group">
-                        <label for="archivo">Selecciona un archivo Excel</label>
-                        <input type="file" name="archivo" class="form-control" required>
-                    </div>
-                    <button type="submit" class="btn btn-primary">Cargar</button>
-                </form>
+    @csrf
+    <input type="file" name="archivo_excel" id="archivo_excel" required>
+    <button type="submit">Cargar</button>
+</form>
+
             </div>
         </div>
     </div>

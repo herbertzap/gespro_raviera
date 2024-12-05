@@ -92,9 +92,9 @@ body {
   font-size: 0.875rem;
   font-weight: 400;
   line-height: 1.5;
-  color: #525f7f;
+  color: #f1261a;
   text-align: left;
-  background-color: #1e1e2f;
+  background-color: #f1261a;
 }
 
 [tabindex="-1"]:focus {
@@ -2362,8 +2362,8 @@ fieldset:disabled a.btn {
 
 .btn-primary {
   color: #ffffff;
-  background-color: #e14eca;
-  border-color: #e14eca;
+  background-color: #f1261a;
+  border-color: #f1261a;
   box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11), 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
@@ -2389,8 +2389,8 @@ fieldset:disabled a.btn {
 .btn-primary:not(:disabled):not(.disabled).active,
 .show>.btn-primary.dropdown-toggle {
   color: #ffffff;
-  background-color: #d725bb;
-  border-color: #cd23b2;
+  background-color: #f1261a;
+  border-color: #f1261a;
 }
 
 .btn-primary:not(:disabled):not(.disabled):active:focus,
@@ -3352,7 +3352,7 @@ input[type="button"].btn-block {
 }
 
 .fade:not(.show) {
-  opacity: 0;
+  opacity: 1;
 }
 
 .collapse:not(.show) {
@@ -5932,7 +5932,7 @@ button.close {
   flex-direction: column;
   width: 100%;
   pointer-events: auto;
-  background-color: #ffffff;
+  background-color: #000;
   background-clip: padding-box;
   border: 1px solid rgba(34, 42, 66, 0.2);
   border-radius: 0.2857rem;
@@ -10695,14 +10695,14 @@ fieldset[disabled] .navbar .navbar-nav>a.btn.active {
 }
 
 .btn-primary {
-  background: #e14eca;
+  background: #f1261a;
   background-image: -webkit-linear-gradient(to bottom left, #e14eca, #ba54f5, #e14eca);
   background-image: -o-linear-gradient(to bottom left, #e14eca, #ba54f5, #e14eca);
   background-image: -moz-linear-gradient(to bottom left, #e14eca, #ba54f5, #e14eca);
-  background-image: linear-gradient(to bottom left, #e14eca, #ba54f5, #e14eca);
+  background-image: linear-gradient(to bottom left, #f1261a, #f1261a, #f1261a);
   background-size: 210% 210%;
   background-position: top right;
-  background-color: #e14eca;
+  background-color: #f1261a;
   transition: all 0.15s ease;
   box-shadow: none;
   color: #ffffff;
@@ -10721,8 +10721,8 @@ fieldset[disabled] .navbar .navbar-nav>a.btn.active {
 .btn-primary:active:hover,
 .btn-primary.active:focus,
 .btn-primary.active:hover {
-  background-color: #ba54f5 !important;
-  background-image: linear-gradient(to bottom left, #e14eca, #ba54f5, #e14eca) !important;
+  background-color: #f1261a !important;
+  background-image: linear-gradient(to bottom left, #f1261a, #f1261a, #f1261a) !important;
   background-image: -webkit-linear-gradient(to bottom left, #e14eca, #ba54f5, #e14eca) !important;
   background-image: -o-linear-gradient(to bottom left, #e14eca, #ba54f5, #e14eca) !important;
   background-image: -moz-linear-gradient(to bottom left, #e14eca, #ba54f5, #e14eca) !important;
@@ -10771,8 +10771,8 @@ fieldset[disabled] .btn-primary.active {
 }
 
 .btn-primary.btn-simple {
-  color: #e14eca;
-  border-color: #e14eca;
+  color: #f1261a;
+  border-color: #f1261a;
   background: transparent;
 }
 
@@ -12301,6 +12301,7 @@ fieldset[disabled] .btn-link.active {
 .form-control {
   border-color: #2b3553;
   border-radius: 0.4285rem;
+  color: #fff;
   font-size: 0.75rem;
   -webkit-transition: color 0.3s ease-in-out, border-color 0.3s ease-in-out, background-color 0.3s ease-in-out;
   -moz-transition: color 0.3s ease-in-out, border-color 0.3s ease-in-out, background-color 0.3s ease-in-out;
@@ -12462,7 +12463,7 @@ img {
 }
 
 .modal-content .modal-header .modal-title {
-  color: #222a42;
+  color: #fff;
 }
 
 .modal-content .modal-header i.tim-icons {
@@ -14851,11 +14852,11 @@ table.tablesorter thead tr .headerSortDown {
 
 .sidebar,
 .off-canvas-sidebar {
-  background: #ba54f5;
+  background: #f1261a;
   background: -webkit-linear-gradient(0deg, #ba54f5 0%, #e14eca 100%);
   background: -o-linear-gradient(0deg, #ba54f5 0%, #e14eca 100%);
   background: -moz-linear-gradient(0deg, #ba54f5 0%, #e14eca 100%);
-  background: linear-gradient(0deg, #ba54f5 0%, #e14eca 100%);
+  background: linear-gradient(0deg, #f1261a 0%, #f1261a 100%);
   height: calc(100vh - 90px);
   width: 230px;
   position: fixed;
@@ -15122,6 +15123,7 @@ table.tablesorter thead tr .headerSortDown {
   display: block;
   height: auto;
   white-space: nowrap;
+  font-weight: 600;
 }
 
 .sidebar .nav i,
@@ -16384,7 +16386,7 @@ code {
 .form-control[readonly],
 fieldset[disabled] .form-control {
   background-color: #1d253b;
-  color: #344675;
+  color: #fff;
   cursor: not-allowed;
 }
 
