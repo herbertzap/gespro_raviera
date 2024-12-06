@@ -46,7 +46,6 @@
                     <!-- Inventario por Bodega -->
                     <div class="mb-4">
         <h5>Inventario por Bodega</h5>
-        <!--<button type="button" class="btn btn-success mb-2" data-toggle="modal" data-target="#modalAgregarBodega">Agregar Bodega</button>-->
         <table class="table table-bordered">
             <tr>
                 <th>Bodega</th>
@@ -59,14 +58,6 @@
                 <td>{{ $bodega->nombre_bodega }}</td>
                 <td>{{ $bodega->stock_ud1 }}</td>
                 <td>{{ $bodega->stock_ud2 }}</td>
-                <!--
-                <td>
-                <button type="button" class="btn btn-danger btn-sm" data-toggle="modal" data-target="#modalEliminarBodega" data-bodega-id="{{ $bodega->bodega_id }}">
-                        Eliminar
-                    </button>
-                    </form>
-                </td>
-                -->
             </tr>
             @empty
             <tr>
@@ -172,53 +163,30 @@
 <div class="modal fade" id="modalEliminarLista" tabindex="-1" aria-labelledby="modalEliminarListaLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form action="{{ route('listas.eliminar') }}" method="POST">
-                @csrf
-                @method('DELETE')
-                <div class="modal-header">
-                    <h5 class="modal-title" id="modalEliminarListaLabel">Eliminar Lista de Precios</h5>
-                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    <p>¿Está seguro de que desea eliminar esta lista de precios?</p>
-                    <input type="hidden" name="lista_id" id="listaId">
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-danger">Eliminar</button>
-                </div>
-            </form>
+        <form id="eliminarListaForm" method="POST">
+            @csrf
+            @method('DELETE')
+            <input type="hidden" name="lista_id" id="listaId"> <!-- Este input es dinámico -->
+            <input type="hidden" name="sku" value="{{ $producto->sku }}"> <!-- SKU del producto -->
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalEliminarListaLabel">Eliminar Lista de Precios</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>¿Está seguro de que desea eliminar esta lista de precios?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-danger">Eliminar</button>
+            </div>
+        </form>
         </div>
     </div>
 </div>
 
-<!-- Modal para Confirmar Eliminación de Bodega -->
-<div class="modal fade" id="modalEliminarBodega" tabindex="-1" aria-labelledby="modalEliminarBodegaLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form action="{{ route('bodegas.eliminar') }}" method="POST">
-                @csrf
-                @method('DELETE')
-                <div class="modal-header">
-                    <h5 class="modal-title" id="modalEliminarBodegaLabel">Eliminar Bodega</h5>
-                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    <p>¿Está seguro de que desea eliminar esta bodega?</p>
-                    <input type="hidden" name="bodega_id" id="bodegaId">
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-danger">Eliminar</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+
 
 <!-- Modal Agregar Bodega -->
 <div class="modal fade" id="modalAgregarBodega" tabindex="-1" aria-labelledby="modalAgregarBodegaLabel" aria-hidden="true">
@@ -336,23 +304,22 @@
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     var modalEliminarLista = document.getElementById('modalEliminarLista');
+    var eliminarListaForm = document.getElementById('eliminarListaForm');
+
     modalEliminarLista.addEventListener('show.bs.modal', function (event) {
-        var button = event.relatedTarget; // Botón que abrió el modal
-        var listaId = button.getAttribute('data-lista-id'); // Extraer data-lista-id
-        var inputListaId = modalEliminarLista.querySelector('#listaId');
+        var button = event.relatedTarget; // Botón que activó el modal
+        var listaId = button.getAttribute('data-lista-id'); // Obtener el ID de la lista
+        var inputListaId = modalEliminarLista.querySelector('#listaId'); // Input oculto
         inputListaId.value = listaId; // Asignar el valor al input oculto
+
+        // Actualizar el action del formulario con la URL correcta
+        eliminarListaForm.action = `/listas/${listaId}`;
     });
 });
 
-document.addEventListener('DOMContentLoaded', function () {
-    var modalEliminarBodega = document.getElementById('modalEliminarBodega');
-    modalEliminarBodega.addEventListener('show.bs.modal', function (event) {
-        var button = event.relatedTarget; // Botón que abrió el modal
-        var bodegaId = button.getAttribute('data-bodega-id'); // Extraer data-bodega-id
-        var inputBodegaId = modalEliminarBodega.querySelector('#bodegaId');
-        inputBodegaId.value = bodegaId; // Asignar el valor al input oculto
-    });
-});
+
+
+
 $(document).ready(function () {
     const rlud = parseFloat('{{ $producto->RLUD }}') || 1; // RLUD del producto
 

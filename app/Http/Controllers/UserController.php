@@ -69,7 +69,8 @@ public function destroy(User $user)
 
 public function edit(User $user)
 {
-    return view('users.edit', compact('user'));
+    $roles = \Spatie\Permission\Models\Role::all(); // Cargar todos los roles
+    return view('users.edit', compact('user', 'roles'));
 }
 
 
@@ -78,13 +79,24 @@ public function update(Request $request, User $user)
     $request->validate([
         'name' => 'required|string|max:255',
         'email' => 'required|email|unique:users,email,' . $user->id,
+        'roles' => 'nullable|array', // Validar que roles sea un array
+        'roles.*' => 'exists:roles,id', // Validar que los roles existan
     ]);
 
     $user->update([
         'name' => $request->name,
         'email' => $request->email,
     ]);
+
+    // Convertir IDs de roles a nombres de roles
+    if ($request->has('roles')) {
+        $roleNames = \Spatie\Permission\Models\Role::whereIn('id', $request->roles)->pluck('name')->toArray();
+        $user->syncRoles($roleNames);
+    }
+
     return redirect()->route('user.index')->with('success', 'Usuario actualizado con éxito.');
 }
+
+
   
 }

@@ -71,7 +71,7 @@ protected function procesarExcelPorPestanas($filePath)
         if ($pestana == 'Creación Productos') {
             $this->procesarCreacionProductos($sheet);
         } else {
-            Log::info("Pestaña no reconocida o ignorada: {$pestana}");
+           
         }
     }
 }
@@ -259,25 +259,47 @@ protected function procesarCreacionProductos($sheet)
             'ECUACIONU2' => ' ',
         ];
 
+        $pdimen = [
+            'EMPRESA' => '',
+            'CODIGO' => $codigoProducto,
+            'NUMOT' => '',
+            'NREGOTL' => '',
+            'NOMBRE' => $fila['I'] ?? null, 
+            'UDAD' => $fila['L'] ?? null,
+            'HORAS_HH' => '0',
+            'CANT_KMTS' => '0',
+            'ZFLETE1' => '100.0',
+            'ZFLETE2' => '200.0',
+            'ZFLETE3' => '300.0',
+        ];
+
+
         // Insertar en la base de datos
         try {
             DB::connection('sqlsrv')->table('MAEPR')->insert($maepr);
             Log::info("Fila {$index} insertada correctamente en MAEPR.");
+            LogController::registrarLog($userId, 'insert', 'MAEPR', $maepr);
             
             DB::connection('sqlsrv')->table('MAEPREM')->insert($maeprem);
             Log::info("Fila {$index} insertada correctamente en maeprem.");
+            LogController::registrarLog($userId, 'insert', 'MAEPREM', $maeprem);
             
             DB::connection('sqlsrv')->table('TABPRE')->insert($tabpre01C);
             Log::info("Fila {$index} insertada correctamente en TABPRE 01c.");
+            LogController::registrarLog($userId, 'insert', 'TABPRE', $tabpre01C);
             
             DB::connection('sqlsrv')->table('TABPRE')->insert($tabpre02C);
             Log::info("Fila {$index} insertada correctamente en TABPRE 02c.");
             
             DB::connection('sqlsrv')->table('TABPRE')->insert($tabpre03C);
             Log::info("Fila {$index} insertada correctamente en TABPRE 03c.");
+
+            DB::connection('sqlsrv')->table('PDIMEN')->insert($pdimen);
+            Log::info("Fila {$index} insertada correctamente en PDIMEN.");
             
         } catch (\Exception $e) {
             Log::error("Error al insertar la fila {$index} en MAEPR: " . $e->getMessage());
+            LogController::registrarLog($userId, 'error', 'MAEPR', $maepr, ['message' => $e->getMessage()]);
           
        
         }
@@ -353,10 +375,92 @@ protected function procesarCreacionProductos($sheet)
                 // Insertar en la base de datos
                 DB::connection('sqlsrv')->table('TABPRE')->insert($tabpre);
                 Log::info("Fila {$index} insertada correctamente en TABPRE {$kolt}.");
+                LogController::registrarLog($userId, 'insert', 'TABPRE', $tabpre);
                 
             } catch (\Exception $e) {
-                
+                LogController::registrarLog($userId, 'error', 'TABPRE', $tabpre, ['message' => $e->getMessage()]);
        
+            }
+        }
+
+        // Configuración para procesar bodegas y sucursales
+        // Configuración para las columnas de KOBO y KOSU
+        $bodegaConfig = [
+            'KOBO' => ['P', 'R', 'T', 'V', 'X', 'Z', 'AB', 'AD'], // Columnas de KOBO
+            'KOSU' => ['Q', 'S', 'U', 'W', 'Y', 'AA', 'AC', 'AE'], // Columnas asociadas de KOSU
+        ];
+        
+        // Procesar cada fila del archivo Excel
+        foreach ($datos as $index => $fila) {
+            // Omitir encabezados (primera fila)
+            
+            if ($index == 1) {
+                Log::info("Encabezados detectados y omitidos.");
+                continue;
+            }
+
+            // Asegurarse de que KOBO y KOSU tengan el mismo número de columnas
+            $koboColumns = $bodegaConfig['KOBO'];
+            $kosuColumns = $bodegaConfig['KOSU'];
+            if (count($koboColumns) !== count($kosuColumns)) {
+                Log::error("Configuración inconsistente: KOBO y KOSU tienen diferente número de columnas.");
+                break;
+            }
+            
+            // Validar y procesar cada columna de KOBO y KOSU
+            for ($i = 0; $i < count($koboColumns); $i++) {
+                $columnaKOBO = $koboColumns[$i];
+                $columnaKOSU = $kosuColumns[$i];
+
+                // Obtener valores de KOBO y KOSU desde las columnas correspondientes
+                $kobo = $fila[$columnaKOBO] ?? null;
+                $kosu = $fila[$columnaKOSU] ?? null;
+
+                // Validar que KOBO no sea "NO" o vacío y que KOSU no esté vacío
+                if (is_null($kobo) || strtoupper(trim($kobo)) === 'NO' || is_null($kosu)) {
+                    
+                    continue;
+                }
+
+                // Preparar datos para el INSERT
+                $bodega = [
+                    'KOPR' => $codigoProducto, // Código del producto
+                    'EMPRESA' => '01', // Empresa predeterminada
+                    'KOSU' => substr($kosu, 0, 10), // Truncar a 10 caracteres si es necesario
+                    'KOBO' => substr($kobo, 0, 10), // Truncar a 10 caracteres si es necesario
+                ];
+
+                $maest = [
+                    'KOPR' => $codigoProducto, // Código del producto
+                    'EMPRESA' => '01', // Empresa predeterminada
+                    'KOSU' => substr($kosu, 0, 10), 
+                    'KOBO' => substr($kobo, 0, 10),
+                    'STFI1' => '0',
+                    'STFI2' => '0', 
+                ];
+
+                try {
+                    // Verificar duplicados antes de insertar
+                    $existe = DB::connection('sqlsrv')->table('TABBOPR')
+                        ->where('KOPR', $codigoProducto)
+                        ->where('EMPRESA', '01')
+                        ->where('KOSU', $bodega['KOSU'])
+                        ->where('KOBO', $bodega['KOBO'])
+                        ->exists();
+
+                    if ($existe) {
+                        
+                        continue;
+                    }
+
+                    // Insertar en la base de datos
+                    DB::connection('sqlsrv')->table('TABBOPR')->insert($bodega);
+                    DB::connection('sqlsrv')->table('MAEST')->insert($maest);
+                    Log::info("Fila {$index}, KOBO {$bodega['KOBO']}, KOSU {$bodega['KOSU']} insertados correctamente en TABBOPR.");
+                    LogController::registrarLog($userId, 'insert', 'TABBOPR', $bodega);
+                } catch (\Exception $e) {
+                    LogController::registrarLog($userId, 'error', 'TABBOPR', $bodega, ['message' => $e->getMessage()]);
+                }
             }
         }
     }
@@ -730,14 +834,23 @@ public function eliminarLista(Request $request)
     $listaId = $request->input('lista_id'); // ID de la lista seleccionada
     $sku = $request->input('sku'); // SKU del producto asociado
 
-    // Eliminar la lista de precios del producto en la tabla TABPRE
-    DB::connection('sqlsrv')->table('TABPRE')
-        ->where('KOLT', $listaId)
-        ->where('KOPR', $sku)
-        ->delete();
+    if (!$listaId || !$sku) {
+        return redirect()->back()->withErrors(['error' => 'Faltan datos para eliminar la lista.']);
+    }
 
-    return redirect()->back()->with('success', 'Lista de precios eliminada correctamente.');
+    try {
+        // Eliminar la lista de precios del producto en la tabla TABPRE
+        DB::connection('sqlsrv')->table('TABPRE')
+            ->where('KOLT', $listaId)
+            ->where('KOPR', $sku)
+            ->delete();
+
+        return redirect()->back()->with('success', 'Lista de precios eliminada correctamente.');
+    } catch (\Exception $e) {
+        return redirect()->back()->withErrors(['error' => 'Error al eliminar la lista de precios: ' . $e->getMessage()]);
+    }
 }
+
 
     
 

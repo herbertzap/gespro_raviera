@@ -39,13 +39,13 @@ class RoleController extends Controller
     return view('roles.edit', compact('role', 'permissions'));
 }
 
-    public function update(Request $request, Role $role)
+public function update(Request $request, Role $role)
 {
     // Validar la entrada
     $request->validate([
-        'name' => 'required|unique:roles,name,' . $role->id, // El nombre debe ser único, excepto para el rol actual
-        'permissions' => 'array', // Asegurarse de que sea un arreglo
-        'permissions.*' => 'exists:permissions,id', // Cada permiso debe existir en la tabla de permisos
+        'name' => 'required|unique:roles,name,' . $role->id,
+        'permissions' => 'array',
+        'permissions.*' => 'exists:permissions,id',
     ]);
 
     // Actualizar el nombre del rol
@@ -53,12 +53,14 @@ class RoleController extends Controller
 
     // Sincronizar los permisos
     if ($request->has('permissions')) {
-        $role->syncPermissions($request->permissions); // Sincroniza los permisos con los seleccionados
+        $permissions = \Spatie\Permission\Models\Permission::whereIn('id', $request->permissions)->pluck('name');
+        $role->syncPermissions($permissions); // Sincroniza usando los nombres de los permisos
     }
 
     // Redirigir con un mensaje de éxito
     return redirect()->route('roles.index')->with('success', 'Rol actualizado con éxito.');
 }
+
 
 
 
@@ -75,18 +77,16 @@ class RoleController extends Controller
             'permissions' => 'array|exists:permissions,name',
         ]);
 
-        $role->syncPermissions($request->permissions);
+        if ($request->has('permissions')) {
+            $permissions = \Spatie\Permission\Models\Permission::whereIn('id', $request->permissions)->pluck('name');
+            $role->syncPermissions($permissions); // Sincroniza con los nombres
+        }
+        
 
         return redirect()->route('roles.index')->with('success', 'Permisos asignados con éxito.');
     }
 
-    public function __construct()
-{
-    $this->middleware('permission:ver roles')->only('index');
-    $this->middleware('permission:crear roles')->only(['create', 'store']);
-    $this->middleware('permission:editar roles')->only(['edit', 'update']);
-    $this->middleware('permission:eliminar roles')->only('destroy');
-}
+
 
 
     

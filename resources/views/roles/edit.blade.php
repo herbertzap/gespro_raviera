@@ -18,16 +18,28 @@
                         <input type="text" name="name" id="name" class="form-control" value="{{ $role->name }}" required>
                     </div>
 
-                    <!-- Selección de permisos -->
+                    <!-- Selección de permisos con checkboxes -->
                     <div class="form-group">
                         <label for="permissions">Permisos</label>
-                        <select name="permissions[]" id="permissions" class="form-control" multiple>
+                        <div class="row">
                             @foreach($permissions as $permission)
-                                <option value="{{ $permission->id }}" {{ $role->permissions->contains($permission->id) ? 'selected' : '' }}>
-                                    {{ $permission->name }}
-                                </option>
+                                <div class="col-md-4">
+                                    <div class="form-check">
+                                        <input 
+                                            type="checkbox" 
+                                            name="permissions[]" 
+                                            value="{{ $permission->id }}" 
+                                            class="form-check-input" 
+                                            id="permission-{{ $permission->id }}" 
+                                            {{ $role->permissions->contains($permission->id) ? 'checked' : '' }}
+                                        >
+                                        <label class="form-check-label" for="permission-{{ $permission->id }}">
+                                            {{ $permission->name }}
+                                        </label>
+                                    </div>
+                                </div>
                             @endforeach
-                        </select>
+                        </div>
                     </div>
 
                     <!-- Botones -->
