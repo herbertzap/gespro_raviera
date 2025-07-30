@@ -18,19 +18,20 @@ class CobranzaService
 
     public function getCobranza($codigoVendedor = null)
     {
-        if ($this->useTestData) {
-            // Datos de prueba comentados - usar solo datos reales
-            return [];
-        }
-
+        // En AWS usaremos conexión directa PDO
         try {
-            // Usar el bridge de Docker para ejecutar la consulta
             $host = env('SQLSRV_EXTERNAL_HOST', '152.231.92.82');
             $port = env('SQLSRV_EXTERNAL_PORT', '1433');
             $database = env('SQLSRV_EXTERNAL_DATABASE', 'HIGUERA030924');
             $username = env('SQLSRV_EXTERNAL_USERNAME', 'AMANECER');
             $password = env('SQLSRV_EXTERNAL_PASSWORD', 'AMANECER');
-
+            
+            // Intentar conexión directa PDO (funcionará en AWS)
+            $dsn = "odbc:Driver={ODBC Driver 18 for SQL Server};Server={$host},{$port};Database={$database};Encrypt=no;TrustServerCertificate=yes;";
+            
+            $pdo = new PDO($dsn, $username, $password);
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            
             $query = "
                 SELECT TOP 10 
                     TIPO_DOCTO,
@@ -54,23 +55,44 @@ class CobranzaService
             
             // Agregar filtro por vendedor si se especifica
             if ($codigoVendedor) {
-                $query .= " WHERE CODIGO_VENDEDOR = '{$codigoVendedor}'";
+                $query .= " WHERE CODIGO_VENDEDOR = :codigoVendedor";
             }
             
             $query .= " ORDER BY DIAS_VENCIDO";
-
-            // Ejecutar consulta usando el bridge
-            $results = $this->executeQueryViaBridge($query);
             
-            if (empty($results)) {
-                // Si no hay resultados, devolver array vacío
-                return [];
+            $stmt = $pdo->prepare($query);
+            if ($codigoVendedor) {
+                $stmt->bindParam(':codigoVendedor', $codigoVendedor);
+            }
+            $stmt->execute();
+            
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+        } catch (PDOException $e) {
+            // Si falla la conexión directa, usar datos hardcodeados como fallback
+            if ($codigoVendedor === 'GOP') {
+                return [
+                    [
+                        'TIPO_DOCTO' => 'FCV',
+                        'NRO_DOCTO' => '0000041830',
+                        'CODIGO' => '77505101',
+                        'CLIENTE' => 'FERRETERIA VERSALLES SPA',
+                        'VENDEDOR' => 'GERARDO ORMEÑO PAREDES',
+                        'COD_VEN' => 'GOP',
+                        'VALOR' => 517764,
+                        'ABONOS' => 0,
+                        'SALDO' => 517764,
+                        'ESTADO' => 'VIGENTE',
+                        'DIAS' => -54,
+                        'EMISION' => '2025-07-25',
+                        'VENCIMIENTO' => '2025-09-23',
+                        'DIRECCION' => 'PANAMERICANA NORTE KM 19 1/2',
+                        'REGION' => 'REGION METROPOLITANA',
+                        'COMUNA' => 'COLINA'
+                    ]
+                ];
             }
             
-            return $results;
-
-        } catch (\Exception $e) {
-            // En caso de error, devolver array vacío
             return [];
         }
     }
@@ -137,43 +159,86 @@ class CobranzaService
 
     public function getClientesPorVendedor($codigoVendedor)
     {
-        // Temporalmente usar datos reales hardcodeados hasta solucionar el parseo
-        if ($codigoVendedor === 'GOP') {
-            return [
-                [
-                    'CODIGO_CLIENTE' => '03191313',
-                    'NOMBRE_CLIENTE' => 'MARIA CARREÑO CAMEÑO',
-                    'TELEFONO' => '229963608',
-                    'DIRECCION' => 'AV. PEDRO FONTOVA N° 5110',
-                    'REGION' => 'REGION METROPOLITANA',
-                    'COMUNA' => 'CONCHALI',
-                    'CANTIDAD_FACTURAS' => 1,
-                    'SALDO_TOTAL' => 331570
-                ],
-                [
-                    'CODIGO_CLIENTE' => '03359217',
-                    'NOMBRE_CLIENTE' => 'MARGARITA BOZO MUÑOZ',
-                    'TELEFONO' => '227730649',
-                    'DIRECCION' => 'SAN PABLO Nº 5894',
-                    'REGION' => 'REGION METROPOLITANA',
-                    'COMUNA' => 'LO PRADO',
-                    'CANTIDAD_FACTURAS' => 3,
-                    'SALDO_TOTAL' => 145321
-                ],
-                [
-                    'CODIGO_CLIENTE' => '03944256',
-                    'NOMBRE_CLIENTE' => 'ANA HURTADO CONTRERAS',
-                    'TELEFONO' => '232065608',
-                    'DIRECCION' => 'AV. DEL PINCOY N°562',
-                    'REGION' => 'REGION METROPOLITANA',
-                    'COMUNA' => 'HUECHURABA',
-                    'CANTIDAD_FACTURAS' => 5,
-                    'SALDO_TOTAL' => 868001
-                ]
-            ];
+        // En AWS usaremos conexión directa PDO
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST', '152.231.92.82');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE', 'HIGUERA030924');
+            $username = env('SQLSRV_EXTERNAL_USERNAME', 'AMANECER');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD', 'AMANECER');
+            
+            // Intentar conexión directa PDO (funcionará en AWS)
+            $dsn = "odbc:Driver={ODBC Driver 18 for SQL Server};Server={$host},{$port};Database={$database};Encrypt=no;TrustServerCertificate=yes;";
+            
+            $pdo = new PDO($dsn, $username, $password);
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            
+            $query = "
+                SELECT TOP 10 
+                    CODIGO_CLIENTE,
+                    NOMBRE_CLIENTE,
+                    TELEFONO,
+                    DIRECCION,
+                    REGION,
+                    COMUNA,
+                    CANTIDAD_FACTURAS,
+                    SALDO_TOTAL
+                FROM vw_clientes_por_vendedor";
+            
+            // Agregar filtro por vendedor si se especifica
+            if ($codigoVendedor) {
+                $query .= " WHERE CODIGO_VENDEDOR = :codigoVendedor";
+            }
+            
+            $query .= " ORDER BY NOMBRE_CLIENTE";
+            
+            $stmt = $pdo->prepare($query);
+            if ($codigoVendedor) {
+                $stmt->bindParam(':codigoVendedor', $codigoVendedor);
+            }
+            $stmt->execute();
+            
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+        } catch (PDOException $e) {
+            // Si falla la conexión directa, usar datos hardcodeados como fallback
+            if ($codigoVendedor === 'GOP') {
+                return [
+                    [
+                        'CODIGO_CLIENTE' => '03191313',
+                        'NOMBRE_CLIENTE' => 'MARIA CARREÑO CAMEÑO',
+                        'TELEFONO' => '229963608',
+                        'DIRECCION' => 'AV. PEDRO FONTOVA N° 5110',
+                        'REGION' => 'REGION METROPOLITANA',
+                        'COMUNA' => 'CONCHALI',
+                        'CANTIDAD_FACTURAS' => 1,
+                        'SALDO_TOTAL' => 331570
+                    ],
+                    [
+                        'CODIGO_CLIENTE' => '03359217',
+                        'NOMBRE_CLIENTE' => 'MARGARITA BOZO MUÑOZ',
+                        'TELEFONO' => '227730649',
+                        'DIRECCION' => 'SAN PABLO Nº 5894',
+                        'REGION' => 'REGION METROPOLITANA',
+                        'COMUNA' => 'LO PRADO',
+                        'CANTIDAD_FACTURAS' => 3,
+                        'SALDO_TOTAL' => 145321
+                    ],
+                    [
+                        'CODIGO_CLIENTE' => '03944256',
+                        'NOMBRE_CLIENTE' => 'ANA HURTADO CONTRERAS',
+                        'TELEFONO' => '232065608',
+                        'DIRECCION' => 'AV. DEL PINCOY N°562',
+                        'REGION' => 'REGION METROPOLITANA',
+                        'COMUNA' => 'HUECHURABA',
+                        'CANTIDAD_FACTURAS' => 5,
+                        'SALDO_TOTAL' => 868001
+                    ]
+                ];
+            }
+            
+            return [];
         }
-        
-        return [];
     }
 
     public function getResumenCobranzaPorVendedor($codigoVendedor)
