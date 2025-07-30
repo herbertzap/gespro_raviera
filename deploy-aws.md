@@ -104,6 +104,8 @@ sudo chmod -R 775 storage bootstrap/cache
 
 ### 5. Configurar .env para AWS
 
+**⚠️ IMPORTANTE:** Las credenciales del SQL Server externo deben configurarse con los valores reales de tu servidor. Los valores mostrados son solo ejemplos.
+
 ```env
 APP_NAME="GesPro Raviera"
 APP_ENV=production
@@ -123,11 +125,11 @@ DB_USERNAME=gespro_user
 DB_PASSWORD=tu-password-seguro
 
 # Configuración SQL Server externo
-SQLSRV_EXTERNAL_HOST=152.231.92.82
+SQLSRV_EXTERNAL_HOST=tu-servidor-sql.com
 SQLSRV_EXTERNAL_PORT=1433
-SQLSRV_EXTERNAL_DATABASE=HIGUERA030924
-SQLSRV_EXTERNAL_USERNAME=AMANECER
-SQLSRV_EXTERNAL_PASSWORD=AMANECER
+SQLSRV_EXTERNAL_DATABASE=tu_base_de_datos
+SQLSRV_EXTERNAL_USERNAME=tu_usuario
+SQLSRV_EXTERNAL_PASSWORD=tu_password_seguro
 
 BROADCAST_DRIVER=log
 CACHE_DRIVER=file

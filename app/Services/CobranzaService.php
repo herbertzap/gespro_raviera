@@ -20,11 +20,16 @@ class CobranzaService
     {
         // En AWS usaremos conexión directa PDO
         try {
-            $host = env('SQLSRV_EXTERNAL_HOST', '152.231.92.82');
+            $host = env('SQLSRV_EXTERNAL_HOST');
             $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE', 'HIGUERA030924');
-            $username = env('SQLSRV_EXTERNAL_USERNAME', 'AMANECER');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD', 'AMANECER');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            // Verificar que las credenciales estén configuradas
+            if (!$host || !$database || !$username || !$password) {
+                throw new \Exception('Credenciales SQL Server no configuradas en .env');
+            }
             
             // Intentar conexión directa PDO (funcionará en AWS)
             $dsn = "odbc:Driver={ODBC Driver 18 for SQL Server};Server={$host},{$port};Database={$database};Encrypt=no;TrustServerCertificate=yes;";
@@ -161,11 +166,16 @@ class CobranzaService
     {
         // En AWS usaremos conexión directa PDO
         try {
-            $host = env('SQLSRV_EXTERNAL_HOST', '152.231.92.82');
+            $host = env('SQLSRV_EXTERNAL_HOST');
             $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE', 'HIGUERA030924');
-            $username = env('SQLSRV_EXTERNAL_USERNAME', 'AMANECER');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD', 'AMANECER');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            // Verificar que las credenciales estén configuradas
+            if (!$host || !$database || !$username || !$password) {
+                throw new \Exception('Credenciales SQL Server no configuradas en .env');
+            }
             
             // Intentar conexión directa PDO (funcionará en AWS)
             $dsn = "odbc:Driver={ODBC Driver 18 for SQL Server};Server={$host},{$port};Database={$database};Encrypt=no;TrustServerCertificate=yes;";
@@ -472,11 +482,16 @@ class CobranzaService
 
     private function executeQueryViaBridge($query)
     {
-        $host = env('SQLSRV_EXTERNAL_HOST', '152.231.92.82');
+        $host = env('SQLSRV_EXTERNAL_HOST');
         $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-        $database = env('SQLSRV_EXTERNAL_DATABASE', 'HIGUERA030924');
-        $username = env('SQLSRV_EXTERNAL_USERNAME', 'AMANECER');
-        $password = env('SQLSRV_EXTERNAL_PASSWORD', 'AMANECER');
+        $database = env('SQLSRV_EXTERNAL_DATABASE');
+        $username = env('SQLSRV_EXTERNAL_USERNAME');
+        $password = env('SQLSRV_EXTERNAL_PASSWORD');
+        
+        // Verificar que las credenciales estén configuradas
+        if (!$host || !$database || !$username || !$password) {
+            throw new \Exception('Credenciales SQL Server no configuradas en .env');
+        }
 
                        // Ejecutar consulta usando tsql en modo interactivo
                $queryWithGo = $query . "\ngo\nquit";

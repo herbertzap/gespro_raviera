@@ -14,11 +14,22 @@ class CreateViews extends Command
         $this->info("Creating SQL Server views...");
 
         // Ejecutar ambos scripts SQL
-        $host = env('SQLSRV_EXTERNAL_HOST', '152.231.92.82');
-        $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-        $database = env('SQLSRV_EXTERNAL_DATABASE', 'HIGUERA030924');
-        $username = env('SQLSRV_EXTERNAL_USERNAME', 'AMANECER');
-        $password = env('SQLSRV_EXTERNAL_PASSWORD', 'AMANECER');
+                       $host = env('SQLSRV_EXTERNAL_HOST');
+               $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+               $database = env('SQLSRV_EXTERNAL_DATABASE');
+               $username = env('SQLSRV_EXTERNAL_USERNAME');
+               $password = env('SQLSRV_EXTERNAL_PASSWORD');
+               
+               // Verificar que las credenciales estén configuradas
+               if (!$host || !$database || !$username || !$password) {
+                   $this->error("❌ Credenciales SQL Server no configuradas en .env");
+                   $this->info("Asegúrate de configurar:");
+                   $this->info("SQLSRV_EXTERNAL_HOST");
+                   $this->info("SQLSRV_EXTERNAL_DATABASE");
+                   $this->info("SQLSRV_EXTERNAL_USERNAME");
+                   $this->info("SQLSRV_EXTERNAL_PASSWORD");
+                   return 1;
+               }
 
         // Crear vista de cobranza
         $this->info("Creating cobranza view...");
