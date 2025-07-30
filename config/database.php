@@ -95,7 +95,24 @@ return [
                 'trust_server_certificate' => true, // Configuración para confiar en el certificado
                 't-sql' => true, // Configuración adicional opcional
             ],
-            
+        ],
+
+        'sqlsrv_external' => [
+            'driver' => 'sqlsrv',
+            'host' => env('SQLSRV_EXTERNAL_HOST', 'localhost'),
+            'port' => env('SQLSRV_EXTERNAL_PORT', '1433'),
+            'database' => env('SQLSRV_EXTERNAL_DATABASE', 'forge'),
+            'username' => env('SQLSRV_EXTERNAL_USERNAME', 'forge'),
+            'password' => env('SQLSRV_EXTERNAL_PASSWORD', ''),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'encrypt' => env('SQLSRV_EXTERNAL_ENCRYPT', 'yes'),
+            'trust_server_certificate' => env('SQLSRV_EXTERNAL_TRUST_SERVER_CERTIFICATE', 'true'),
+            'options' => [
+                'trust_server_certificate' => true,
+                't-sql' => true,
+            ],
         ],
 
     ],

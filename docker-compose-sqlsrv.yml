@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  sqlserver-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.sqlserver-bridge
+    container_name: sqlserver_bridge
+    environment:
+      ACCEPT_EULA: 1
+      MSSQL_SA_PASSWORD: BridgePassword123
+      MSSQL_PID: Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserverdata:/var/opt/mssql
+      - ./sql-scripts:/sql-scripts
+    # El contenedor se mantiene corriendo con tail -f /dev/null
+
+volumes:
+  sqlserverdata: 

@@ -1,36 +1,46 @@
-# Usa la imagen base de PHP con las extensiones necesarias
-FROM php:8.0-fpm
+FROM php:8.2-apache
 
-# Instala dependencias del sistema
+# Instalar dependencias del sistema
 RUN apt-get update && apt-get install -y \
+    libzip-dev \
+    zip \
+    unzip \
+    git \
+    curl \
     libpng-dev \
     libjpeg-dev \
     libfreetype6-dev \
-    zip \
-    unzip \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install gd
+    unixodbc-dev \
+    gcc \
+    g++ \
+    make \
+    autoconf \
+    libc-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 
-# Instala extensiones de PHP requeridas por Laravel
-RUN docker-php-ext-install pdo pdo_mysql
+# Instalar extensiones de PHP
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) gd pdo pdo_mysql zip
 
-# Configura el directorio de trabajo
-WORKDIR /var/www
+# Instalar Composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
-# Copia el código fuente
-COPY . .
+# Instalar drivers de SQL Server
+RUN pecl install pdo_sqlsrv sqlsrv \
+    && docker-php-ext-enable pdo_sqlsrv sqlsrv
 
-# Ajusta permisos para el usuario web
-RUN chown -R www-data:www-data /var/www
+# Habilitar mod_rewrite para Apache
+RUN a2enmod rewrite
 
-# Instala Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+# Configurar Apache para Laravel
+RUN sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html/public|g' /etc/apache2/sites-available/000-default.conf
 
-# Ejecuta Composer para instalar las dependencias de Laravel
-RUN composer install
+# Configurar permisos
+RUN chown -R www-data:www-data /var/www/html
 
-# Exponer el puerto
-EXPOSE 9000
+# Exponer puerto 80
+EXPOSE 80
 
 # Comando por defecto
-CMD ["php-fpm"]
+CMD ["apache2-foreground"]

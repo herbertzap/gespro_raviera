@@ -16,8 +16,21 @@ use App\Http\Controllers\{
 
 // Página de inicio
 Route::get('/', function () {
-    return view('welcome');
+    return redirect()->route('dashboard');
 });
+
+// Dashboard
+Route::get('/dashboard', [App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard')->middleware('auth');
+
+// Rutas de Cobranza
+Route::get('/cobranza', [App\Http\Controllers\CobranzaController::class, 'index'])->name('cobranza.index')->middleware('auth');
+Route::get('/cobranza/export', [App\Http\Controllers\CobranzaController::class, 'export'])->name('cobranza.export')->middleware('auth');
+
+// Rutas de Clientes
+Route::get('/clientes', [App\Http\Controllers\ClienteController::class, 'index'])->name('clientes.index')->middleware('auth');
+Route::post('/clientes/buscar', [App\Http\Controllers\ClienteController::class, 'buscar'])->name('clientes.buscar')->middleware('auth');
+Route::post('/clientes/validar', [App\Http\Controllers\ClienteController::class, 'validar'])->name('clientes.validar')->middleware('auth');
+Route::get('/clientes/{codigoCliente}/facturas', [App\Http\Controllers\ClienteController::class, 'facturasPendientes'])->name('clientes.facturas')->middleware('auth');
 
 // Autenticación
 Auth::routes();
@@ -30,11 +43,10 @@ Route::middleware(['auth'])->group(function () {
     // **Gestión de Usuarios**
     Route::middleware('permission:gestionar usuarios')->group(function () {
         Route::resource('user', UserController::class)->except('show');
+        Route::resource('users', UserController::class)->except('show'); // Alias para compatibilidad
         Route::post('user/{user}/assign-role', [UserController::class, 'assignRole'])->name('user.assign-role');
         Route::get('/users/create', [UserController::class, 'create'])->name('users.create');
         Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
-
-
     });
 
     // **Gestión de Roles**

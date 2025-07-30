@@ -1,18 +1,26 @@
 version: '3.8'
 
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: laravel_mysql
+  sqlserver:
+    image: mcr.microsoft.com/azure-sql-edge
+    container_name: laravel_sqlserver
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: laravel
-      MYSQL_USER: laravel
-      MYSQL_PASSWORD: secret
+      ACCEPT_EULA: 1
+      MSSQL_SA_PASSWORD: 62032597Hz
     volumes:
-      - mysql_data:/var/lib/mysql
+      - sqlserverdata:/var/opt/mssql
     ports:
-      - "3306:3306"
+      - "1433:1433"
+  laravel:
+    build: .
+    container_name: laravel
+    working_dir: /var/www/html
+    ports:
+      - "8080:80"
+    volumes:
+      - ./:/var/www/html
+    depends_on:
+      - sqlserver
 
 volumes:
-  mysql_data:
+  sqlserverdata:
