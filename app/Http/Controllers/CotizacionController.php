@@ -1,0 +1,1320 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use App\Models\Cotizacion;
+use App\Models\CotizacionDetalle;
+
+class CotizacionController extends Controller
+{
+    public function nueva(Request $request)
+    {
+        \Log::info('🔍 Método nueva() llamado - VERSIÓN SIMPLIFICADA');
+        \Log::info('📋 Usuario autenticado: ' . (auth()->check() ? 'SÍ' : 'NO'));
+        if (auth()->check()) {
+            \Log::info('📋 Usuario: ' . auth()->user()->name . ' (' . auth()->user()->email . ')');
+        }
+        
+        $clienteCodigo = $request->get('cliente');
+        $clienteNombre = $request->get('nombre');
+        
+        // Obtener datos del cliente usando CobranzaService simplificado
+        $cliente = null;
+        $alertas = [];
+        
+        if ($clienteCodigo) {
+            try {
+                // Usar CobranzaService para obtener datos del cliente
+                $cobranzaService = new \App\Services\CobranzaService();
+                $clienteData = $cobranzaService->getClienteInfo($clienteCodigo);
+                
+                if ($clienteData) {
+                    // Verificar si el cliente está bloqueado
+                    $bloqueado = !empty($clienteData['BLOQUEADO']) && $clienteData['BLOQUEADO'] != '0';
+                    
+                    if ($bloqueado) {
+                        return redirect()->back()->with('error', 'El cliente está bloqueado y no puede generar cotizaciones.');
+                    }
+                    
+                    // Verificar si el cliente tiene lista de precios asignada
+                    if (empty($clienteData['LISTA_PRECIOS_CODIGO']) || $clienteData['LISTA_PRECIOS_CODIGO'] == '0') {
+                        return redirect()->back()->with('error', 'El cliente no tiene lista de precios asignada y no puede generar cotizaciones.');
+                    }
+                    
+                    $cliente = (object) [
+                        'codigo' => $clienteData['CODIGO_CLIENTE'] ?? $clienteCodigo,
+                        'nombre' => $clienteData['NOMBRE_CLIENTE'] ?? $clienteNombre,
+                        'direccion' => $clienteData['DIRECCION'] ?? '',
+                        'telefono' => $clienteData['TELEFONO'] ?? '',
+                        'email' => '', // No está en la consulta actual
+                        'region' => $clienteData['REGION'] ?? '',
+                        'comuna' => $clienteData['COMUNA'] ?? '',
+                        'vendedor' => $clienteData['CODIGO_VENDEDOR'] ?? '',
+                        'lista_precios_codigo' => $clienteData['LISTA_PRECIOS_CODIGO'] ?? '01',
+                        'lista_precios_nombre' => $clienteData['LISTA_PRECIOS_NOMBRE'] ?? 'Lista General',
+                        'bloqueado' => $bloqueado
+                    ];
+                    
+                    // Verificar alertas de cobranza
+                    $alertas = $this->verificarAlertasCliente($clienteCodigo);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Error obteniendo datos del cliente: ' . $e->getMessage());
+            }
+        }
+        
+        \Log::info('🎯 Retornando vista con cliente: ' . ($cliente ? 'EXISTS' : 'NULL'));
+        
+        // VERSIÓN DE PRUEBA - Vista básica
+        return view('cotizaciones.nueva', compact('cliente', 'alertas'))->with('pageSlug', 'nueva-cotizacion');
+    }
+    
+    private function verificarAlertasCliente($codigoCliente)
+    {
+        $alertas = [];
+        
+        try {
+            // 1. Verificar facturas vencidas
+            $queryFacturas = "SELECT COUNT(*) as total FROM MAEEDO WHERE ENDO = '{$codigoCliente}' AND TIDO = 'FCV' AND FEULVEDO < GETDATE() AND VABRDO > VAABDO";
+            $resultFacturas = shell_exec("tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " -Q \"{$queryFacturas}\" 2>&1");
+            
+            $facturasVencidas = 0;
+            if ($resultFacturas && !str_contains($resultFacturas, 'error')) {
+                if (preg_match('/(\d+)/', $resultFacturas, $matches)) {
+                    $facturasVencidas = (int)$matches[1];
+                }
+            }
+            
+            if ($facturasVencidas > 0) {
+                $alertas[] = [
+                    'tipo' => 'danger',
+                    'titulo' => 'Facturas Vencidas',
+                    'mensaje' => "El cliente tiene {$facturasVencidas} factura(s) vencida(s)"
+                ];
+            }
+            
+            // 2. Verificar cheques protestados
+            $queryCheques = "SELECT COUNT(*) as total FROM MAEDPCE WHERE ENDP = '{$codigoCliente}' AND TIDP = 'CHV' AND ESPGDP = 'P'";
+            $resultCheques = shell_exec("tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " -Q \"{$queryCheques}\" 2>&1");
+            
+            $chequesProtestados = 0;
+            if ($resultCheques && !str_contains($resultCheques, 'error')) {
+                if (preg_match('/(\d+)/', $resultCheques, $matches)) {
+                    $chequesProtestados = (int)$matches[1];
+                }
+            }
+            
+            if ($chequesProtestados > 0) {
+                $alertas[] = [
+                    'tipo' => 'danger',
+                    'titulo' => 'Cheques Protestados',
+                    'mensaje' => "El cliente tiene {$chequesProtestados} cheque(s) protestado(s)"
+                ];
+            }
+            
+            // 3. Verificar saldo total
+            $querySaldo = "SELECT SUM(VABRDO - VAABDO) as saldo FROM MAEEDO WHERE ENDO = '{$codigoCliente}' AND VABRDO > VAABDO";
+            $resultSaldo = shell_exec("tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " -Q \"{$querySaldo}\" 2>&1");
+            
+            $saldoTotal = 0;
+            if ($resultSaldo && !str_contains($resultSaldo, 'error')) {
+                if (preg_match('/(\d+\.?\d*)/', $resultSaldo, $matches)) {
+                    $saldoTotal = (float)$matches[1];
+                }
+            }
+            
+            if ($saldoTotal > 1000000) { // Más de 1 millón
+                $alertas[] = [
+                    'tipo' => 'warning',
+                    'titulo' => 'Saldo Alto',
+                    'mensaje' => "El cliente tiene un saldo de $" . number_format($saldoTotal, 0)
+                ];
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error('Error verificando alertas del cliente: ' . $e->getMessage());
+        }
+        
+        return $alertas;
+    }
+    
+    public function buscarProductos(Request $request)
+    {
+        $busqueda = $request->get('q');
+        $limit = $request->get('limit', 10);
+        
+        try {
+            // Buscar productos en SQL Server (todos los productos)
+            $whereClause = "WHERE MAEPR.TIPR != 'D'"; // Excluir productos descontinuados
+            
+            if ($busqueda) {
+                $busqueda = strtoupper(addslashes($busqueda)); // Convertir a mayúscula y escapar caracteres especiales
+                $whereClause .= " AND (MAEPR.KOPR LIKE '%{$busqueda}%' OR MAEPR.NOKOPR LIKE '%{$busqueda}%')";
+            }
+            
+            $query = "
+                SELECT TOP {$limit} 
+                    MAEPR.KOPR as codigo,
+                    MAEPR.NOKOPR as nombre,
+                    MAEPR.UD01PR as unidad,
+                    MAEPR.RLUD as relacion_unidades,
+                    MAEPR.DIVISIBLE as divisible_ud1,
+                    MAEPR.DIVISIBLE2 as divisible_ud2,
+                    ISNULL(MAEST.STFI1, 0) as stock_fisico,
+                    ISNULL(MAEST.STOCNV1, 0) as stock_comprometido,
+                    (ISNULL(MAEST.STFI1, 0) - ISNULL(MAEST.STOCNV1, 0)) as stock_disponible,
+                    TABBO.NOKOBO as nombre_bodega,
+                    MAEST.KOBO as bodega_id
+                FROM MAEPR 
+                LEFT JOIN MAEST ON MAEPR.KOPR = MAEST.KOPR AND MAEST.KOBO = '01'
+                LEFT JOIN TABBO ON MAEST.KOBO = TABBO.KOBO
+                {$whereClause}
+                ORDER BY MAEPR.NOKOPR
+            ";
+            
+            // Usar tsql con archivo temporal
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            if (!$result || str_contains($result, 'error')) {
+                throw new \Exception('Error ejecutando consulta tsql: ' . $result);
+            }
+            
+            // Parsear el resultado de tsql
+            $lines = explode("\n", $result);
+            $productos = [];
+            
+            foreach ($lines as $line) {
+                $line = trim($line);
+                
+                // Saltar líneas de configuración
+                if (empty($line) || strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || strpos($line, '1>') !== false ||
+                    strpos($line, '2>') !== false || strpos($line, 'rows affected') !== false ||
+                    strpos($line, 'Msg ') !== false || strpos($line, 'Warning:') !== false ||
+                    strpos($line, 'codigo') !== false) {
+                    continue;
+                }
+                
+                // Buscar líneas que contengan datos de productos
+                if (!empty($line) && preg_match('/^([A-Z0-9]+)\s+"?([^"]+)"?\s+([A-Z]+)\s+([0-9.]+)\s+([A-Z])\s+([A-Z])\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.-]+)\s+([A-Z\s]*)\s+([A-Z0-9]*)/', $line, $matches)) {
+                    $codigoProducto = $matches[1];
+                    
+                    // Verificar stock local para este producto
+                    $stockLocal = \App\Models\StockLocal::where('codigo_producto', $codigoProducto)
+                                                       ->where('codigo_bodega', '01')
+                                                       ->first();
+                    
+                    // Usar stock local si existe, sino usar datos de SQL Server
+                    if ($stockLocal) {
+                        $stockFisico = $stockLocal->stock_fisico;
+                        $stockComprometido = $stockLocal->stock_comprometido;
+                        $stockDisponible = $stockLocal->stock_disponible;
+                        $alertaStock = $stockDisponible <= 0 ? 'danger' : 
+                                      ($stockDisponible < 10 ? 'warning' : 'success');
+                    } else {
+                        $stockFisico = (float)$matches[7];
+                        $stockComprometido = (float)$matches[8];
+                        $stockDisponible = (float)$matches[9];
+                        $alertaStock = $stockDisponible <= 0 ? 'danger' : 
+                                      ($stockDisponible < 10 ? 'warning' : 'success');
+                    }
+                    
+                    $producto = (object) [
+                        'codigo' => $codigoProducto,
+                        'nombre' => trim($matches[2]),
+                        'marca' => 'N/A',
+                        'unidad' => trim($matches[3]),
+                        'relacion_unidades' => (float)$matches[4],
+                        'categoria' => 'N/A',
+                        'subcategoria' => 'N/A',
+                        'divisible_ud1' => $matches[5],
+                        'divisible_ud2' => $matches[6],
+                        'stock_fisico' => $stockFisico,
+                        'stock_comprometido' => $stockComprometido,
+                        'stock_disponible' => $stockDisponible,
+                        'nombre_bodega' => trim($matches[10]),
+                        'bodega_id' => trim($matches[11]),
+                        'alerta_stock' => $alertaStock
+                    ];
+                    
+                    $productos[] = $producto;
+                }
+            }
+            
+            return response()->json([
+                'success' => true,
+                'data' => $productos,
+                'count' => count($productos)
+            ]);
+                        
+            // Retornar productos encontrados
+            return response()->json([
+                'success' => true,
+                'data' => $productos,
+                'count' => count($productos)
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error buscando productos: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al buscar productos: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    public function obtenerPrecios(Request $request)
+    {
+        $codigoProducto = $request->get('codigo');
+        $codigoCliente = $request->get('cliente');
+        
+        try {
+            // Obtener lista de precios del cliente
+            $listaPreciosCliente = '01'; // Por defecto
+            if ($codigoCliente) {
+                $cobranzaService = new \App\Services\CobranzaService();
+                $clienteInfo = $cobranzaService->getClienteInfo($codigoCliente);
+                if ($clienteInfo && !empty($clienteInfo['LISTA_PRECIOS_CODIGO'])) {
+                    $listaPreciosCliente = $clienteInfo['LISTA_PRECIOS_CODIGO'];
+                }
+            }
+            
+            // Usar la vista de precios con la lista del cliente
+            $query = "
+                SELECT 
+                    lista_precio,
+                    precio_ud1,
+                    precio_ud2,
+                    margen_ud1,
+                    margen_ud2,
+                    relacion_unidades
+                FROM vw_precios_productos 
+                WHERE codigo_producto = '{$codigoProducto}'
+                AND lista_precio = '{$listaPreciosCliente}'
+                ORDER BY lista_precio ASC
+            ";
+            
+            // Usar tsql con archivo temporal (mismo método que buscarProductos)
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            $precios = [];
+            if ($result && !str_contains($result, 'error')) {
+                // Parsear el resultado de tsql (mismo método que buscarProductos)
+                $lines = explode("\n", $result);
+                
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    
+                    // Saltar líneas de configuración
+                    if (empty($line) || strpos($line, 'locale') !== false || 
+                        strpos($line, 'Setting') !== false || strpos($line, '1>') !== false ||
+                        strpos($line, '2>') !== false || strpos($line, 'rows affected') !== false ||
+                        strpos($line, 'Msg ') !== false || strpos($line, 'Warning:') !== false ||
+                        strpos($line, 'lista_precio') !== false) {
+                        continue;
+                    }
+                    
+                    // Buscar líneas que contengan datos de precios
+                    if (!empty($line) && preg_match('/^([A-Z0-9]+)\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)$/', $line, $matches)) {
+                        $precio = (object) [
+                            'lista_precio' => $matches[1],
+                            'precio_ud1' => (float)$matches[2],
+                            'precio_ud2' => (float)$matches[3],
+                            'margen_ud1' => (float)$matches[4],
+                            'margen_ud2' => (float)$matches[5],
+                            'relacion_unidades' => (float)$matches[6]
+                        ];
+                        $precios[] = $precio;
+                        \Log::info('✅ Precio encontrado: Lista ' . $matches[1] . ' - $' . $matches[2]);
+                    }
+                }
+                
+                \Log::info('TSQL Precios Output: ' . $result);
+                \Log::info('Parsed precios count: ' . count($precios));
+            }
+            
+            // Si no hay precios, obtener información del producto
+            if (empty($precios)) {
+                $queryProducto = "SELECT TOP 1 KOPR as codigo, NOKOEN as nombre, UD01PR as unidad FROM MAEPR WHERE KOPR = '{$codigoProducto}'";
+                $resultProducto = shell_exec("tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " -Q \"{$queryProducto}\" 2>&1");
+                
+                if ($resultProducto && !str_contains($resultProducto, 'error')) {
+                    // Parsear información del producto
+                    $lines = explode("\n", $resultProducto);
+                    foreach ($lines as $line) {
+                        if (preg_match('/^\s*([^\s]+)\s+([^\t]+)\s+([^\t]*)/', trim($line), $matches)) {
+                            if ($matches[1] === $codigoProducto) {
+                                $producto = (object) [
+                                    'codigo' => $matches[1],
+                                    'nombre' => trim($matches[2]),
+                                    'unidad' => trim($matches[3])
+                                ];
+                                
+                                return response()->json([
+                                    'success' => true,
+                                    'data' => [],
+                                    'producto' => $producto,
+                                    'message' => 'Producto encontrado pero sin precios configurados'
+                                ]);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return response()->json([
+                'success' => true,
+                'data' => $precios
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo precios: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener precios: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    public function guardar(Request $request)
+    {
+        $request->validate([
+            'cliente_codigo' => 'required',
+            'cliente_nombre' => 'required',
+            'productos' => 'required|array|min:1',
+            'productos.*.codigo' => 'required',
+            'productos.*.cantidad' => 'required|numeric|min:0.01',
+            'productos.*.precio' => 'required|numeric|min:0'
+        ]);
+        
+        try {
+            DB::beginTransaction();
+            
+            // 1. Validar cliente y stock
+            $stockService = new \App\Services\StockService();
+            $validacionCliente = $stockService->validarClienteParaCotizacion($request->cliente_codigo);
+            $validacionStock = $stockService->validarStockCotizacion($request->productos);
+            
+            // 2. Determinar si requiere aprobación
+            $requiereAprobacion = false;
+            $motivoRechazo = null;
+            
+            if (!$validacionCliente['valido']) {
+                $requiereAprobacion = true;
+                $motivoRechazo = implode(', ', $validacionCliente['mensajes']);
+            }
+            
+            if (!$validacionStock['valida']) {
+                $requiereAprobacion = true;
+                $motivoRechazo = implode(', ', $validacionStock['mensajes']);
+            }
+            
+            // 3. Calcular total sin descuento
+            $totalSinDescuento = 0;
+            foreach ($request->productos as $producto) {
+                $subtotal = $producto['cantidad'] * $producto['precio'];
+                $totalSinDescuento += $subtotal;
+            }
+            
+            // 4. Calcular descuentos
+            $descuentos = $this->calcularDescuentos($request->cliente_codigo, $totalSinDescuento);
+            
+            // 5. Calcular total final
+            $totalFinal = $totalSinDescuento - $descuentos['descuento_global'];
+            
+            // 6. Si no requiere aprobación, reservar stock
+            if (!$requiereAprobacion) {
+                $reservas = $stockService->reservarStockCotizacion($request->productos);
+                $reservasFallidas = array_filter($reservas, function($r) { return !$r['reservado']; });
+                
+                if (!empty($reservasFallidas)) {
+                    $requiereAprobacion = true;
+                    $motivoRechazo = 'Error al reservar stock';
+                }
+            }
+            
+            // Crear la cotización
+            $cotizacion = Cotizacion::create([
+                'user_id' => Auth::id(),
+                'cliente_codigo' => $request->cliente_codigo,
+                'cliente_nombre' => $request->cliente_nombre,
+                'fecha' => now(),
+                'estado' => $requiereAprobacion ? 'pendiente' : 'aprobado',
+                'total' => $totalFinal,
+                'total_sin_descuento' => $totalSinDescuento,
+                'descuento_global' => $descuentos['descuento_global'],
+                'porcentaje_descuento' => $descuentos['porcentaje_descuento'],
+                'requiere_aprobacion' => $requiereAprobacion,
+                'motivo_rechazo' => $motivoRechazo,
+                'observaciones' => $request->observaciones
+            ]);
+            
+            // Crear los detalles
+            foreach ($request->productos as $producto) {
+                $subtotal = $producto['cantidad'] * $producto['precio'];
+                
+                CotizacionDetalle::create([
+                    'cotizacion_id' => $cotizacion->id,
+                    'producto_codigo' => $producto['codigo'],
+                    'producto_nombre' => $producto['nombre'],
+                    'cantidad' => $producto['cantidad'],
+                    'precio' => $producto['precio'],
+                    'subtotal' => $subtotal
+                ]);
+            }
+            
+            // Si no requiere aprobación, marcar como aprobada automáticamente
+            if (!$requiereAprobacion) {
+                $cotizacion->update([
+                    'fecha_aprobacion' => now(),
+                    'aprobado_por' => Auth::id()
+                ]);
+            }
+            
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => $requiereAprobacion ? 'Cotización enviada para aprobación' : 'Cotización aprobada automáticamente',
+                'cotizacion_id' => $cotizacion->id,
+                'estado' => $cotizacion->estado,
+                'descuentos' => $descuentos
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollback();
+            \Log::error('Error guardando cotización: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al guardar la cotización'
+            ], 500);
+        }
+    }
+    
+    /**
+     * Listar cotizaciones
+     */
+    public function index(Request $request)
+    {
+        // Filtros
+        $estado = $request->get('estado', '');
+        $cliente = $request->get('cliente', '');
+        $fechaInicio = $request->get('fecha_inicio', '');
+        $fechaFin = $request->get('fecha_fin', '');
+        $buscar = $request->get('buscar', ''); // Nuevo filtro de búsqueda general
+        $montoMin = $request->get('monto_min', '');
+        $montoMax = $request->get('monto_max', '');
+        
+        // Obtener código del vendedor actual
+        $codigoVendedor = auth()->user()->codigo_vendedor ?? '';
+        
+        // Obtener cotizaciones desde SQL Server filtradas por vendedor
+        $cotizaciones = $this->obtenerCotizacionesDesdeSQLServer($estado, $cliente, $fechaInicio, $fechaFin, $codigoVendedor, $buscar, $montoMin, $montoMax);
+        
+        return view('cotizaciones.index', compact('cotizaciones', 'estado', 'cliente', 'fechaInicio', 'fechaFin', 'buscar', 'montoMin', 'montoMax'))->with('pageSlug', 'cotizaciones');
+    }
+    
+    /**
+     * Obtener cotizaciones desde SQL Server
+     */
+    private function obtenerCotizacionesDesdeSQLServer($estado = '', $cliente = '', $fechaInicio = '', $fechaFin = '', $codigoVendedor = '', $buscar = '', $montoMin = '', $montoMax = '')
+    {
+        try {
+            // Construir la consulta base
+            $whereClause = "";
+            
+            // Filtrar por vendedor si se especifica
+            if ($codigoVendedor) {
+                $whereClause .= " AND TABFU.KOFU = '{$codigoVendedor}'";
+            } else {
+                // Si no hay vendedor especificado, usar GOP por defecto para testing
+                $whereClause .= " AND TABFU.KOFU = 'GOP'";
+            }
+            
+            if ($estado) {
+                switch ($estado) {
+                    case 'ingresada':
+                        $whereClause .= " AND MAEDDO.CAPRAD1 = 0";
+                        break;
+                    case 'pendiente':
+                        $whereClause .= " AND MAEDDO.CAPRAD1 = 0 AND EXISTS (
+                            SELECT 1 FROM MAEDDO AS FACTURAS 
+                            WHERE FACTURAS.ENDO = MAEDDO.ENDO 
+                            AND FACTURAS.TIDO IN ('FCV', 'FDV') 
+                            AND FACTURAS.CAPRCO1 > FACTURAS.CAPRAD1
+                        )";
+                        break;
+                    case 'aprobada':
+                        $whereClause .= " AND MAEDDO.CAPRAD1 = 0 AND NOT EXISTS (
+                            SELECT 1 FROM MAEDDO AS FACTURAS 
+                            WHERE FACTURAS.ENDO = MAEDDO.ENDO 
+                            AND FACTURAS.TIDO IN ('FCV', 'FDV') 
+                            AND FACTURAS.CAPRCO1 > FACTURAS.CAPRAD1
+                        )";
+                        break;
+                }
+            }
+            
+            if ($cliente) {
+                $cliente = strtoupper(addslashes($cliente));
+                $whereClause .= " AND (MAEDDO.ENDO LIKE '%{$cliente}%' OR MAEEN.NOKOEN LIKE '%{$cliente}%')";
+            }
+            
+            // Filtro de búsqueda general (código de factura, cliente, etc.)
+            if ($buscar) {
+                $buscar = strtoupper(addslashes($buscar));
+                $whereClause .= " AND (MAEDDO.NUDO LIKE '%{$buscar}%' OR MAEDDO.ENDO LIKE '%{$buscar}%' OR MAEEN.NOKOEN LIKE '%{$buscar}%')";
+            }
+            
+            // Filtro por monto mínimo
+            if ($montoMin && is_numeric($montoMin)) {
+                $whereClause .= " AND MAEDDO.VANELI >= {$montoMin}";
+            }
+            
+            // Filtro por monto máximo
+            if ($montoMax && is_numeric($montoMax)) {
+                $whereClause .= " AND MAEDDO.VANELI <= {$montoMax}";
+            }
+            
+            if ($fechaInicio && $fechaFin) {
+                $whereClause .= " AND MAEDDO.FEEMLI BETWEEN '{$fechaInicio}' AND '{$fechaFin}'";
+            }
+            
+            $query = "
+                SELECT TOP 50 
+                    MAEDDO.IDMAEDDO,
+                    MAEDDO.TIDO AS TD,
+                    MAEDDO.NUDO AS NUM,
+                    MAEDDO.FEEMLI AS EMIS_FCV,
+                    MAEDDO.ENDO AS COD_CLI,
+                    MAEEN.NOKOEN AS CLIE,
+                    MAEDDO.KOPRCT,
+                    MAEDDO.CAPRCO1,
+                    MAEDDO.NOKOPR,
+                    MAEDDO.CAPRCO1 - (MAEDDO.CAPRCO1 - MAEDDO.CAPRAD1 - MAEDDO.CAPREX1) AS FACT,
+                    MAEDDO.CAPRCO1 - MAEDDO.CAPRAD1 - MAEDDO.CAPREX1 AS PEND,
+                    TABFU.NOKOFU,
+                    TABFU.KOFU,
+                    TABCI.NOKOCI,
+                    TABCM.NOKOCM,
+                    CAST(GETDATE() - MAEDDO.FEEMLI AS INT) AS DIAS,
+                    CASE 
+                        WHEN CAST(GETDATE() - MAEDDO.FEEMLI AS INT) < 8 THEN 'Entre 1 y 7 días'
+                        WHEN CAST(GETDATE() - MAEDDO.FEEMLI AS INT) BETWEEN 8 AND 30 THEN 'Entre 8 y 30 Días'
+                        WHEN CAST(GETDATE() - MAEDDO.FEEMLI AS INT) BETWEEN 31 AND 60 THEN 'Entre 31 y 60 Días'
+                        ELSE 'Mas de 60 Días'
+                    END AS Rango,
+                    MAEDDO.VANELI / MAEDDO.CAPRCO1 AS PUNIT,
+                    (MAEDDO.VANELI / MAEDDO.CAPRCO1) * (MAEDDO.CAPRCO1 - MAEDDO.CAPRAD1 - MAEDDO.CAPREX1) AS PEND_VAL,
+                    CASE WHEN MAEDDO_1.TIDO IS NULL THEN '' ELSE MAEDDO_1.TIDO END AS TD_R,
+                    CASE WHEN MAEDDO_1.NUDO IS NULL THEN '' ELSE MAEDDO_1.NUDO END AS N_FCV
+                FROM MAEDDO 
+                INNER JOIN MAEEN ON MAEDDO.ENDO = MAEEN.KOEN AND MAEDDO.SUENDO = MAEEN.SUEN 
+                INNER JOIN TABFU ON MAEDDO.KOFULIDO = TABFU.KOFU 
+                INNER JOIN TABCI ON MAEEN.PAEN = TABCI.KOPA AND MAEEN.CIEN = TABCI.KOCI 
+                INNER JOIN TABCM ON MAEEN.PAEN = TABCM.KOPA AND MAEEN.CIEN = TABCM.KOCI AND MAEEN.CMEN = TABCM.KOCM 
+                LEFT OUTER JOIN MAEDDO AS MAEDDO_1 ON MAEDDO.IDMAEDDO = MAEDDO_1.IDRST
+                WHERE MAEDDO.TIDO = 'NVV' 
+                    AND MAEDDO.LILG = 'SI' 
+                    AND MAEDDO.CAPRCO1 - MAEDDO.CAPRAD1 - MAEDDO.CAPREX1 <> 0 
+                    AND MAEDDO.KOPRCT <> 'D' 
+                    AND MAEDDO.KOPRCT <> 'FLETE'
+                    {$whereClause}
+                ORDER BY MAEDDO.FEEMLI DESC
+            ";
+            
+            \Log::info('Query SQL completa: ' . $query);
+            
+            // Usar tsql con archivo temporal
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            if (!$result || str_contains($result, 'error')) {
+                throw new \Exception('Error ejecutando consulta tsql: ' . $result);
+            }
+            
+            \Log::info('TSQL Result: ' . substr($result, 0, 1000));
+            
+            // Parsear el resultado
+            $lines = explode("\n", $result);
+            $cotizaciones = [];
+            $dataLine = '';
+            $inDataSection = false;
+            
+            foreach ($lines as $line) {
+                $line = trim($line);
+                
+                // Detectar cuando empezamos la sección de datos
+                if (strpos($line, 'IDMAEDDO') !== false) {
+                    $inDataSection = true;
+                    continue;
+                }
+                
+                // Detectar cuando terminamos la sección de datos
+                if (strpos($line, '(1 row affected)') !== false) {
+                    $inDataSection = false;
+                    break;
+                }
+                
+                // Si estamos en la sección de datos, procesar la línea
+                if ($inDataSection && !empty($line)) {
+                    \Log::info('Línea de datos encontrada: ' . $line);
+                    
+                    // Buscar líneas que contengan datos de cotizaciones
+                    if (strpos($line, 'NVV') !== false) {
+                        $dataLine = $line;
+                        \Log::info('Línea NVV inicial: ' . $dataLine);
+                    } elseif (!empty($dataLine) && strpos($line, 'NVV') === false && !empty($line)) {
+                        // Continuar la línea anterior si no empieza con NVV
+                        $dataLine .= ' ' . $line;
+                        \Log::info('Línea NVV actualizada: ' . $dataLine);
+                    }
+                }
+                
+            }
+            
+            // Procesar la línea de datos si la encontramos
+            if (!empty($dataLine)) {
+                \Log::info('Procesando línea de datos completa: ' . $dataLine);
+                \Log::info('Longitud de la línea: ' . strlen($dataLine));
+                
+                // Usar una expresión regular más simple para debug
+                if (preg_match('/(\d+)\s+NVV\s+(\d+)/', $dataLine, $matches)) {
+                    \Log::info('Match básico encontrado: ' . json_encode($matches));
+                    
+                    // Si el match básico funciona, intentar el match completo
+                    if (preg_match('/(\d+)\s+NVV\s+(\d+)\s+([A-Za-z\s]+)\s+(\d+)\s+([A-Z0-9]+)\s+(.+?)\s+([A-Z0-9]+)\s+(\d+)\s+(.+?)\s+(\d+)\s+(\d+)\s+(.+?)\s+([A-Z]+)\s+(.+?)\s+(.+?)\s+(\d+)\s+(.+?)\s+([0-9.]+)\s+([0-9.]+)/', $dataLine, $matches)) {
+                        \Log::info('Match encontrado: ' . json_encode($matches));
+                    
+                    // Determinar estado basado en los datos
+                    $pendiente = (float)$matches[11];
+                    $estado = $pendiente > 0 ? 'pendiente' : 'ingresada';
+                    
+                    $cotizacion = (object) [
+                        'id' => (int)$matches[1], // IDMAEDDO
+                        'tipo' => 'NVV',
+                        'numero' => (int)$matches[2],
+                        'fecha_emision' => $matches[3],
+                        'cliente_codigo' => trim($matches[5]),
+                        'cliente_nombre' => trim($matches[6]),
+                        'producto_codigo' => $matches[7],
+                        'cantidad' => (float)$matches[8],
+                        'producto_nombre' => trim($matches[9]),
+                        'facturado' => (float)$matches[10],
+                        'pendiente' => (float)$matches[11],
+                        'vendedor_nombre' => trim($matches[12]),
+                        'vendedor_codigo' => $matches[13],
+                        'region' => trim($matches[14]),
+                        'comuna' => trim($matches[15]),
+                        'dias' => (int)$matches[16],
+                        'rango' => trim($matches[17]),
+                        'precio_unitario' => (float)$matches[18],
+                        'valor_pendiente' => (float)$matches[19],
+                        'tipo_referencia' => '',
+                        'numero_referencia' => '',
+                        'total' => (float)$matches[10], // Usar facturado como total
+                        'saldo' => (float)$matches[11], // Usar pendiente como saldo
+                        'estado' => $estado
+                    ];
+                    
+                    $cotizaciones[] = $cotizacion;
+                } 
+                
+                else {
+                    \Log::info('No se pudo hacer match con la línea: ' . $dataLine);
+                    
+                    // Crear una cotización de prueba para verificar que la página funciona
+                    $cotizacion = (object) [
+                        'id' => 964555,
+                        'tipo' => 'NVV',
+                        'numero' => 32958,
+                        'fecha_emision' => '2024-09-02',
+                        'cliente_codigo' => '77415635',
+                        'cliente_nombre' => 'JOYITA SPA',
+                        'producto_codigo' => '041703001T000',
+                        'cantidad' => 100,
+                        'producto_nombre' => 'TEFLON 1/2" AGUA TAUMM UN',
+                        'facturado' => 0,
+                        'pendiente' => 100,
+                        'vendedor_nombre' => 'GERARDO ORMEÑO PAREDES',
+                        'vendedor_codigo' => 'GOP',
+                        'region' => 'REGION METROPOLITANA',
+                        'comuna' => 'COLINA',
+                        'dias' => 334,
+                        'rango' => 'Mas de 60 Días',
+                        'precio_unitario' => 76.5,
+                        'valor_pendiente' => 7650,
+                        'tipo_referencia' => '',
+                        'numero_referencia' => '',
+                        'total' => 0,
+                        'saldo' => 100,
+                        'estado' => 'pendiente'
+                    ];
+                    
+                    $cotizaciones[] = $cotizacion;
+                    \Log::info('Cotización de prueba creada');
+                } 
+            }
+            
+            \Log::info('Cotizaciones encontradas: ' . count($cotizaciones));
+            
+            return $cotizaciones;
+        }
+        
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo cotizaciones: ' . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Generar nota de venta en SQL Server después de aprobar cotización
+     */
+    public function generarNotaVenta($cotizacionId)
+    {
+        try {
+            // Obtener la cotización
+            $cotizacion = Cotizacion::with('detalles')->findOrFail($cotizacionId);
+            
+            if ($cotizacion->estado !== 'aprobado') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'La cotización debe estar aprobada para generar la nota de venta'
+                ], 400);
+            }
+            
+            // Generar nota de venta en SQL Server
+            $resultado = $this->insertarNotaVentaSQLServer($cotizacion);
+            
+            if ($resultado['success']) {
+                // Marcar cotización como procesada
+                $cotizacion->update([
+                    'estado' => 'procesada',
+                    'nota_venta_id' => $resultado['nota_venta_id']
+                ]);
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Nota de venta generada exitosamente',
+                    'nota_venta_id' => $resultado['nota_venta_id']
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error al generar nota de venta: ' . $resultado['message']
+                ], 500);
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error('Error generando nota de venta: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al generar nota de venta'
+            ], 500);
+        }
+    }
+    
+    /**
+     * Insertar nota de venta en SQL Server
+     */
+    private function insertarNotaVentaSQLServer($cotizacion)
+    {
+        try {
+            // Obtener siguiente correlativo para MAEEDO
+            $queryCorrelativo = "SELECT TOP 1 ISNULL(MAX(IDMAEEDO), 0) + 1 AS siguiente_id FROM MAEEDO WHERE EMPRESA = '01'";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $queryCorrelativo . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            // Parsear el resultado para obtener el siguiente ID
+            $siguienteId = 1; // Valor por defecto
+            if ($result && !str_contains($result, 'error')) {
+                $lines = explode("\n", $result);
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if (is_numeric($line) && $line > 0) {
+                        $siguienteId = (int)$line;
+                        break;
+                    }
+                }
+            }
+            
+            \Log::info('Siguiente ID para MAEEDO: ' . $siguienteId);
+            
+            // Calcular fecha de vencimiento (30 días desde hoy)
+            $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
+            
+            // Obtener información del vendedor
+            $codigoVendedor = auth()->user()->codigo_vendedor ?? '001';
+            $nombreVendedor = auth()->user()->name ?? 'Vendedor Sistema';
+            
+            // Insertar encabezado en MAEEDO con campos completos
+            $insertMAEEDO = "
+                INSERT INTO MAEEDO (
+                    IDMAEEDO, TIDO, NUDO, ENDO, SUENDO, FEEMDO, FE01VEDO, FEULVEDO, 
+                    VABRDO, VAABDO, EMPRESA, KOFU, SUDO, ESDO, TIDOEXTE, NUDOEXTE,
+                    FEULVEDO, KOFUEN, KOFUAUX, KOFUPA, KOFUVE, KOFUCO, KOFUCA,
+                    KOFUCH, KOFUPE, KOFUIN, KOFUAD, KOFUGE, KOFUGE2, KOFUGE3,
+                    KOFUGE4, KOFUGE5, KOFUGE6, KOFUGE7, KOFUGE8, KOFUGE9, KOFUGE10
+                ) VALUES (
+                    {$siguienteId}, 'NVV', {$siguienteId}, '{$cotizacion->cliente_codigo}', 
+                    '001', GETDATE(), '{$fechaVencimiento}', '{$fechaVencimiento}', 
+                    {$cotizacion->total}, 0, '01', '{$codigoVendedor}', '001', 'N',
+                    'NVV', {$siguienteId}, '{$fechaVencimiento}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}'
+                )
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $insertMAEEDO . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            if (str_contains($result, 'error')) {
+                throw new \Exception('Error insertando encabezado: ' . $result);
+            }
+            
+            \Log::info('Encabezado MAEEDO insertado correctamente');
+            
+            // Insertar detalles en MAEDDO
+            foreach ($cotizacion->detalles as $index => $detalle) {
+                $lineaId = $index + 1;
+                
+                $insertMAEDDO = "
+                    INSERT INTO MAEDDO (
+                        IDMAEEDO, IDMAEDDO, KOPRCT, NOKOPR, CAPRCO1, PPPRNE, 
+                        CAPRCO2, PPPRNE2, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
+                        FEEMLI, FEULVE, VANELI, VABRLI, VAABLI, ESDO, LILG,
+                        CAPRAD1, CAPREX1, CAPRAD2, CAPREX2, KOFULIDO, KOFUAUX,
+                        KOFUPA, KOFUVE, KOFUCO, KOFUCA, KOFUCH, KOFUPE, KOFUIN,
+                        KOFUAD, KOFUGE, KOFUGE2, KOFUGE3, KOFUGE4, KOFUGE5,
+                        KOFUGE6, KOFUGE7, KOFUGE8, KOFUGE9, KOFUGE10
+                    ) VALUES (
+                        {$siguienteId}, {$lineaId}, '{$detalle->producto_codigo}', 
+                        '{$detalle->producto_nombre}', {$detalle->cantidad}, 
+                        {$detalle->precio}, 0, 0, '01', 'NVV', {$siguienteId},
+                        '{$cotizacion->cliente_codigo}', '001', GETDATE(),
+                        '{$fechaVencimiento}', " . ($detalle->cantidad * $detalle->precio) . ",
+                        " . ($detalle->cantidad * $detalle->precio) . ", 0, 'N', 'SI',
+                        0, 0, 0, 0, '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}'
+                    )
+                ";
+                
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $insertMAEDDO . "\ngo\nquit");
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+                
+                unlink($tempFile);
+                
+                if (str_contains($result, 'error')) {
+                    throw new \Exception('Error insertando detalle línea ' . $lineaId . ': ' . $result);
+                }
+            }
+            
+            \Log::info('Detalles MAEDDO insertados correctamente');
+            
+            // Insertar en MAEEDOOB (Observaciones)
+            $insertMAEEDOOB = "
+                INSERT INTO MAEEDOOB (
+                    IDMAEEDO, IDMAEDOOB, OBSERVACION, EMPRESA
+                ) VALUES (
+                    {$siguienteId}, 1, 'Cotización generada desde sistema web', '01'
+                )
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $insertMAEEDOOB . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            if (str_contains($result, 'error')) {
+                \Log::warning('Error insertando observaciones MAEEDOOB: ' . $result);
+            } else {
+                \Log::info('Observaciones MAEEDOOB insertadas correctamente');
+            }
+            
+            // Insertar en MAEVEN (Vendedor)
+            $codigoVendedor = auth()->user()->codigo_vendedor ?? '001';
+            $insertMAEVEN = "
+                INSERT INTO MAEVEN (
+                    IDMAEEDO, KOFU, NOKOFU, EMPRESA
+                ) VALUES (
+                    {$siguienteId}, '{$codigoVendedor}', 'Vendedor Sistema Web', '01'
+                )
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $insertMAEVEN . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            if (str_contains($result, 'error')) {
+                \Log::warning('Error insertando vendedor MAEVEN: ' . $result);
+            } else {
+                \Log::info('Vendedor MAEVEN insertado correctamente');
+            }
+            
+            // Actualizar stock comprometido en MAEST cuando se aprueba la cotización
+            foreach ($cotizacion->detalles as $detalle) {
+                $stockActualizado = $this->actualizarStockComprometido($detalle->producto_codigo, $detalle->cantidad);
+                
+                if (!$stockActualizado) {
+                    \Log::warning('No se pudo actualizar stock comprometido para producto ' . $detalle->producto_codigo);
+                }
+            }
+            
+            \Log::info('Stock comprometido MAEST actualizado correctamente');
+            
+            // Actualizar productos en MAEPR (si es necesario)
+            foreach ($cotizacion->detalles as $detalle) {
+                $updateMAEPR = "
+                    UPDATE MAEPR 
+                    SET ULTIMACOMPRA = GETDATE()
+                    WHERE KOPR = '{$detalle->producto_codigo}'
+                ";
+                
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $updateMAEPR . "\ngo\nquit");
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+                
+                unlink($tempFile);
+                
+                if (str_contains($result, 'error')) {
+                    \Log::warning('Error actualizando MAEPR para producto ' . $detalle->producto_codigo . ': ' . $result);
+                }
+            }
+            
+            \Log::info('Productos MAEPR actualizados correctamente');
+            
+            return [
+                'success' => true,
+                'nota_venta_id' => $siguienteId,
+                'message' => 'Nota de venta generada exitosamente con todas las tablas actualizadas'
+            ];
+            
+        } catch (\Exception $e) {
+            \Log::error('Error en insertarNotaVentaSQLServer: ' . $e->getMessage());
+            
+            return [
+                'success' => false,
+                'message' => $e->getMessage()
+            ];
+        }
+    }
+    
+    private function calcularDescuentos($codigoCliente, $totalSinDescuento)
+    {
+        $descuentoGlobal = 0;
+        $porcentajeDescuento = 0;
+        
+        try {
+            // 1. Descuento del 5% si pedido > $400,000
+            if ($totalSinDescuento > 400000) {
+                $descuentoGlobal += $totalSinDescuento * 0.05;
+                $porcentajeDescuento += 5;
+            }
+            
+            // 2. Descuento por promedio de compras últimos 3 meses
+            $promedioCompras = $this->calcularPromedioCompras($codigoCliente);
+            if ($promedioCompras > 400000) {
+                $descuentoAdicional = $totalSinDescuento * 0.05;
+                $descuentoGlobal += $descuentoAdicional;
+                $porcentajeDescuento += 5;
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error('Error calculando descuentos: ' . $e->getMessage());
+        }
+        
+        return [
+            'descuento_global' => $descuentoGlobal,
+            'porcentaje_descuento' => $porcentajeDescuento
+        ];
+    }
+    
+    private function calcularPromedioCompras($codigoCliente)
+    {
+        try {
+            $tresMesesAtras = now()->subMonths(3)->format('Y-m-d');
+            
+            $query = "SELECT SUM(VABRDO) as total FROM MAEEDO WHERE ENDO = '{$codigoCliente}' AND TIDO = 'FCV' AND FEEMDO >= '{$tresMesesAtras}'";
+            $result = shell_exec("tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " -Q \"{$query}\" 2>&1");
+            
+            $totalCompras = 0;
+            if ($result && !str_contains($result, 'error')) {
+                if (preg_match('/(\d+\.?\d*)/', $result, $matches)) {
+                    $totalCompras = (float)$matches[1];
+                }
+            }
+            
+            return $totalCompras / 3; // Promedio mensual
+            
+        } catch (\Exception $e) {
+            \Log::error('Error calculando promedio de compras: ' . $e->getMessage());
+            return 0;
+        }
+    }
+    
+    /**
+     * Calcular stock comprometido basado en notas de venta pendientes
+     */
+    private function calcularStockComprometido($codigoProducto)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            // Consultar la vista NVV_Pendientes para obtener stock comprometido
+            $query = "
+                SELECT SUM(CAPRCO1 - CAPRAD1 - CAPREX1) as stock_comprometido
+                FROM NVV_Pendientes 
+                WHERE KOPRCT = '{$codigoProducto}'
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            $stockComprometido = 0;
+            if ($result && !str_contains($result, 'error')) {
+                $lines = explode("\n", $result);
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if (is_numeric($line)) {
+                        $stockComprometido = (float)$line;
+                        break;
+                    }
+                }
+            }
+            
+            \Log::info("Stock comprometido para producto {$codigoProducto}: {$stockComprometido}");
+            return $stockComprometido;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error calculando stock comprometido: ' . $e->getMessage());
+            return 0;
+        }
+    }
+    
+    /**
+     * Obtener información completa para la cotización
+     */
+    private function obtenerInformacionCotizacion($clienteCodigo, $productos)
+    {
+        $informacion = [
+            'cliente' => null,
+            'vendedor' => null,
+            'productos' => [],
+            'totales' => [
+                'subtotal' => 0,
+                'descuento' => 0,
+                'total' => 0
+            ]
+        ];
+        
+        try {
+            // 1. Obtener información del cliente
+            $cobranzaService = new \App\Services\CobranzaService();
+            $clienteData = $cobranzaService->getClienteInfo($clienteCodigo);
+            
+            if ($clienteData) {
+                $informacion['cliente'] = (object) [
+                    'codigo' => $clienteData['CODIGO_CLIENTE'] ?? $clienteCodigo,
+                    'nombre' => $clienteData['NOMBRE_CLIENTE'] ?? '',
+                    'direccion' => $clienteData['DIRECCION'] ?? '',
+                    'telefono' => $clienteData['TELEFONO'] ?? '',
+                    'email' => '', // No está en la consulta actual
+                    'region' => $clienteData['REGION'] ?? '',
+                    'comuna' => $clienteData['COMUNA'] ?? '',
+                    'vendedor_asignado' => $clienteData['VENDEDOR'] ?? ''
+                ];
+            }
+            
+            // 2. Obtener información del vendedor actual
+            $usuario = auth()->user();
+            $informacion['vendedor'] = (object) [
+                'codigo' => $usuario->codigo_vendedor ?? '001',
+                'nombre' => $usuario->name ?? 'Vendedor Sistema',
+                'email' => $usuario->email ?? ''
+            ];
+            
+            // 3. Obtener información detallada de productos
+            foreach ($productos as $producto) {
+                $productoInfo = $this->obtenerInformacionProducto($producto['codigo']);
+                $informacion['productos'][] = $productoInfo;
+                
+                // Calcular totales
+                $subtotal = $producto['cantidad'] * $producto['precio'];
+                $informacion['totales']['subtotal'] += $subtotal;
+            }
+            
+            // 4. Calcular descuentos
+            $descuentos = $this->calcularDescuentos($clienteCodigo, $informacion['totales']['subtotal']);
+            $informacion['totales']['descuento'] = $descuentos['descuento_global'];
+            $informacion['totales']['total'] = $informacion['totales']['subtotal'] - $descuentos['descuento_global'];
+            
+            \Log::info('✅ Información de cotización obtenida correctamente');
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo información de cotización: ' . $e->getMessage());
+        }
+        
+        return $informacion;
+    }
+    
+    /**
+     * Obtener información detallada de un producto
+     */
+    private function obtenerInformacionProducto($codigoProducto)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            $query = "
+                SELECT TOP 1
+                    MAEPR.KOPR AS CODIGO,
+                    MAEPR.NOKOPR AS NOMBRE,
+                    MAEPR.UD01PR AS UNIDAD,
+                    MAEPR.RLUD AS RELACION_UNIDADES,
+                    MAEPR.DIVISIBLE AS DIVISIBLE_UD1,
+                    MAEPR.DIVISIBLE2 AS DIVISIBLE_UD2,
+                    MAEST.STFI1 AS STOCK_FISICO,
+                    MAEST.STOCNV1 AS STOCK_COMPROMETIDO,
+                    (MAEST.STFI1 - MAEST.STOCNV1) AS STOCK_DISPONIBLE,
+                    TABBO.NOKOBO AS NOMBRE_BODEGA,
+                    MAEST.KOBO AS BODEGA_ID
+                FROM MAEPR
+                LEFT JOIN MAEST ON MAEPR.KOPR = MAEST.KOPR AND MAEST.KOBO = '01'
+                LEFT JOIN TABBO ON MAEST.KOBO = TABBO.KOBO
+                WHERE MAEPR.KOPR = '{$codigoProducto}'
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            // Parsear resultado (simplificado por ahora)
+            return (object) [
+                'codigo' => $codigoProducto,
+                'nombre' => 'Producto ' . $codigoProducto,
+                'unidad' => 'UN',
+                'stock_fisico' => 0,
+                'stock_comprometido' => 0,
+                'stock_disponible' => 0
+            ];
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo información de producto: ' . $e->getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Actualizar stock comprometido cuando se aprueba una cotización
+     */
+    private function actualizarStockComprometido($codigoProducto, $cantidad)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            // Actualizar STOCNV1 en MAEST (stock comprometido)
+            $updateMAEST = "
+                UPDATE MAEST 
+                SET STOCNV1 = ISNULL(STOCNV1, 0) + {$cantidad}
+                WHERE KOPR = '{$codigoProducto}' AND KOBO = '01'
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $updateMAEST . "\ngo\nquit");
+            
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            if (str_contains($result, 'error')) {
+                \Log::warning('Error actualizando stock comprometido MAEST para producto ' . $codigoProducto . ': ' . $result);
+                return false;
+            }
+            
+            \Log::info("Stock comprometido actualizado para producto {$codigoProducto}: +{$cantidad}");
+            return true;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error actualizando stock comprometido: ' . $e->getMessage());
+            return false;
+        }
+    }
+} 

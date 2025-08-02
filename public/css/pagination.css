@@ -1,0 +1,87 @@
+/* Estilos personalizados para paginación */
+.pagination {
+    margin: 0;
+    padding: 0;
+}
+
+.pagination .page-item .page-link {
+    color: #9c27b0;
+    background-color: transparent;
+    border: 1px solid #9c27b0;
+    margin: 0 2px;
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.pagination .page-item .page-link:hover {
+    background-color: #9c27b0;
+    color: white;
+    border-color: #9c27b0;
+}
+
+.pagination .page-item.active .page-link {
+    background-color: #9c27b0;
+    border-color: #9c27b0;
+    color: white;
+}
+
+.pagination .page-item.disabled .page-link {
+    color: #6c757d;
+    border-color: #6c757d;
+    background-color: transparent;
+}
+
+/* Estilos para el contador de resultados */
+.text-muted {
+    font-size: 14px;
+    color: #6c757d !important;
+}
+
+/* Estilos para el footer de la card */
+.card-footer {
+    background-color: #f8f9fa;
+    border-top: 1px solid #dee2e6;
+    padding: 15px 20px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .d-flex.justify-content-between {
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .pagination {
+        justify-content: center;
+    }
+    
+    .btn-outline-primary {
+        width: 100%;
+        margin-top: 10px;
+    }
+}
+
+/* Estilos para el botón "Cargar más" */
+.btn-outline-primary {
+    border-color: #9c27b0;
+    color: #9c27b0;
+    transition: all 0.3s ease;
+}
+
+.btn-outline-primary:hover {
+    background-color: #9c27b0;
+    border-color: #9c27b0;
+    color: white;
+}
+
+.btn-outline-primary:focus {
+    box-shadow: 0 0 0 0.2rem rgba(156, 39, 176, 0.25);
+}
+
+/* Gap para los botones */
+.gap-2 {
+    gap: 0.5rem;
+} 

@@ -1,0 +1,91 @@
+Anexo 1: Desarrollo APP Ventas.
+1.	El sistema contará con 5 módulos:
+a.	Ventas
+b.	Autorización de Ventas
+c.	Compras
+d.	Bodega
+e.	Mantenedores
+
+2.	El sistema tendrá un acceso dado desde el módulo de mantención de usuarios. Se deberá acceder con nombre de usuario, contraseña y seleccionar la empresa, los permisos también serán generados en el módulo de mantención de usuarios. 
+En la empresa seleccionada, se deben sincronizar clientes asignados al usuario, productos existentes en la lista de precios de venta de cada cliente y se debe cargar la lista de precios asignada por ficha de cada entidad.
+
+3.	En módulo Venta: La aplicación debe tomar el pedido del cliente, se ingresa el Rut código del cliente o se puede buscar por nombre del cliente, la búsqueda debe filtrar con palabras claves o indicios del nombre o Rut.
+
+a.	Seleccionado el cliente debe existir la información de cobranza vigente del cliente, emitiendo una alerta en el caso que presente la siguiente situación:
+i.	Cupo excedido en línea de crédito Total.
+ii.	Cupo excedido sin documentar.
+iii.	Cupo excedido documentado.
+iv.	Cheques protestados NO aclarados.
+v.	Facturas Vendidas.
+
+b.	Además, la aplicación debe alertar por productos sin stock suficiente para entrega inmediata, el stock se medirá se la siguiente forma:
+i.	DISPONIBLE: STOCK FISICO – STOCK COMPROMETIDO.
+
+Nota: Es muy importante que se mantengan actualizadas las NVV pendientes de despacho en el ERP RANDOM, situación que es responsabilidad del cliente.
+
+c.	En cualquiera de los casos, debe quedar marcada esta posible venta y debe quedar pendiente de aprobación, en el módulo “Autorización de Ventas”.
+
+4.	En módulo Ventas: Entregadas las alertas definidas en el punto 3a y 3b; se debe agregar el detalle del pedido, en donde se activar buscador por SKU y Nombre del producto, la búsqueda debe filtrar con palabras claves o indicios del nombre del producto o SKU.
+
+
+
+
+
+
+5.	En módulo Ventas: Se incorporará algoritmo, para determinar si cliente aplica descuento global por volumen: 
+
+a.	Esto variará por empresa, en el caso de comercial se determina en un principio un descuento de un 5% adicional en caso de que el pedido supere los $ 400.000 o que el promedio de compras de los últimos tres meses sea superior a este monto. 
+b.	Se pueden establecer otros tipos de descuento o cambiar período para establecerlo.
+
+6.	En módulo de Ventas: Una vez enviado el pedido existen dos opciones:
+
+a.	NO existen alertas: El pedido ingresa autorizado automáticamente y se inserta en las tablas MAEEDO, MAEDDO, MAEEDOOB, MAEVEN y actualiza las tablas MAEST, MAEPR, MAEPREM.
+
+b.	Existen alertas: El pedido queda en estado pendiente a espera de su aprobación en módulo “Autorización de Ventas”.
+
+c.	El documento por insertar es Nota de Venta “NVV”.
+
+7.	En módulo autorización de Ventas: Se incorporarán en este módulo solo los pedidos web generados por los ejecutivos de venta con el criterio establecido en el Punto 3ª y 3b. 
+a.	El usuario revisor o asistente de venta podrá revisar el pedido y modificar este; eliminando productos, agregando una línea, cambiando cantidades o modificando un descuento dependiendo de los permisos asignados en el mantenedor de usuarios. 
+
+b.	Toda acción realizada quedará registras en un LOG de transacciones.
+
+8.	En módulo autorización de Ventas: En el caso de autorizar pedido con stock insuficiente:
+
+a.	Este se inserta y actualiza la base de datos en producción RANDOM como se define en el punto 6ª.
+
+b.	Se agrega al módulo de Compras en forma informativa, para que este genere las instancias de compra del producto.
+
+9.	En módulo de Compras: Este módulo el usuario podrá realizar lo siguiente:
+
+a.	Cambiar estado del pedido.
+i.	En proceso de compra
+ii.	Recepcionado
+iii.	NO facturar: Cerrar Nota de venta por producto pendiente.
+
+b.	Agregar información de documentos de compras: Orden de compra, factura de compra, indicar el cierre de la nota de venta entre otros.
+
+c.	Este cierre del proceso debe desencadenar un mail a facturación o despacho, por definir, informando que el estado y se proceda a facturar o cerra el pedido.
+
+10.	En módulo de Bodega: En este módulo aparecerán TODOS los pedidos aprobados
+En forma automática o manual. 
+
+a.	Encargado de bodega selecciona el pedido, debe indicar quien es el preparador del pedido.
+
+b.	Se debe imprimir picking para su preparación.
+
+c.	Una vez preparado debe cambiar el estado del pedido en picking:
+i.	“Parcial”; debe indicar motivo.
+ii.	Si esta completado, debe indicar cantidad de bultos.
+iii.	Indicada la cantidad de bultos se procede a dar el pedido por “Completado”.
+ 
+11.	INFORMES ADICIONALES: Se incorporarán los siguientes informes:
+
+a.	Informe de Cobranza: Documentos sin documentar, Cheques protestados e informar de sobre cheques en cartera.
+
+b.	Seguimiento de pedidos, según tabla de control o línea de tiempo del pedido hasta su facturación.
+
+c.	Informe de Ventas efectuadas.
+
+12.	VENTA OFF LINE: En el caso de venta off line necesitamos un “intermediario”, web service u Hosting que no permita almacenar información en la nube para luego entregar a la base de datos, por lo tanto, se debe desarrollar un denominado “daemon” que busque cada cierto tiempo, por ejemplo 5 minutos si existen pedidos no entregados a la base de datos de Random y los incorpore cuando la conexión a la base de datos se encuentre activa.
+

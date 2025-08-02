@@ -8,7 +8,7 @@
         </div>
         <ul class="nav">
             <li @if ($pageSlug == 'dashboard') class="active " @endif>
-                <a href="{{ route('home') }}">
+                <a href="{{ route('dashboard') }}">
                     <i class="tim-icons icon-chart-pie-36"></i>
                     <p>{{ __('Dashboard') }}</p>
                 </a>
@@ -124,6 +124,39 @@
                         @endcan
                     </ul>
                 </div>
+            </li>
+            @endcan
+
+            @can('view_clients')
+            <li @if ($pageSlug == 'buscar-clientes') class="active " @endif>
+                <a href="{{ route('cobranza.index') }}">
+                    <i class="tim-icons icon-single-02"></i>
+                    <p>{{ __('Buscar Clientes') }}</p>
+                </a>
+            </li>
+            @endcan
+            
+            @can('create_quotation')
+            <li @if ($pageSlug == 'cotizaciones') class="active " @endif>
+                <a href="{{ route('cotizaciones.index') }}">
+                    <i class="tim-icons icon-paper"></i>
+                    <p>{{ __('Mis Cotizaciones') }}</p>
+                </a>
+            </li>
+            <li @if ($pageSlug == 'nueva-cotizacion') class="active " @endif>
+                <a href="{{ route('cotizacion.nueva') }}">
+                    <i class="tim-icons icon-cart"></i>
+                    <p>{{ __('Nueva Cotización') }}</p>
+                </a>
+            </li>
+            @endcan
+
+            @can('view_stock')
+            <li @if ($pageSlug == 'stock') class="active " @endif>
+                <a href="{{ route('stock.index') }}">
+                    <i class="tim-icons icon-box-2"></i>
+                    <p>{{ __('Gestión de Stock') }}</p>
+                </a>
             </li>
             @endcan
 

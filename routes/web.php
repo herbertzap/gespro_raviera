@@ -26,6 +26,16 @@ Route::get('/dashboard', [App\Http\Controllers\DashboardController::class, 'inde
 Route::get('/cobranza', [App\Http\Controllers\CobranzaController::class, 'index'])->name('cobranza.index')->middleware('auth');
 Route::get('/cobranza/export', [App\Http\Controllers\CobranzaController::class, 'export'])->name('cobranza.export')->middleware('auth');
 
+// Rutas de Cotizaciones
+Route::middleware('auth')->group(function () {
+    Route::get('/cotizaciones', [App\Http\Controllers\CotizacionController::class, 'index'])->name('cotizaciones.index');
+    Route::get('/cotizacion/nueva', [App\Http\Controllers\CotizacionController::class, 'nueva'])->name('cotizacion.nueva');
+    Route::get('/cotizacion/buscar-productos', [App\Http\Controllers\CotizacionController::class, 'buscarProductos'])->name('cotizacion.buscar-productos');
+    Route::get('/cotizacion/obtener-precios', [App\Http\Controllers\CotizacionController::class, 'obtenerPrecios'])->name('cotizacion.obtener-precios');
+    Route::post('/cotizacion/guardar', [App\Http\Controllers\CotizacionController::class, 'guardar'])->name('cotizacion.guardar');
+    Route::post('/cotizacion/generar-nota-venta/{id}', [App\Http\Controllers\CotizacionController::class, 'generarNotaVenta'])->name('cotizacion.generar-nota-venta');
+});
+
 // Rutas de Clientes
 Route::get('/clientes', [App\Http\Controllers\ClienteController::class, 'index'])->name('clientes.index')->middleware('auth');
 Route::post('/clientes/buscar', [App\Http\Controllers\ClienteController::class, 'buscar'])->name('clientes.buscar')->middleware('auth');
@@ -117,5 +127,15 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/listas/{lista}', [ProductoController::class, 'eliminarLista'])
     ->name('listas.eliminar')
     ->middleware('permission:gestionar listas de precios');
+
+    // **Gestión de Stock Local**
+    Route::middleware('permission:view_stock')->group(function () {
+        Route::get('/stock', [App\Http\Controllers\StockController::class, 'index'])->name('stock.index');
+        Route::get('/stock/{id}/edit', [App\Http\Controllers\StockController::class, 'edit'])->name('stock.edit');
+        Route::put('/stock/{id}', [App\Http\Controllers\StockController::class, 'update'])->name('stock.update');
+        Route::post('/stock/sincronizar', [App\Http\Controllers\StockController::class, 'sincronizar'])->name('stock.sincronizar');
+        Route::get('/stock/sin-stock', [App\Http\Controllers\StockController::class, 'productosSinStock'])->name('stock.sin-stock');
+        Route::get('/stock/bajo-stock', [App\Http\Controllers\StockController::class, 'productosBajoStock'])->name('stock.bajo-stock');
+    });
 
 });
