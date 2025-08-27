@@ -95,6 +95,46 @@
                         </div>
                     </div>
                 </div>
+
+                @if(in_array($tipoUsuario, ['Super Admin', 'Supervisor', 'Compras', 'Picking']))
+                    <!-- NVV Pendientes -->
+                    <div class="col-lg-3 col-md-6 col-sm-6">
+                        <div class="card card-stats">
+                            <div class="card-header card-header-warning card-header-icon">
+                                <div class="card-icon">
+                                    <i class="material-icons">pending_actions</i>
+                                </div>
+                                <p class="card-category">NVV Pendientes</p>
+                                <h3 class="card-title">{{ $resumenNvvPendientes['total_nvv'] ?? 0 }}</h3>
+                            </div>
+                            <div class="card-footer">
+                                <div class="stats">
+                                    <i class="material-icons text-warning">schedule</i>
+                                    Por facturar
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Valor NVV Pendientes -->
+                    <div class="col-lg-3 col-md-6 col-sm-6">
+                        <div class="card card-stats">
+                            <div class="card-header card-header-rose card-header-icon">
+                                <div class="card-icon">
+                                    <i class="material-icons">attach_money</i>
+                                </div>
+                                <p class="card-category">Valor NVV Pend.</p>
+                                <h3 class="card-title">${{ number_format($resumenNvvPendientes['total_valor_pendiente'] ?? 0, 0) }}</h3>
+                            </div>
+                            <div class="card-footer">
+                                <div class="stats">
+                                    <i class="material-icons text-rose">trending_up</i>
+                                    Por facturar
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                @endif
             @endif
 
             @if(in_array($tipoUsuario, ['Super Admin', 'Supervisor']))
@@ -157,7 +197,7 @@
 
             @if($tipoUsuario == 'Vendedor')
                 <!-- Vendedor - Mis Clientes -->
-                <div class="col-md-6">
+                <div class="col-md-12">
                     <div class="card">
                         <div class="card-header card-header-primary">
                             <h4 class="card-title">Mis Clientes</h4>
@@ -252,9 +292,9 @@
                                                 @if(isset($cliente['BLOQUEADO']) && $cliente['BLOQUEADO'] == 1)
                                                     <span class="text-muted">{{ $cliente['CODIGO_CLIENTE'] }}</span>
                                                 @else
-                                                    <a href="{{ url('/cotizacion/nueva?cliente=' . $cliente['CODIGO_CLIENTE'] . '&nombre=' . urlencode($cliente['NOMBRE_CLIENTE'])) }}" 
+                                                    <a href="{{ route('cliente.show', $cliente['CODIGO_CLIENTE']) }}" 
                                                        class="text-primary font-weight-bold" 
-                                                       title="Crear nueva cotización para {{ $cliente['NOMBRE_CLIENTE'] }}">
+                                                       title="Ver información de {{ $cliente['NOMBRE_CLIENTE'] }}">
                                                         {{ $cliente['CODIGO_CLIENTE'] }}
                                                     </a>
                                                 @endif
@@ -263,9 +303,9 @@
                                                 @if(isset($cliente['BLOQUEADO']) && $cliente['BLOQUEADO'] == 1)
                                                     <span class="text-muted">{{ $cliente['NOMBRE_CLIENTE'] }}</span>
                                                 @else
-                                                    <a href="{{ url('/cotizacion/nueva?cliente=' . $cliente['CODIGO_CLIENTE'] . '&nombre=' . urlencode($cliente['NOMBRE_CLIENTE'])) }}" 
+                                                    <a href="{{ route('cliente.show', $cliente['CODIGO_CLIENTE']) }}" 
                                                        class="text-primary" 
-                                                       title="Crear nueva cotización para {{ $cliente['NOMBRE_CLIENTE'] }}">
+                                                       title="Ver información de {{ $cliente['NOMBRE_CLIENTE'] }}">
                                                         {{ $cliente['NOMBRE_CLIENTE'] }}
                                                     </a>
                                                 @endif
@@ -391,56 +431,201 @@
                 </div>
             @endif
 
-            @if($tipoUsuario == 'Vendedor')
-                <!-- Vendedor - Cotizaciones Recientes -->
+            @if(in_array($tipoUsuario, ['Super Admin', 'Supervisor', 'Compras', 'Picking']))
+                <!-- NVV Pendientes Detalle -->
                 <div class="col-md-6">
                     <div class="card">
-                        <div class="card-header card-header-success">
-                            <h4 class="card-title">Cotizaciones Recientes</h4>
-                            <p class="card-category">Últimas cotizaciones</p>
+                        <div class="card-header card-header-warning">
+                            <h4 class="card-title">NVV Pendientes Detalle</h4>
+                            <p class="card-category">Notas de venta pendientes de facturación</p>
                         </div>
                         <div class="card-body">
+                            <div class="text-center mb-3">
+                                <span class="badge badge-info">👤 Rol: {{ $tipoUsuario }}</span>
+                                @if($tipoUsuario == 'Picking')
+                                    <span class="badge badge-warning ml-2">📦 Validación de Stock</span>
+                                @endif
+                            </div>
                             <div class="table-responsive">
                                 <table class="table">
-                                    <thead class="text-success">
+                                    <thead class="text-warning">
                                         <tr>
-                                            <th>Tipo</th>
                                             <th>Número</th>
                                             <th>Cliente</th>
-                                            <th>Saldo</th>
-                                            <th>Estado</th>
+                                            <th>Producto</th>
+                                            <th>Pendiente</th>
+                                            <th>Días</th>
+                                            <th>Rango</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        @forelse($cotizaciones ?? [] as $cotizacion)
+                                        @forelse($nvvPendientes ?? [] as $nvv)
                                         <tr>
                                             <td>
-                                                <span class="badge badge-{{ $cotizacion['TIPO_DOCTO'] == 'FCV' ? 'success' : ($cotizacion['TIPO_DOCTO'] == 'FDV' ? 'info' : 'warning') }}">
-                                                    {{ $cotizacion['TIPO_DOCTO'] }}
-                                                </span>
+                                                <span class="badge badge-warning">{{ $nvv['TD'] }}-{{ $nvv['NUM'] }}</span>
                                             </td>
-                                            <td>{{ $cotizacion['NRO_DOCTO'] }}</td>
-                                            <td>{{ $cotizacion['CLIENTE'] }}</td>
-                                            <td>${{ number_format($cotizacion['SALDO'], 2) }}</td>
+                                            <td>{{ $nvv['CLIE'] }}</td>
+                                            <td>{{ $nvv['NOKOPR'] }}</td>
+                                            <td>{{ number_format($nvv['PEND'], 0) }}</td>
                                             <td>
                                                 <span class="badge badge-{{ 
-                                                    $cotizacion['ESTADO'] == 'VIGENTE' ? 'success' : 
-                                                    ($cotizacion['ESTADO'] == 'POR VENCER' ? 'warning' : 
-                                                    ($cotizacion['ESTADO'] == 'VENCIDO' ? 'danger' : 
-                                                    ($cotizacion['ESTADO'] == 'MOROSO' ? 'danger' : 'dark'))) 
+                                                    $nvv['DIAS'] < 8 ? 'success' : 
+                                                    ($nvv['DIAS'] < 31 ? 'warning' : 
+                                                    ($nvv['DIAS'] < 61 ? 'danger' : 'dark')) 
                                                 }}">
-                                                    {{ $cotizacion['ESTADO'] }}
+                                                    {{ $nvv['DIAS'] }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span class="badge badge-{{ 
+                                                    $nvv['Rango'] == 'Entre 1 y 7 días' ? 'success' : 
+                                                    ($nvv['Rango'] == 'Entre 8 y 30 Días' ? 'warning' : 
+                                                    ($nvv['Rango'] == 'Entre 31 y 60 Días' ? 'danger' : 'dark')) 
+                                                }}">
+                                                    {{ $nvv['Rango'] }}
                                                 </span>
                                             </td>
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="5" class="text-center">No hay cotizaciones recientes</td>
+                                            <td colspan="6" class="text-center">No hay NVV pendientes</td>
                                         </tr>
                                         @endforelse
                                     </tbody>
                                 </table>
                             </div>
+                            
+                            <!-- Resumen de NVV Pendientes -->
+                            @if(isset($resumenNvvPendientes))
+                            <div class="mt-3">
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <div class="text-center">
+                                            <h5 class="text-warning">{{ $resumenNvvPendientes['total_nvv'] }}</h5>
+                                            <small>Total NVV</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="text-center">
+                                            <h5 class="text-info">{{ number_format($resumenNvvPendientes['total_pendiente'], 0) }}</h5>
+                                            <small>Unidades Pend.</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="text-center">
+                                            <h5 class="text-success">${{ number_format($resumenNvvPendientes['total_valor_pendiente'], 0) }}</h5>
+                                            <small>Valor Pend.</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="text-center">
+                                            <a href="{{ route('nvv-pendientes.index') }}" class="btn btn-warning btn-sm">
+                                                <i class="material-icons">visibility</i> Ver Todo
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Facturas Pendientes -->
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header card-header-danger">
+                            <h4 class="card-title">Facturas Pendientes</h4>
+                            <p class="card-category">Facturas por cobrar</p>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead class="text-danger">
+                                        <tr>
+                                            <th>Tipo</th>
+                                            <th>Número</th>
+                                            <th>Cliente</th>
+                                            <th>Saldo</th>
+                                            <th>Días</th>
+                                            <th>Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @forelse($facturasPendientes ?? [] as $factura)
+                                        <tr>
+                                            <td>
+                                                <span class="badge badge-{{ 
+                                                    $factura['TIPO_DOCTO'] == 'FCV' ? 'success' : 
+                                                    ($factura['TIPO_DOCTO'] == 'FDV' ? 'info' : 'warning') 
+                                                }}">
+                                                    {{ $factura['TIPO_DOCTO'] }}
+                                                </span>
+                                            </td>
+                                            <td>{{ $factura['NRO_DOCTO'] }}</td>
+                                            <td>{{ $factura['CLIENTE'] }}</td>
+                                            <td>${{ number_format($factura['SALDO'], 0) }}</td>
+                                            <td>
+                                                <span class="badge badge-{{ 
+                                                    $factura['DIAS'] < 0 ? 'success' : 
+                                                    ($factura['DIAS'] < 8 ? 'warning' : 
+                                                    ($factura['DIAS'] < 31 ? 'danger' : 'dark')) 
+                                                }}">
+                                                    {{ $factura['DIAS'] }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span class="badge badge-{{ 
+                                                    ($factura['ESTADO'] ?? 'VIGENTE') == 'VIGENTE' ? 'success' : 
+                                                    (($factura['ESTADO'] ?? 'VIGENTE') == 'POR VENCER' ? 'warning' : 
+                                                    (($factura['ESTADO'] ?? 'VIGENTE') == 'VENCIDO' ? 'danger' : 
+                                                    (($factura['ESTADO'] ?? 'VIGENTE') == 'MOROSO' ? 'danger' : 'dark'))) 
+                                                }}">
+                                                    {{ $factura['ESTADO'] ?? 'VIGENTE' }}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                        @empty
+                                        <tr>
+                                            <td colspan="6" class="text-center">No hay facturas pendientes</td>
+                                        </tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <!-- Resumen de Facturas Pendientes -->
+                            @if(isset($resumenFacturasPendientes))
+                            <div class="mt-3">
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <div class="text-center">
+                                            <h5 class="text-danger">{{ $resumenFacturasPendientes['total_facturas'] }}</h5>
+                                            <small>Total Facturas</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="text-center">
+                                            <h5 class="text-success">${{ number_format($resumenFacturasPendientes['total_saldo'], 0) }}</h5>
+                                            <small>Saldo Total</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="text-center">
+                                            <h5 class="text-warning">{{ $resumenFacturasPendientes['por_estado']['VENCIDO']['cantidad'] + $resumenFacturasPendientes['por_estado']['MOROSO']['cantidad'] }}</h5>
+                                            <small>Vencidas</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="text-center">
+                                            <a href="{{ route('facturas-pendientes.index') }}" class="btn btn-danger btn-sm">
+                                                <i class="material-icons">visibility</i> Ver Todo
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            @endif
                         </div>
                     </div>
                 </div>

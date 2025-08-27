@@ -20,33 +20,67 @@ Route::get('/', function () {
 });
 
 // Dashboard
-Route::get('/dashboard', [App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard')->middleware('auth');
+Route::get('/dashboard', [App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard')->middleware(['auth', 'sincronizar.clientes']);
 
 // Rutas de Cobranza
-Route::get('/cobranza', [App\Http\Controllers\CobranzaController::class, 'index'])->name('cobranza.index')->middleware('auth');
-Route::get('/cobranza/export', [App\Http\Controllers\CobranzaController::class, 'export'])->name('cobranza.export')->middleware('auth');
+Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
+    Route::get('/cobranza', [App\Http\Controllers\CobranzaController::class, 'index'])->name('cobranza.index');
+    Route::get('/cobranza/export', [App\Http\Controllers\CobranzaController::class, 'export'])->name('cobranza.export');
+});
 
 // Rutas de Cotizaciones
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/cotizaciones', [App\Http\Controllers\CotizacionController::class, 'index'])->name('cotizaciones.index');
     Route::get('/cotizacion/nueva', [App\Http\Controllers\CotizacionController::class, 'nueva'])->name('cotizacion.nueva');
+    Route::get('/cotizacion/editar/{id}', [App\Http\Controllers\CotizacionController::class, 'editar'])->name('cotizacion.editar');
+    Route::get('/cotizacion/ver/{id}', [App\Http\Controllers\CotizacionController::class, 'ver'])->name('cotizacion.ver');
+    Route::delete('/cotizacion/{id}', [App\Http\Controllers\CotizacionController::class, 'eliminar'])->name('cotizacion.eliminar');
     Route::get('/cotizacion/buscar-productos', [App\Http\Controllers\CotizacionController::class, 'buscarProductos'])->name('cotizacion.buscar-productos');
     Route::get('/cotizacion/obtener-precios', [App\Http\Controllers\CotizacionController::class, 'obtenerPrecios'])->name('cotizacion.obtener-precios');
     Route::post('/cotizacion/guardar', [App\Http\Controllers\CotizacionController::class, 'guardar'])->name('cotizacion.guardar');
+    Route::put('/cotizacion/actualizar/{id}', [App\Http\Controllers\CotizacionController::class, 'actualizar'])->name('cotizacion.actualizar');
     Route::post('/cotizacion/generar-nota-venta/{id}', [App\Http\Controllers\CotizacionController::class, 'generarNotaVenta'])->name('cotizacion.generar-nota-venta');
+    
+    // Rutas de Stock Comprometido
+    Route::post('/cotizacion/{id}/liberar-stock', [App\Http\Controllers\CotizacionController::class, 'liberarStockComprometido'])->name('cotizacion.liberar-stock');
+    Route::get('/cotizacion/resumen-stock-comprometido', [App\Http\Controllers\CotizacionController::class, 'resumenStockComprometido'])->name('cotizacion.resumen-stock-comprometido');
+});
+
+// Rutas de NVV Pendientes
+Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
+    Route::get('/nvv-pendientes', [App\Http\Controllers\NvvPendientesController::class, 'index'])->name('nvv-pendientes.index');
+    Route::get('/nvv-pendientes/export', [App\Http\Controllers\NvvPendientesController::class, 'export'])->name('nvv-pendientes.export');
+    Route::get('/nvv-pendientes/resumen', [App\Http\Controllers\NvvPendientesController::class, 'resumen'])->name('nvv-pendientes.resumen');
+    
+    // Rutas para detalle de NVV
+    Route::get('/nvv-detalle/{numeroNvv}', [App\Http\Controllers\NvvDetalleController::class, 'show'])->name('nvv-detalle.show');
+    Route::get('/nvv-detalle/{numeroNvv}/data', [App\Http\Controllers\NvvDetalleController::class, 'getNvvData'])->name('nvv-detalle.data');
+});
+
+// Rutas de Facturas Pendientes
+Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
+    Route::get('/facturas-pendientes', [App\Http\Controllers\FacturasPendientesController::class, 'index'])->name('facturas-pendientes.index');
+    Route::get('/facturas-pendientes/export', [App\Http\Controllers\FacturasPendientesController::class, 'export'])->name('facturas-pendientes.export');
+    Route::get('/facturas-pendientes/resumen', [App\Http\Controllers\FacturasPendientesController::class, 'resumen'])->name('facturas-pendientes.resumen');
 });
 
 // Rutas de Clientes
-Route::get('/clientes', [App\Http\Controllers\ClienteController::class, 'index'])->name('clientes.index')->middleware('auth');
-Route::post('/clientes/buscar', [App\Http\Controllers\ClienteController::class, 'buscar'])->name('clientes.buscar')->middleware('auth');
-Route::post('/clientes/validar', [App\Http\Controllers\ClienteController::class, 'validar'])->name('clientes.validar')->middleware('auth');
-Route::get('/clientes/{codigoCliente}/facturas', [App\Http\Controllers\ClienteController::class, 'facturasPendientes'])->name('clientes.facturas')->middleware('auth');
+Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
+    Route::get('/clientes', [App\Http\Controllers\ClienteController::class, 'index'])->name('clientes.index');
+    Route::post('/clientes/buscar', [App\Http\Controllers\ClienteController::class, 'buscar'])->name('clientes.buscar');
+    Route::post('/clientes/buscar-por-nombre', [App\Http\Controllers\ClienteController::class, 'buscarPorNombre'])->name('clientes.buscar-por-nombre');
+    Route::post('/clientes/sincronizar', [App\Http\Controllers\ClienteController::class, 'sincronizar'])->name('clientes.sincronizar');
+    Route::get('/clientes/estadisticas', [App\Http\Controllers\ClienteController::class, 'estadisticas'])->name('clientes.estadisticas');
+});
+
+// Ruta para página de cliente
+Route::get('/cliente/{codigo}', [App\Http\Controllers\ClienteController::class, 'show'])->name('cliente.show');
 
 // Autenticación
 Auth::routes();
 
 // Página de inicio después del login
-Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home')->middleware('auth');
+Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home')->middleware(['auth', 'sincronizar.clientes']);
 
 // Rutas protegidas
 Route::middleware(['auth'])->group(function () {
@@ -95,6 +129,10 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/productos/actualizar/{sku}', [ProductoController::class, 'actualizarProducto'])->name('productos.actualizar')->middleware('permission:editar productos');
         Route::get('/productos/publicados', [ProductoController::class, 'productosPublicados'])->name('productos.publicados')->middleware('permission:publicar productos');
         Route::get('/productos/lista-precios', [ProductoController::class, 'listaPrecios'])->name('productos.lista-precios')->middleware('permission:gestionar listas de precios');
+        
+        // Rutas de sincronización de productos
+        Route::post('/productos/sincronizar', [ProductoController::class, 'sincronizar'])->name('productos.sincronizar');
+        Route::get('/productos/estadisticas', [ProductoController::class, 'estadisticas'])->name('productos.estadisticas');
     });
 
     // **Gestión de Listas de Precios**

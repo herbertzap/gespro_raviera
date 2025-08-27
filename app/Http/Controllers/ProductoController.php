@@ -1111,12 +1111,69 @@ public function actualizarBodegas(Request $request)
     return redirect()->route('productos.productosPublicados')->with('success', 'Bodegas actualizadas correctamente');
 }
 
+    /**
+     * Sincronizar productos desde SQL Server
+     */
+    public function sincronizar(Request $request)
+    {
+        try {
+            // Ejecutar el comando de sincronización
+            $output = [];
+            $returnCode = 0;
+            
+            exec('php artisan productos:sincronizar-simple 2>&1', $output, $returnCode);
+            
+            if ($returnCode !== 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error en la sincronización: ' . implode("\n", $output)
+                ], 500);
+            }
+            
+            // Procesar la salida para obtener estadísticas
+            $creados = 0;
+            $actualizados = 0;
+            
+            foreach ($output as $line) {
+                if (strpos($line, 'Productos creados:') !== false) {
+                    $creados = (int) preg_replace('/[^0-9]/', '', $line);
+                } elseif (strpos($line, 'Productos actualizados:') !== false) {
+                    $actualizados = (int) preg_replace('/[^0-9]/', '', $line);
+                }
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Sincronización completada exitosamente',
+                'creados' => $creados,
+                'actualizados' => $actualizados,
+                'total' => $creados + $actualizados
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error en la sincronización: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 
-    
-    
-
-
-    
-
-
+    /**
+     * Obtener estadísticas de productos
+     */
+    public function estadisticas()
+    {
+        $totalProductos = Producto::count();
+        $productosSincronizados = Producto::whereNotNull('ultima_sincronizacion')->count();
+        $ultimaSincronizacion = Producto::max('ultima_sincronizacion');
+        
+        return response()->json([
+            'success' => true,
+            'estadisticas' => [
+                'total_productos' => $totalProductos,
+                'productos_sincronizados' => $productosSincronizados,
+                'ultima_sincronizacion' => $ultimaSincronizacion ? $ultimaSincronizacion->format('Y-m-d H:i:s') : null
+            ]
+        ]);
+    }
 }

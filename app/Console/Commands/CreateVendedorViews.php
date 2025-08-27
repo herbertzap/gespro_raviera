@@ -1,0 +1,182 @@
+<?php
+
+namespace App\Console\Commands;
+
+use Illuminate\Console\Command;
+use PDO;
+use PDOException;
+
+class CreateVendedorViews extends Command
+{
+    /**
+     * The name and signature of the console command.
+     *
+     * @var string
+     */
+    protected $signature = 'sql:create-vendedor-views';
+
+    /**
+     * The console command description.
+     *
+     * @var string
+     */
+    protected $description = 'Crear vistas SQL para el dashboard del vendedor';
+
+    /**
+     * Execute the console command.
+     */
+    public function handle()
+    {
+        $this->info('Creando vistas SQL para el dashboard del vendedor...');
+
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            if (!$host || !$database || !$username || !$password) {
+                $this->error('Credenciales SQL Server no configuradas en .env');
+                return 1;
+            }
+            
+            $dsn = "sqlsrv:Server={$host},{$port};Database={$database};Encrypt=no;TrustServerCertificate=yes;TrustServerCertificate=yes;";
+            
+            $pdo = new PDO($dsn, $username, $password);
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            
+            // Vista para NVV Pendientes Detalle
+            $this->info('Creando vista vw_nvv_pendientes_detalle...');
+            $nvvView = "
+                IF OBJECT_ID('vw_nvv_pendientes_detalle', 'V') IS NOT NULL
+                    DROP VIEW vw_nvv_pendientes_detalle
+                GO
+                
+                CREATE VIEW vw_nvv_pendientes_detalle AS
+                SELECT 
+                    dbo.MAEDDO.TIDO AS TD, 
+                    dbo.MAEDDO.NUDO AS NUM, 
+                    dbo.MAEDDO.FEEMLI AS EMIS_FCV, 
+                    dbo.MAEDDO.ENDO AS COD_CLI, 
+                    dbo.MAEEN.NOKOEN AS CLIE, 
+                    dbo.MAEDDO.KOPRCT, 
+                    dbo.MAEDDO.CAPRCO1, 
+                    dbo.MAEDDO.NOKOPR, 
+                    dbo.MAEDDO.CAPRCO1 - (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1) AS FACT, 
+                    dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1 AS PEND, 
+                    dbo.TABFU.NOKOFU, 
+                    dbo.TABCI.NOKOCI, 
+                    dbo.TABCM.NOKOCM, 
+                    CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) AS DIAS, 
+                    CASE 
+                        WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) < 8 THEN 'Entre 1 y 7 días' 
+                        WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) BETWEEN 8 AND 30 THEN 'Entre 8 y 30 Días' 
+                        WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) BETWEEN 31 AND 60 THEN 'Entre 31 y 60 Días' 
+                        ELSE 'Mas de 60 Días' 
+                    END AS Rango, 
+                    dbo.MAEDDO.VANELI / dbo.MAEDDO.CAPRCO1 AS PUNIT, 
+                    (dbo.MAEDDO.VANELI / dbo.MAEDDO.CAPRCO1) * (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1) AS PEND_VAL, 
+                    CASE WHEN MAEDDO_1.TIDO IS NULL THEN '' ELSE MAEDDO_1.TIDO END AS TD_R, 
+                    CASE WHEN MAEDDO_1.NUDO IS NULL THEN '' ELSE MAEDDO_1.NUDO END AS N_FCV, 
+                    dbo.TABFU.KOFU
+                FROM dbo.MAEDDO 
+                INNER JOIN dbo.MAEEN ON dbo.MAEDDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEDDO.SUENDO = dbo.MAEEN.SUEN 
+                INNER JOIN dbo.TABFU ON dbo.MAEDDO.KOFULIDO = dbo.TABFU.KOFU 
+                INNER JOIN dbo.TABCI ON dbo.MAEEN.PAEN = dbo.TABCI.KOPA AND dbo.MAEEN.CIEN = dbo.TABCI.KOCI 
+                INNER JOIN dbo.TABCM ON dbo.MAEEN.PAEN = dbo.TABCM.KOPA AND dbo.MAEEN.CIEN = dbo.TABCM.KOCI AND dbo.MAEEN.CMEN = dbo.TABCM.KOCM 
+                LEFT OUTER JOIN dbo.MAEDDO AS MAEDDO_1 ON dbo.MAEDDO.IDMAEDDO = MAEDDO_1.IDRST
+                WHERE (dbo.MAEDDO.TIDO = 'NVV') 
+                    AND (dbo.MAEDDO.LILG = 'SI') 
+                    AND (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1 <> 0) 
+                    AND (dbo.MAEDDO.KOPRCT <> 'D') 
+                    AND (dbo.MAEDDO.KOPRCT <> 'FLETE')
+                GO
+            ";
+            
+            $pdo->exec($nvvView);
+            $this->info('✓ Vista vw_nvv_pendientes_detalle creada exitosamente');
+            
+            // Vista para Facturas Pendientes
+            $this->info('Creando vista vw_facturas_pendientes...');
+            $facturasView = "
+                IF OBJECT_ID('vw_facturas_pendientes', 'V') IS NOT NULL
+                    DROP VIEW vw_facturas_pendientes
+                GO
+                
+                CREATE VIEW vw_facturas_pendientes AS
+                SELECT 
+                    dbo.MAEEDO.TIDO AS TIPO_DOCTO, 
+                    dbo.MAEEDO.NUDO AS NRO_DOCTO, 
+                    dbo.MAEEDO.ENDO AS CODIGO, 
+                    dbo.MAEEN.NOKOEN AS CLIENTE, 
+                    dbo.MAEEDO.SUDO AS SUC, 
+                    dbo.MAEEDO.FEEMDO AS EMISION, 
+                    dbo.MAEEDO.FE01VEDO AS P_VCMTO, 
+                    dbo.MAEEDO.FEULVEDO AS U_VCMTO, 
+                    CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) AS DIAS, 
+                    dbo.MAEEN.FOEN AS FONO, 
+                    dbo.MAEEN.DIEN AS DIRECCION, 
+                    dbo.TABCI.NOKOCI AS REGION, 
+                    dbo.TABCM.NOKOCM AS COMUNA, 
+                    ISNULL(dbo.TABFU.NOKOFU, 'SIN VENDEDOR ASIG.') AS VENDEDOR, 
+                    CASE 
+                        WHEN dbo.MAEEDO.TIDO = 'NCV' THEN dbo.MAEEDO.VABRDO * -1 
+                        ELSE dbo.MAEEDO.VABRDO 
+                    END AS VALOR, 
+                    CASE 
+                        WHEN dbo.MAEEDO.TIDO = 'NCV' THEN dbo.MAEEDO.VAABDO * -1 
+                        ELSE dbo.MAEEDO.VAABDO 
+                    END AS ABONOS, 
+                    CASE 
+                        WHEN dbo.MAEEDO.TIDO = 'NCV' AND (dbo.MAEEDO.VABRDO <> dbo.MAEEDO.VAABDO) AND CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN -7 AND -1 THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * -1 
+                        WHEN dbo.MAEEDO.TIDO <> 'NCV' AND (dbo.MAEEDO.VABRDO <> dbo.MAEEDO.VAABDO) AND CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN -7 AND -1 THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * 1 
+                        ELSE 0 
+                    END AS POR_VENCER, 
+                    CASE 
+                        WHEN dbo.MAEEDO.TIDO = 'NCV' AND (dbo.MAEEDO.VABRDO <> dbo.MAEEDO.VAABDO) AND CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) < -7 THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * -1 
+                        WHEN dbo.MAEEDO.TIDO <> 'NCV' AND (dbo.MAEEDO.VABRDO <> dbo.MAEEDO.VAABDO) AND CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) < -7 THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * 1 
+                        ELSE 0 
+                    END AS VIGENTE, 
+                    CASE 
+                        WHEN dbo.MAEEDO.TIDO = 'NCV' AND (dbo.MAEEDO.VABRDO <> dbo.MAEEDO.VAABDO) AND CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) > -1 THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * -1 
+                        WHEN dbo.MAEEDO.TIDO <> 'NCV' AND (dbo.MAEEDO.VABRDO <> dbo.MAEEDO.VAABDO) AND CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) > -1 THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * 1 
+                        ELSE 0 
+                    END AS VENCIDO, 
+                    CASE 
+                        WHEN dbo.MAEEDO.TIDO = 'NCV' THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * -1 
+                        ELSE (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) 
+                    END AS SALDO, 
+                    CASE 
+                        WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) < -8 THEN 'VIGENTE' 
+                        WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN -7 AND -1 THEN 'POR VENCER' 
+                        WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN 0 AND 7 THEN 'VENCIDO' 
+                        WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN 8 AND 30 THEN 'MOROSO' 
+                        ELSE 'BLOQUEAR' 
+                    END AS ESTADO, 
+                    dbo.TABFU.KOFU, 
+                    dbo.MAEEN.KOFUEN
+                FROM dbo.TABFU 
+                RIGHT OUTER JOIN dbo.MAEEN ON dbo.TABFU.KOFU = dbo.MAEEN.KOFUEN 
+                LEFT OUTER JOIN dbo.TABCM ON dbo.MAEEN.CIEN = dbo.TABCM.KOCI AND dbo.MAEEN.CMEN = dbo.TABCM.KOCM 
+                RIGHT OUTER JOIN dbo.MAEEDO ON dbo.MAEEN.KOEN = dbo.MAEEDO.ENDO AND dbo.MAEEN.SUEN = dbo.MAEEDO.SUENDO 
+                LEFT OUTER JOIN dbo.TABCI ON dbo.MAEEN.CIEN = dbo.TABCI.KOCI
+                WHERE (dbo.MAEEDO.EMPRESA = '01') 
+                    AND (dbo.MAEEDO.TIDO = 'NCV' OR dbo.MAEEDO.TIDO = 'FCV' OR dbo.MAEEDO.TIDO = 'FDV') 
+                    AND (dbo.MAEEDO.FEEMDO > CONVERT(DATETIME, '2000-01-01 00:00:00', 102)) 
+                    AND (dbo.MAEEDO.VABRDO > dbo.MAEEDO.VAABDO)
+                GO
+            ";
+            
+            $pdo->exec($facturasView);
+            $this->info('✓ Vista vw_facturas_pendientes creada exitosamente');
+            
+            $this->info('¡Todas las vistas han sido creadas exitosamente!');
+            return 0;
+            
+        } catch (PDOException $e) {
+            $this->error('Error creando las vistas: ' . $e->getMessage());
+            return 1;
+        }
+    }
+}

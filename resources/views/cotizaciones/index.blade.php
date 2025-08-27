@@ -10,13 +10,13 @@
                         <div class="col-md-8">
                             <h4 class="card-title">
                                 <i class="material-icons">description</i>
-                                Cotizaciones (Notas de Venta)
+                                 Notas de Venta
                             </h4>
                         </div>
                         <div class="col-md-4 text-right">
-                            <a href="{{ route('cotizacion.nueva') }}" class="btn btn-primary">
+                            <a href="{{ route('cobranza.index') }}" class="btn btn-primary">
                                 <i class="material-icons">add</i>
-                                Nueva Cotización
+                                Nueva Nota de Venta
                             </a>
                         </div>
                     </div>
@@ -31,9 +31,15 @@
                                     <label for="estado">Estado:</label>
                                     <select name="estado" id="estado" class="form-control">
                                         <option value="">Todos los estados</option>
-                                        <option value="ingresada" {{ $estado == 'ingresada' ? 'selected' : '' }}>Ingresada</option>
-                                        <option value="pendiente" {{ $estado == 'pendiente' ? 'selected' : '' }}>Pendiente de Aprobación</option>
+                                        <option value="borrador" {{ $estado == 'borrador' ? 'selected' : '' }}>Borrador</option>
+                                        <option value="enviada" {{ $estado == 'enviada' ? 'selected' : '' }}>Enviada</option>
                                         <option value="aprobada" {{ $estado == 'aprobada' ? 'selected' : '' }}>Aprobada</option>
+                                        <option value="rechazada" {{ $estado == 'rechazada' ? 'selected' : '' }}>Rechazada</option>
+                                        <option value="pendiente_stock" {{ $estado == 'pendiente_stock' ? 'selected' : '' }}>Pendiente por Stock</option>
+                                        <option value="procesada" {{ $estado == 'procesada' ? 'selected' : '' }}>Procesada</option>
+                                        <option value="cancelada" {{ $estado == 'cancelada' ? 'selected' : '' }}>Cancelada</option>
+                                        <option value="ingresada" {{ $estado == 'ingresada' ? 'selected' : '' }}>Ingresada (SQL)</option>
+                                        <option value="pendiente" {{ $estado == 'pendiente' ? 'selected' : '' }}>Pendiente (SQL)</option>
                                     </select>
                                 </div>
                             </div>
@@ -117,71 +123,143 @@
                                         <th>Total</th>
                                         <th>Saldo</th>
                                         <th>Estado</th>
+                                        <th>Fuente</th>
                                         <th>Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @foreach($cotizaciones as $cotizacion)
+                                    @php
+                                        // Convertir objeto a array si es necesario
+                                        $cotizacion = is_object($cotizacion) ? (array)$cotizacion : $cotizacion;
+                                    @endphp
                                     <tr>
                                         <td>
-                                            <strong>NV#{{ $cotizacion->numero }}</strong><br>
-                                            <small class="text-muted">ID: {{ $cotizacion->id }}</small>
+                                            <strong>
+                                                @if(isset($cotizacion['fuente']) && $cotizacion['fuente'] === 'local')
+                                                    COT#{{ $cotizacion['numero'] }}
+                                                @else
+                                                    NV#{{ $cotizacion['numero'] }}
+                                                @endif
+                                            </strong><br>
+                                            <small class="text-muted">ID: {{ $cotizacion['id'] }}</small>
                                         </td>
                                         <td>
-                                            <strong>{{ $cotizacion->cliente_codigo }}</strong><br>
-                                            <small>{{ $cotizacion->cliente_nombre }}</small>
-                                        </td>
-                                        <td>{{ \Carbon\Carbon::parse($cotizacion->fecha_emision)->format('d/m/Y') }}</td>
-                                        <td>
-                                            <strong>${{ number_format($cotizacion->total, 0, ',', '.') }}</strong>
+                                            <strong>{{ $cotizacion['cliente_codigo'] }}</strong><br>
+                                            <small>{{ $cotizacion['cliente_nombre'] }}</small>
                                         </td>
                                         <td>
-                                            @if($cotizacion->saldo > 0)
-                                                <span class="text-danger">${{ number_format($cotizacion->saldo, 0, ',', '.') }}</span>
+                                            @if(isset($cotizacion['fecha_emision']))
+                                                {{ \Carbon\Carbon::parse($cotizacion['fecha_emision'])->format('d/m/Y') }}
+                                            @elseif(isset($cotizacion['fecha']))
+                                                {{ \Carbon\Carbon::parse($cotizacion['fecha'])->format('d/m/Y') }}
+                                            @else
+                                                N/A
+                                            @endif
+                                        </td>
+                                        <td>
+                                            <strong>${{ number_format($cotizacion['total'], 0, ',', '.') }}</strong>
+                                        </td>
+                                        <td>
+                                            @if(isset($cotizacion['saldo']) && $cotizacion['saldo'] > 0)
+                                                <span class="text-danger">${{ number_format($cotizacion['saldo'], 0, ',', '.') }}</span>
                                             @else
                                                 <span class="text-success">$0</span>
                                             @endif
                                         </td>
                                         <td>
-                                            @switch($cotizacion->estado)
-                                                @case('ingresada')
-                                                    <span class="badge badge-info">Ingresada</span>
+                                            @switch($cotizacion['estado'])
+                                                @case('borrador')
+                                                    <span class="badge badge-secondary">Borrador</span>
                                                     @break
-                                                @case('pendiente')
-                                                    <span class="badge badge-warning">Pendiente de Aprobación</span>
+                                                @case('enviada')
+                                                    <span class="badge badge-info">Enviada</span>
                                                     @break
                                                 @case('aprobada')
                                                     <span class="badge badge-success">Aprobada</span>
                                                     @break
+                                                @case('rechazada')
+                                                    <span class="badge badge-danger">Rechazada</span>
+                                                    @break
+                                                @case('pendiente_stock')
+                                                    <span class="badge badge-warning">Pendiente por Stock</span>
+                                                    @break
                                                 @case('procesada')
                                                     <span class="badge badge-primary">Procesada</span>
                                                     @break
+                                                @case('cancelada')
+                                                    <span class="badge badge-dark">Cancelada</span>
+                                                    @break
+                                                @case('ingresada')
+                                                    <span class="badge badge-info">Ingresada</span>
+                                                    @break
+                                                @case('pendiente')
+                                                    <span class="badge badge-warning">Pendiente</span>
+                                                    @break
                                                 @default
-                                                    <span class="badge badge-secondary">{{ $cotizacion->estado }}</span>
+                                                    <span class="badge badge-secondary">{{ $cotizacion['estado'] }}</span>
                                             @endswitch
                                         </td>
                                         <td>
-                                            @if($cotizacion->estado === 'aprobada')
-                                                <button type="button" class="btn btn-sm btn-success" 
-                                                        onclick="generarNotaVenta({{ $cotizacion->id }})">
-                                                    <i class="material-icons">receipt</i>
-                                                    Generar NV
-                                                </button>
-                                            @elseif($cotizacion->estado === 'pendiente')
-                                                <span class="text-muted">
-                                                    <i class="material-icons" style="font-size: 14px;">warning</i>
-                                                    Requiere aprobación
-                                                </span>
-                                            @elseif($cotizacion->estado === 'procesada')
-                                                <span class="text-success">
-                                                    <i class="material-icons" style="font-size: 16px;">check_circle</i>
-                                                    Completada
-                                                </span>
+                                            @if(isset($cotizacion['fuente']))
+                                                @if($cotizacion['fuente'] === 'local')
+                                                    <span class="badge badge-primary">Local</span>
+                                                @else
+                                                    <span class="badge badge-info">SQL Server</span>
+                                                @endif
                                             @else
-                                                <span class="text-info">
-                                                    <i class="material-icons" style="font-size: 14px;">info</i>
-                                                    Ingresada
-                                                </span>
+                                                <span class="badge badge-secondary">N/A</span>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            @if(isset($cotizacion['fuente']) && $cotizacion['fuente'] === 'local')
+                                                @if(in_array($cotizacion['estado'], ['borrador', 'enviada', 'pendiente_stock']))
+                                                    <!-- Botones para cotizaciones editables -->
+                                                    <div class="btn-group" role="group">
+                                                        <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
+                                                           class="btn btn-sm btn-info" title="Ver">
+                                                            <i class="material-icons">visibility</i>
+                                                        </a>
+                                                        <a href="{{ route('cotizacion.editar', $cotizacion['id']) }}" 
+                                                           class="btn btn-sm btn-warning" title="Editar">
+                                                            <i class="material-icons">edit</i>
+                                                        </a>
+                                                        <button type="button" class="btn btn-sm btn-danger" 
+                                                                onclick="eliminarCotizacion({{ $cotizacion['id'] }})" title="Eliminar">
+                                                            <i class="material-icons">delete</i>
+                                                        </button>
+                                                    </div>
+                                                @elseif($cotizacion['estado'] === 'aprobada')
+                                                    <!-- Botón para generar nota de venta -->
+                                                    <div class="btn-group" role="group">
+                                                        <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
+                                                           class="btn btn-sm btn-info" title="Ver">
+                                                            <i class="material-icons">visibility</i>
+                                                        </a>
+                                                        <button type="button" class="btn btn-sm btn-success" 
+                                                                onclick="generarNotaVenta({{ $cotizacion['id'] }})" title="Generar Nota de Venta">
+                                                            <i class="material-icons">receipt</i>
+                                                        </button>
+                                                    </div>
+                                                @elseif(in_array($cotizacion['estado'], ['procesada', 'ingresada', 'pendiente']))
+                                                    <!-- Solo ver para cotizaciones procesadas -->
+                                                    <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
+                                                       class="btn btn-sm btn-info" title="Ver">
+                                                        <i class="material-icons">visibility</i>
+                                                    </a>
+                                                @else
+                                                    <!-- Estado desconocido -->
+                                                    <span class="text-muted">
+                                                        <i class="material-icons" style="font-size: 14px;">info</i>
+                                                        {{ ucfirst($cotizacion['estado']) }}
+                                                    </span>
+                                                @endif
+                                            @else
+                                                <!-- Cotizaciones de SQL Server (solo ver) -->
+                                                <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
+                                                   class="btn btn-sm btn-info" title="Ver">
+                                                    <i class="material-icons">visibility</i>
+                                                </a>
                                             @endif
                                         </td>
                                     </tr>
@@ -210,7 +288,7 @@
     </div>
 </div>
 
-<!-- Modal de confirmación -->
+<!-- Modal de confirmación para generar nota de venta -->
 <div class="modal fade" id="modalConfirmacion" tabindex="-1" role="dialog">
     <div class="modal-dialog" role="document">
         <div class="modal-content">
@@ -235,15 +313,49 @@
     </div>
 </div>
 
+<!-- Modal de confirmación para eliminar cotización -->
+<div class="modal fade" id="modalEliminar" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="material-icons">warning</i>
+                    Confirmar Eliminación
+                </h5>
+                <button type="button" class="close text-white" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p><strong>¿Estás seguro de que quieres eliminar esta cotización?</strong></p>
+                <p class="text-danger">Esta acción no se puede deshacer y se perderán todos los datos de la cotización.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger" id="btnConfirmarEliminar">
+                    <i class="material-icons">delete</i>
+                    Eliminar Cotización
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @endsection
 
 @push('js')
 <script>
 let cotizacionIdActualCotizaciones = null;
+let cotizacionIdEliminar = null;
 
 function generarNotaVenta(cotizacionId) {
     cotizacionIdActualCotizaciones = cotizacionId;
     $('#modalConfirmacion').modal('show');
+}
+
+function eliminarCotizacion(cotizacionId) {
+    cotizacionIdEliminar = cotizacionId;
+    $('#modalEliminar').modal('show');
 }
 
 $('#btnConfirmarGenerar').click(function() {
@@ -300,6 +412,62 @@ $('#btnConfirmarGenerar').click(function() {
         complete: function() {
             btn.prop('disabled', false).html(originalText);
             $('#modalConfirmacion').modal('hide');
+        }
+    });
+});
+
+$('#btnConfirmarEliminar').click(function() {
+    if (!cotizacionIdEliminar) return;
+    
+    const btn = $(this);
+    const originalText = btn.html();
+    
+    btn.prop('disabled', true).html(`
+        <i class="material-icons">hourglass_empty</i>
+        Eliminando...
+    `);
+    
+    $.ajax({
+        url: `/cotizacion/${cotizacionIdEliminar}`,
+        method: 'DELETE',
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+        },
+        success: function(response) {
+            if (response.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: '¡Éxito!',
+                    text: response.message,
+                    confirmButtonText: 'OK'
+                }).then(() => {
+                    location.reload();
+                });
+            } else {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: response.message,
+                    confirmButtonText: 'OK'
+                });
+            }
+        },
+        error: function(xhr) {
+            let message = 'Error al eliminar cotización';
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+                message = xhr.responseJSON.message;
+            }
+            
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: message,
+                confirmButtonText: 'OK'
+            });
+        },
+        complete: function() {
+            btn.prop('disabled', false).html(originalText);
+            $('#modalEliminar').modal('hide');
         }
     });
 });

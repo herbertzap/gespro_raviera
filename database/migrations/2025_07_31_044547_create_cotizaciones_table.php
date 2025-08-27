@@ -13,14 +13,33 @@ return new class extends Migration
     {
         Schema::create('cotizaciones', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->string('cliente_codigo');
-            $table->string('cliente_nombre');
+            $table->foreignId('user_id')->constrained()->onDelete('cascade'); // Vendedor que crea
+            $table->string('cliente_codigo', 20);
+            $table->string('cliente_nombre', 200);
+            $table->string('cliente_direccion', 300)->nullable();
+            $table->string('cliente_telefono', 50)->nullable();
+            $table->string('cliente_lista_precios', 20)->nullable();
             $table->datetime('fecha');
-            $table->enum('estado', ['borrador', 'enviada', 'aprobada', 'rechazada'])->default('borrador');
+            $table->enum('estado', ['borrador', 'enviada', 'aprobada', 'rechazada', 'procesada', 'cancelada'])->default('borrador');
+            $table->decimal('subtotal', 15, 2)->default(0);
+            $table->decimal('descuento_global', 15, 2)->default(0);
             $table->decimal('total', 15, 2)->default(0);
             $table->text('observaciones')->nullable();
+            $table->text('motivo_rechazo')->nullable();
+            $table->boolean('requiere_aprobacion')->default(false);
+            $table->string('nota_venta_id')->nullable(); // ID de la nota de venta en SQL Server
+            $table->datetime('fecha_aprobacion')->nullable();
+            $table->foreignId('aprobado_por')->nullable()->constrained('users');
+            $table->datetime('fecha_cancelacion')->nullable();
+            $table->foreignId('cancelado_por')->nullable()->constrained('users');
             $table->timestamps();
+            
+            // Índices
+            $table->index('cliente_codigo');
+            $table->index('estado');
+            $table->index('fecha');
+            $table->index('user_id');
+            $table->index(['user_id', 'estado']);
         });
     }
 

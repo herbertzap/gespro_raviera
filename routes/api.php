@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\ValidacionController;
 
 /*
 |--------------------------------------------------------------------------
@@ -46,3 +47,7 @@ Route::get('/cliente/detalle/{codigoCliente}', function ($codigoCliente) {
         ], 500);
     }
 })->middleware('auth');
+
+// Rutas de validación
+Route::post('/validar-cliente', [ValidacionController::class, 'validarCliente']);
+Route::post('/validar-stock', [ValidacionController::class, 'validarStock']);

@@ -8,11 +8,20 @@
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header card-header-primary">
-                    <h4 class="card-title">
-                        <i class="material-icons">search</i>
-                        Buscar Clientes
-                    </h4>
-                    <p class="card-category">Encuentra y gestiona tus clientes asignados</p>
+                    <div class="row">
+                        <div class="col-md-8">
+                            <h4 class="card-title">
+                                <i class="material-icons">search</i>
+                                Buscar Clientes
+                            </h4>
+                            <p class="card-category">Encuentra y gestiona tus clientes asignados</p>
+                        </div>
+                        <div class="col-md-4 text-right">
+                            <button type="button" class="btn btn-info btn-sm" onclick="sincronizarClientes()">
+                                <i class="material-icons">sync</i> Sincronizar
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div class="card-body">
                     <!-- Filtros de búsqueda -->
@@ -171,7 +180,11 @@
                                         @if(isset($cliente['BLOQUEADO']) && $cliente['BLOQUEADO'] == 1)
                                             <span class="text-muted">{{ $cliente['CODIGO_CLIENTE'] }}</span>
                                         @else
-                                            <strong>{{ $cliente['CODIGO_CLIENTE'] }}</strong>
+                                            <a href="{{ route('cliente.show', $cliente['CODIGO_CLIENTE']) }}" 
+                                               class="text-primary font-weight-bold" 
+                                               title="Ver información de {{ $cliente['NOMBRE_CLIENTE'] }}">
+                                                {{ $cliente['CODIGO_CLIENTE'] }}
+                                            </a>
                                         @endif
                                     </td>
                                     <td>
@@ -179,7 +192,11 @@
                                             @if(isset($cliente['BLOQUEADO']) && $cliente['BLOQUEADO'] == 1)
                                                 <span class="text-muted">{{ $cliente['NOMBRE_CLIENTE'] }}</span>
                                             @else
-                                                <strong>{{ $cliente['NOMBRE_CLIENTE'] }}</strong>
+                                                <a href="{{ route('cliente.show', $cliente['CODIGO_CLIENTE']) }}" 
+                                                   class="text-primary" 
+                                                   title="Ver información de {{ $cliente['NOMBRE_CLIENTE'] }}">
+                                                    {{ $cliente['NOMBRE_CLIENTE'] }}
+                                                </a>
                                             @endif
                                             <br>
                                             <small class="text-muted">{{ $cliente['REGION'] }} - {{ $cliente['COMUNA'] }}</small>
@@ -214,11 +231,12 @@
                                     </td>
                                     <td>
                                         <div class="btn-group" role="group">
-                                            <button type="button" class="btn btn-sm btn-outline-primary" 
-                                                    onclick="verDetalleCliente('{{ $cliente['CODIGO_CLIENTE'] }}')"
-                                                    @if(isset($cliente['BLOQUEADO']) && $cliente['BLOQUEADO'] == 1) disabled @endif>
+                                            <a href="{{ route('cliente.show', $cliente['CODIGO_CLIENTE']) }}" 
+                                               class="btn btn-sm btn-outline-primary"
+                                               @if(isset($cliente['BLOQUEADO']) && $cliente['BLOQUEADO'] == 1) disabled @endif
+                                               title="Ver información de {{ $cliente['NOMBRE_CLIENTE'] }}">
                                                 <i class="material-icons">visibility</i>
-                                            </button>
+                                            </a>
                                             <button type="button" class="btn btn-sm btn-outline-success" 
                                                     onclick="contactarCliente('{{ $cliente['CODIGO_CLIENTE'] }}')"
                                                     @if(isset($cliente['BLOQUEADO']) && $cliente['BLOQUEADO'] == 1) disabled @endif>
@@ -326,8 +344,10 @@
 @push('js')
 <script>
 let clienteSeleccionadoCobranza = null;
+let clienteActualModal = null; // Variable para almacenar el cliente del modal actual
 
 function verDetalleCliente(codigoCliente) {
+    clienteActualModal = codigoCliente; // Almacenar el código del cliente
     $('#modalDetalleClienteBody').html('<div class="text-center"><i class="material-icons">hourglass_empty</i> Cargando información del cliente...</div>');
     $('#modalDetalleCliente').modal('show');
     
@@ -444,7 +464,7 @@ function verDetalleCliente(codigoCliente) {
                                                             <td>$${parseFloat(nota.VALOR).toLocaleString()}</td>
                                                             <td><span class="badge badge-${nota.ESTADO === 'VENCIDO' || nota.ESTADO === 'MOROSO' ? 'danger' : 'success'}">${nota.ESTADO}</span></td>
                                                             <td>
-                                                                <button class="btn btn-sm btn-outline-primary" onclick="verCotizacion('${nota.NRO_DOCTO}')">
+                                                                <button class="btn btn-sm btn-outline-primary" onclick="verCotizacion('${nota.NRO_DOCTO}', clienteActualModal)">
                                                                     <i class="material-icons" style="font-size: 14px;">visibility</i>
                                                                 </button>
                                                             </td>
@@ -486,9 +506,14 @@ function contactarCliente(codigoCliente) {
     alert(`Contactando al cliente ${codigoCliente}...`);
 }
 
-function verCotizacion(numeroDocumento) {
-    // Redirigir a la página de cotizaciones con filtro por número de documento
-    window.location.href = '/cotizaciones?buscar=' + numeroDocumento;
+function verCotizacion(numeroDocumento, codigoCliente) {
+    // Redirigir a la vista interna del cliente
+    if (codigoCliente) {
+        window.location.href = '/cliente/' + codigoCliente;
+    } else {
+        // Fallback: redirigir a cotizaciones si no hay código de cliente
+        window.location.href = '/cotizaciones?buscar=' + numeroDocumento;
+    }
 }
 
 function nuevaVenta(codigoCliente, nombreCliente) {
@@ -513,5 +538,41 @@ function confirmarNuevaVenta() {
 $(document).ready(function() {
     // Los enlaces de ordenamiento ya están configurados para hacer submit automático
 });
+
+function sincronizarClientes() {
+    if (!confirm('¿Deseas sincronizar los clientes desde SQL Server? Esto puede tomar unos momentos.')) {
+        return;
+    }
+
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '<i class="material-icons">sync</i> Sincronizando...';
+    button.disabled = true;
+
+    fetch('/clientes/sincronizar', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`Sincronización completada:\n- Nuevos: ${data.nuevos}\n- Actualizados: ${data.actualizados}\n- Total: ${data.total}`);
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error al sincronizar clientes');
+    })
+    .finally(() => {
+        button.innerHTML = originalText;
+        button.disabled = false;
+    });
+}
 </script>
 @endpush 

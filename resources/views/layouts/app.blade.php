@@ -7,7 +7,7 @@
 
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
-        <title>{{ config('app.name', 'GESPRO RIVERA') }}</title>
+        <title>@yield('title', config('app.name', 'GESPRO RIVERA'))</title>
         <!-- Favicon -->
         <link rel="apple-touch-icon" sizes="76x76" href="{{ asset('black') }}/img/apple-icon.png">
         <link rel="icon" type="image/png" href="{{ asset('black') }}/img/favicon.png">
@@ -22,6 +22,7 @@
         <link href="{{ asset('black') }}/css/black-dashboard.css?v=1.0.0" rel="stylesheet" />
         <link href="{{ asset('black') }}/css/theme.css" rel="stylesheet" />
         <link href="{{ asset('css/pagination.css') }}" rel="stylesheet" />
+        <link href="{{ asset('css/custom-badges.css') }}" rel="stylesheet" />
     </head>
     <body class="{{ $class ?? '' }}">
 
@@ -30,6 +31,19 @@
                     @include('layouts.navbars.sidebar')
                 <div class="main-panel">
                     @include('layouts.navbars.navbar')
+
+                    <!-- Notificación de Sincronización -->
+                    @auth
+                        @if(auth()->user()->hasRole('Vendedor'))
+                            <div id="sincronizacion-notification" class="alert alert-info alert-dismissible fade show" style="display: none; margin: 10px 15px;">
+                                <i class="fas fa-sync-alt fa-spin"></i>
+                                <strong>Sincronizando clientes...</strong> Los datos se están actualizando automáticamente.
+                                <button type="button" class="close" data-dismiss="alert">
+                                    <span>&times;</span>
+                                </button>
+                            </div>
+                        @endif
+                    @endauth
 
                     <div class="content">
                         @yield('content')
@@ -45,10 +59,10 @@
             @include('layouts.navbars.navbar')
             <div class="wrapper wrapper-full-page">
                 <div class="full-page {{ $contentClass ?? '' }}">
-                    <div class="content">
-                        <div class="container">
+                    <div class="content m-0 p-0 ">
+        
                             @yield('content')
-                        </div>
+    
                     </div>
                     @include('layouts.footer')
                 </div>
@@ -91,6 +105,8 @@
         <script src="{{ asset('black') }}/js/theme.js"></script>
 
 
+
+
         <script>
             $(document).ready(function() {
                 $().ready(function() {
@@ -98,11 +114,40 @@
                     $navbar = $('.navbar');
                     $main_panel = $('.main-panel');
 
+                    // Mostrar notificación de sincronización si es la primera visita del día
+                    @auth
+                        @if(auth()->user()->hasRole('Vendedor'))
+                            // Verificar si es la primera visita del día
+                            const ultimaSincronizacion = localStorage.getItem('ultima_sincronizacion_{{ auth()->id() }}');
+                            const hoy = new Date().toDateString();
+                            
+                            if (ultimaSincronizacion !== hoy) {
+                                // Mostrar notificación de sincronización
+                                $('#sincronizacion-notification').fadeIn();
+                                
+                                // Ocultar después de 5 segundos
+                                setTimeout(function() {
+                                    $('#sincronizacion-notification').fadeOut();
+                                }, 5000);
+                                
+                                // Marcar como sincronizado hoy
+                                localStorage.setItem('ultima_sincronizacion_{{ auth()->id() }}', hoy);
+                            }
+                        @endif
+                    @endauth
+
                     $full_page = $('.full-page');
 
                     $sidebar_responsive = $('body > .navbar-collapse');
                     sidebar_mini_active = true;
                     white_color = false;
+
+                    // Ocultar sidebar por defecto en el dashboard
+                    if (window.location.pathname === '/dashboard' || window.location.pathname === '/') {
+                        // El sidebar ya está oculto por defecto, solo marcamos el botón como toggled
+                        $('.navbar-toggle').addClass('toggled');
+                        blackDashboard.misc.navbar_menu_visible = 1;
+                    }
 
                     window_width = $(window).width();
 

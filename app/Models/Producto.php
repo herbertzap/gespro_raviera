@@ -28,6 +28,7 @@ class Producto extends Model
         'DIVISIBLE',
         'DIVISIBLE2',
         'FECRPR',
-        'estado'
+        'estado',
+        'ultima_sincronizacion'
     ];
 }

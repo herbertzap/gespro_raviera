@@ -13609,7 +13609,7 @@ img {
   }
   .navbar .dropdown.show .dropdown-menu:before,
   .navbar .dropdown .dropdown-menu:before {
-    display: none;
+    display: block;
   }
   .navbar .dropdown-menu .dropdown-item:focus,
   .navbar .dropdown-menu .dropdown-item:hover {
@@ -13933,7 +13933,7 @@ img {
     background: none !important;
   }
   .navbar .navbar-toggle {
-    display: none;
+    display: inline-block;
   }
   .navbar-nav .nav-link.profile-photo {
     padding: 0;

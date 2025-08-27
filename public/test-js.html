@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test JavaScript</title>
+</head>
+<body>
+    <h1>Test JavaScript</h1>
+    
+    <div>
+        <input type="text" id="buscarProducto" placeholder="Buscar producto...">
+        <button id="btnBuscarProductos">Buscar</button>
+        <button id="btnTestJavaScript">Test JS</button>
+    </div>
+    
+    <div id="resultadosBusqueda" style="display: none;">
+        <div id="contenidoResultados">
+            <!-- Resultados aquí -->
+        </div>
+    </div>
+    
+    <script src="/js/cotizaciones.js"></script>
+    <script>
+        // Verificar que el script se cargó
+        console.log('Página de prueba cargada');
+        console.log('buscarProductos disponible:', typeof window.buscarProductos);
+        console.log('testJavaScript disponible:', typeof window.testJavaScript);
+    </script>
+</body>
+</html>

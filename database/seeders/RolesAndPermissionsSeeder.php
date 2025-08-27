@@ -72,6 +72,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $supervisor = Role::create(['name' => 'Supervisor']);
         $compras = Role::create(['name' => 'Compras']);
         $bodega = Role::create(['name' => 'Bodega']);
+        $picking = Role::create(['name' => 'Picking']);
 
         // Asignar permisos a Vendedor
         $vendedor->givePermissionTo([
@@ -132,6 +133,19 @@ class RolesAndPermissionsSeeder extends Seeder
             'manage_warehouse',
             'view_reports',
             'export_reports',
+        ]);
+
+        // Asignar permisos a Picking
+        $picking->givePermissionTo([
+            'view_dashboard',
+            'view_products',
+            'view_stock',
+            'manage_stock',
+            'reserve_stock',
+            'view_sale_notes',
+            'approve_sale_notes',
+            'view_quotations',
+            'view_reports',
         ]);
 
         // Asignar TODOS los permisos a Super Admin

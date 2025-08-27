@@ -1,0 +1,76 @@
+/* Badges personalizados para mejor legibilidad en tema oscuro */
+
+/* Badge Success - Color claro con texto oscuro */
+.badge-success {
+    background-color: #d4edda !important;
+    color: #155724 !important;
+    border: 1px solid #c3e6cb !important;
+}
+
+/* Badge Danger - Color claro con texto oscuro */
+.badge-danger {
+    background-color: #f8d7da !important;
+    color: #721c24 !important;
+    border: 1px solid #f5c6cb !important;
+}
+
+/* Badge Warning - Color claro con texto oscuro */
+.badge-warning {
+    background-color: #fff3cd !important;
+    color: #856404 !important;
+    border: 1px solid #ffeaa7 !important;
+}
+
+/* Badge Info - Color claro con texto oscuro */
+.badge-info {
+    background-color: #d1ecf1 !important;
+    color: #0c5460 !important;
+    border: 1px solid #bee5eb !important;
+}
+
+/* Badge Primary - Color oscuro con texto blanco */
+.badge-primary {
+    background-color: #2c3e50 !important;
+    color: #ffffff !important;
+    border: 1px solid #34495e !important;
+}
+
+/* Badge Secondary - Color gris oscuro con texto blanco */
+.badge-secondary {
+    background-color: #6c757d !important;
+    color: #ffffff !important;
+    border: 1px solid #5a6268 !important;
+}
+
+/* Badge Light - Color muy claro con texto oscuro */
+.badge-light {
+    background-color: #f8f9fa !important;
+    color: #495057 !important;
+    border: 1px solid #e9ecef !important;
+}
+
+/* Badge Dark - Color muy oscuro con texto blanco */
+.badge-dark {
+    background-color: #343a40 !important;
+    color: #ffffff !important;
+    border: 1px solid #212529 !important;
+}
+
+/* Hover effects para mejor interactividad */
+.badge:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+    transition: all 0.2s ease;
+}
+
+/* Badges en tablas */
+.table .badge {
+    font-size: 0.75em;
+    padding: 0.25em 0.6em;
+}
+
+/* Badges en cards */
+.card .badge {
+    font-size: 0.8em;
+    padding: 0.3em 0.7em;
+}

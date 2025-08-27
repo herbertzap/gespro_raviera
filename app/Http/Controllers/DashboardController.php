@@ -37,6 +37,8 @@ class DashboardController extends Controller
             $data = $this->getSupervisorDashboard($user);
         } elseif ($user->hasRole('Compras')) {
             $data = $this->getComprasDashboard($user);
+        } elseif ($user->hasRole('Picking')) {
+            $data = $this->getPickingDashboard($user);
         } elseif ($user->hasRole('Bodega')) {
             $data = $this->getBodegaDashboard($user);
         }
@@ -79,8 +81,7 @@ class DashboardController extends Controller
             ['path' => request()->url(), 'query' => request()->query()]
         );
         
-        // Obtener cotizaciones reales del vendedor desde SQL Server
-        $cotizaciones = $this->cobranzaService->getCotizacionesPorVendedor($user->codigo_vendedor, 5);
+
 
         // Obtener notas de venta pendientes
         $notasVenta = NotaVenta::where('user_id', $user->id)
@@ -89,14 +90,29 @@ class DashboardController extends Controller
             ->take(5)
             ->get();
 
-        // Obtener resumen de cobranza del vendedor
-        $resumenCobranza = $this->cobranzaService->getResumenCobranzaPorVendedor($user->codigo_vendedor);
+        // Obtener NVV pendientes detalle
+        $nvvPendientes = $this->cobranzaService->getNvvPendientesDetalle($user->codigo_vendedor, 10);
+        $resumenNvvPendientes = $this->cobranzaService->getResumenNvvPendientes($user->codigo_vendedor);
+
+        // Obtener facturas pendientes
+        $facturasPendientes = $this->cobranzaService->getFacturasPendientes($user->codigo_vendedor, 10);
+        $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes($user->codigo_vendedor);
+
+        // Calcular resumen de cobranza con datos reales
+        $resumenCobranza = [
+            'TOTAL_FACTURAS' => $resumenFacturasPendientes['total_facturas'],
+            'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor'],
+            'SALDO_VIGENTE' => $resumenFacturasPendientes['por_estado']['VIGENTE']['valor'] + $resumenFacturasPendientes['por_estado']['POR VENCER']['valor']
+        ];
 
         return [
             'clientesAsignados' => $clientesPaginated,
-            'cotizaciones' => $cotizaciones,
             'notasVenta' => $notasVenta,
             'resumenCobranza' => $resumenCobranza,
+            'nvvPendientes' => $nvvPendientes,
+            'resumenNvvPendientes' => $resumenNvvPendientes,
+            'facturasPendientes' => $facturasPendientes,
+            'resumenFacturasPendientes' => $resumenFacturasPendientes,
             'tipoUsuario' => 'Vendedor',
             'filtros' => $filtros
         ];
@@ -274,5 +290,36 @@ class DashboardController extends Controller
     {
         // Implementar lógica para productos con stock crítico
         return [];
+    }
+
+    private function getPickingDashboard($user)
+    {
+        // Obtener NVV pendientes detalle para validación de stock
+        $nvvPendientes = $this->cobranzaService->getNvvPendientesDetalle(null, 20);
+        $resumenNvvPendientes = $this->cobranzaService->getResumenNvvPendientes(null);
+
+        // Obtener facturas pendientes
+        $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 10);
+        $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes(null);
+
+        // Obtener notas de venta pendientes de aprobación
+        $notasPendientes = NotaVenta::where('estado', 'por_aprobar')
+            ->with('user')
+            ->latest()
+            ->take(10)
+            ->get();
+
+        // Resumen general de cobranza
+        $resumenCobranza = $this->cobranzaService->getResumenCobranza();
+
+        return [
+            'nvvPendientes' => $nvvPendientes,
+            'resumenNvvPendientes' => $resumenNvvPendientes,
+            'facturasPendientes' => $facturasPendientes,
+            'resumenFacturasPendientes' => $resumenFacturasPendientes,
+            'notasPendientes' => $notasPendientes,
+            'resumenCobranza' => $resumenCobranza,
+            'tipoUsuario' => 'Picking'
+        ];
     }
 }

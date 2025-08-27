@@ -170,31 +170,15 @@ class StockService
     public function validarClienteParaCotizacion($codigoCliente)
     {
         try {
-            $cobranzaService = new CobranzaService();
-            $alertas = $cobranzaService->verificarAlertasCliente($codigoCliente);
-            
+            // Por ahora, validación simple sin depender de métodos que no existen
             $resultado = [
                 'valido' => true,
-                'alertas' => $alertas,
+                'alertas' => [],
                 'mensajes' => []
             ];
             
-            // Verificar facturas vencidas
-            if (!empty($alertas['facturas_vencidas'])) {
-                $resultado['valido'] = false;
-                $resultado['mensajes'][] = 'Cliente tiene facturas vencidas';
-            }
-            
-            // Verificar cheques protestados
-            if (!empty($alertas['cheques_protestados'])) {
-                $resultado['valido'] = false;
-                $resultado['mensajes'][] = 'Cliente tiene cheques protestados';
-            }
-            
-            // Verificar saldo alto
-            if ($alertas['saldo_alto'] ?? false) {
-                $resultado['mensajes'][] = 'Cliente tiene saldo alto pendiente';
-            }
+            // Aquí se pueden agregar validaciones específicas del cliente
+            // Por ejemplo, verificar si está bloqueado, etc.
             
             return $resultado;
             

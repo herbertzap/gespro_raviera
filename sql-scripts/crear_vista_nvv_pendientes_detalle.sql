@@ -1,0 +1,50 @@
+-- Vista para NVV Pendientes Detalle
+-- Esta vista muestra las notas de venta pendientes de facturación
+
+IF EXISTS (SELECT * FROM sys.views WHERE name = 'vw_nvv_pendientes_detalle')
+    DROP VIEW vw_nvv_pendientes_detalle
+GO
+
+CREATE VIEW vw_nvv_pendientes_detalle AS
+SELECT 
+    dbo.MAEDDO.TIDO AS TD, 
+    dbo.MAEDDO.NUDO AS NUM, 
+    dbo.MAEDDO.FEEMLI AS EMIS_FCV, 
+    dbo.MAEDDO.ENDO AS COD_CLI, 
+    dbo.MAEEN.NOKOEN AS CLIE, 
+    dbo.MAEDDO.KOPRCT, 
+    dbo.MAEDDO.CAPRCO1, 
+    dbo.MAEDDO.NOKOPR, 
+    dbo.MAEDDO.CAPRCO1 - (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1) AS FACT, 
+    dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1 AS PEND, 
+    dbo.TABFU.NOKOFU, 
+    dbo.TABCI.NOKOCI, 
+    dbo.TABCM.NOKOCM, 
+    CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) AS DIAS, 
+    CASE 
+        WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) < 8 THEN 'Entre 1 y 7 días' 
+        WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) BETWEEN 8 AND 30 THEN 'Entre 8 y 30 Días' 
+        WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) BETWEEN 31 AND 60 THEN 'Entre 31 y 60 Días' 
+        ELSE 'Mas de 60 Días' 
+    END AS Rango, 
+    dbo.MAEDDO.VANELI / dbo.MAEDDO.CAPRCO1 AS PUNIT, 
+    (dbo.MAEDDO.VANELI / dbo.MAEDDO.CAPRCO1) * (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1) AS PEND_VAL, 
+    CASE WHEN MAEDDO_1.TIDO IS NULL THEN '' ELSE MAEDDO_1.TIDO END AS TD_R, 
+    CASE WHEN MAEDDO_1.NUDO IS NULL THEN '' ELSE MAEDDO_1.NUDO END AS N_FCV, 
+    dbo.TABFU.KOFU
+FROM dbo.MAEDDO 
+INNER JOIN dbo.MAEEN ON dbo.MAEDDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEDDO.SUENDO = dbo.MAEEN.SUEN 
+INNER JOIN dbo.TABFU ON dbo.MAEDDO.KOFULIDO = dbo.TABFU.KOFU 
+INNER JOIN dbo.TABCI ON dbo.MAEEN.PAEN = dbo.TABCI.KOPA AND dbo.MAEEN.CIEN = dbo.TABCI.KOCI 
+INNER JOIN dbo.TABCM ON dbo.MAEEN.PAEN = dbo.TABCM.KOPA AND dbo.MAEEN.CIEN = dbo.TABCI.KOCI AND dbo.MAEEN.CMEN = dbo.TABCM.KOCM 
+LEFT OUTER JOIN dbo.MAEDDO AS MAEDDO_1 ON dbo.MAEDDO.IDMAEDDO = MAEDDO_1.IDRST 
+WHERE (dbo.MAEDDO.TIDO = 'NVV') 
+    AND (dbo.MAEDDO.LILG = 'SI') 
+    AND (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1 <> 0) 
+    AND (dbo.MAEDDO.KOPRCT <> 'D') 
+    AND (dbo.MAEDDO.KOPRCT <> 'FLETE')
+GO
+
+-- Verificar que la vista se creó correctamente
+SELECT TOP 5 * FROM vw_nvv_pendientes_detalle WHERE KOFU = 'GOP'
+GO

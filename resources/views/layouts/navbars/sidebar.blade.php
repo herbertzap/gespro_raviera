@@ -1,18 +1,95 @@
 <div class="sidebar">
     <div class="sidebar-wrapper">
         <div class="logo">
-            <a href="#" class="simple-text logo-mini">
-                <img class="" src="{{ asset('black') }}/img/logo.webp" alt="">
+            <a href="#" class="simple-text logo-mini col-12">
+                @if(auth()->user()->profile_photo_path)
+                    <img class="rounded-circle" src="{{ Storage::url(auth()->user()->profile_photo_path) }}" alt="{{ auth()->user()->name }}" style="width: 40px; height: 40px; object-fit: cover;">
+                @else
+                    <div class="avatar-placeholder" style="width: 40px; height: 40px; background: linear-gradient(45deg, #667eea 0%, #764ba2 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 16px;">
+                        {{ strtoupper(substr(auth()->user()->name, 0, 1)) }}
+                    </div>
+                @endif
             </a>
-            <a href="#" class="simple-text logo-normal">{{ __('GESPRO RAVERA') }}</a>
+            <a href="#" class="simple-text logo-normal">
+                <div style="text-align: center;">
+                    <div style="font-size: 14px; font-weight: bold; margin-bottom: 2px;">{{ auth()->user()->name }}</div>
+                    @if(auth()->user()->codigo_vendedor)
+                        <div style="font-size: 10px; opacity: 0.6; margin-top: 2px;">Vendedor: {{ auth()->user()->codigo_vendedor }}</div>
+                    @endif
+                </div>
+            </a>
         </div>
         <ul class="nav">
+            <!-- Dashboard (Inicio) -->
             <li @if ($pageSlug == 'dashboard') class="active " @endif>
                 <a href="{{ route('dashboard') }}">
                     <i class="tim-icons icon-chart-pie-36"></i>
                     <p>{{ __('Dashboard') }}</p>
                 </a>
             </li>
+
+            <!-- Ventas -->
+            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Supervisor'))
+            <li>
+                <a data-toggle="collapse" href="#Ventas" aria-expanded="false">
+                    <i class="tim-icons icon-cart"></i>
+                    <span class="nav-link-text">{{ __('Ventas') }}</span>
+                    <b class="caret mt-1"></b>
+                </a>
+                <div class="collapse" id="Ventas">
+                    <ul class="nav pl-4">
+                        @can('view_clients')
+                        <li @if ($pageSlug == 'buscar-clientes') class="active " @endif>
+                            <a href="{{ route('cobranza.index') }}">
+                                <i class="tim-icons icon-single-02"></i>
+                                <p>{{ __('Clientes') }}</p>
+                            </a>
+                        </li>
+                        @endcan
+                        
+                        <li @if ($pageSlug == 'cotizaciones') class="active " @endif>
+                            <a href="{{ route('cotizaciones.index') }}">
+                                <i class="tim-icons icon-notes"></i>
+                                <p>{{ __('Cotizaciones') }}</p>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </li>
+            @endif
+
+            <!-- Informes -->
+            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Supervisor'))
+            <li>
+                <a data-toggle="collapse" href="#Informes" aria-expanded="false">
+                    <i class="tim-icons icon-chart-bar-32"></i>
+                    <span class="nav-link-text">{{ __('Informes') }}</span>
+                    <b class="caret mt-1"></b>
+                </a>
+                <div class="collapse" id="Informes">
+                    <ul class="nav pl-4">
+                        <li @if (($pageSlug ?? '') == 'nvv-pendientes') class="active " @endif>
+                            <a href="{{ route('nvv-pendientes.index') }}">
+                                <i class="tim-icons icon-notes"></i>
+                                <p>{{ __('Estado Notas de Ventas') }}</p>
+                            </a>
+                        </li>
+                        <li @if (($pageSlug ?? '') == 'facturas-pendientes') class="active " @endif>
+                            <a href="{{ route('facturas-pendientes.index') }}">
+                                <i class="tim-icons icon-money-coins"></i>
+                                <p>{{ __('Estado de Facturas') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'cotizaciones') class="active " @endif>
+                            <a href="{{ route('cotizaciones.index') }}">
+                                <i class="tim-icons icon-notes"></i>
+                                <p>{{ __('Notas de Ventas Generadas') }}</p>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </li>
+            @endif
 
             @can('gestionar usuarios')
             <li>
@@ -127,29 +204,7 @@
             </li>
             @endcan
 
-            @can('view_clients')
-            <li @if ($pageSlug == 'buscar-clientes') class="active " @endif>
-                <a href="{{ route('cobranza.index') }}">
-                    <i class="tim-icons icon-single-02"></i>
-                    <p>{{ __('Buscar Clientes') }}</p>
-                </a>
-            </li>
-            @endcan
-            
-            @can('create_quotation')
-            <li @if ($pageSlug == 'cotizaciones') class="active " @endif>
-                <a href="{{ route('cotizaciones.index') }}">
-                    <i class="tim-icons icon-paper"></i>
-                    <p>{{ __('Mis Cotizaciones') }}</p>
-                </a>
-            </li>
-            <li @if ($pageSlug == 'nueva-cotizacion') class="active " @endif>
-                <a href="{{ route('cotizacion.nueva') }}">
-                    <i class="tim-icons icon-cart"></i>
-                    <p>{{ __('Nueva Cotización') }}</p>
-                </a>
-            </li>
-            @endcan
+
 
             @can('view_stock')
             <li @if ($pageSlug == 'stock') class="active " @endif>

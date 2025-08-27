@@ -13,6 +13,12 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         // $schedule->command('inspire')->hourly();
+        
+        // Sincronización diaria de productos a las 2:00 AM
+        $schedule->command('productos:sincronizar-diario')
+                ->dailyAt('02:00')
+                ->withoutOverlapping()
+                ->runInBackground();
     }
 
     /**
