@@ -92,6 +92,45 @@ class FacturasPendientesController extends Controller
         return response()->json($resumen);
     }
 
+    public function ver($tipoDocumento, $numeroDocumento)
+    {
+        $user = Auth::user();
+        
+        // Verificar permisos
+        if (!$user->hasRole('Super Admin') && !$user->hasRole('Supervisor') && !$user->hasRole('Compras') && !$user->hasRole('Picking') && !$user->hasRole('Vendedor')) {
+            abort(403, 'Acceso denegado.');
+        }
+        
+        // Si es vendedor, verificar que la factura pertenezca a su código
+        if ($user->hasRole('Vendedor')) {
+            $facturasPendientes = $this->cobranzaService->getFacturasPendientes($user->codigo_vendedor, 1000);
+            $facturaEncontrada = false;
+            
+            foreach ($facturasPendientes as $factura) {
+                if ($factura['TIPO_DOCTO'] === $tipoDocumento && $factura['NRO_DOCTO'] === $numeroDocumento) {
+                    $facturaEncontrada = true;
+                    break;
+                }
+            }
+            
+            if (!$facturaEncontrada) {
+                abort(403, 'No tienes permisos para ver esta factura.');
+            }
+        }
+        
+        // Obtener detalles de la factura
+        $facturaDetalle = $this->cobranzaService->getFacturaDetalle($tipoDocumento, $numeroDocumento);
+        
+        if (!$facturaDetalle) {
+            abort(404, 'Factura no encontrada.');
+        }
+        
+        return view('facturas-pendientes.ver', [
+            'factura' => $facturaDetalle,
+            'pageSlug' => 'facturas-pendientes'
+        ]);
+    }
+
     public function export(Request $request)
     {
         $user = Auth::user();

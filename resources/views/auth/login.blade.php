@@ -24,7 +24,7 @@
             <div class="login-header">
                 <div class="logo-section">
                     <i class="material-icons logo-icon">local_shipping</i>
-                    <h1 class="company-name">GesPro Raviera</h1>
+                    <h1 class="company-name">Comercial Higuera</h1>
                     <p class="company-tagline">Sistema de Gestión Logística</p>
                 </div>
             </div>

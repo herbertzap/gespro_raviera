@@ -269,6 +269,7 @@
                                         <th>Estado</th>
                                         <th>Vencimiento</th>
                                         <th>Vendedor</th>
+                                        <th>Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -306,10 +307,17 @@
                                         </td>
                                         <td>{{ $factura['U_VCMTO'] ?? 'N/A' }}</td>
                                         <td>{{ $factura['VENDEDOR'] ?? 'N/A' }}</td>
+                                        <td>
+                                            <a href="{{ route('facturas-pendientes.ver', [$factura['TIPO_DOCTO'], $factura['NRO_DOCTO']]) }}" 
+                                               class="btn btn-sm btn-info" 
+                                               title="Ver detalles">
+                                                <i class="material-icons">visibility</i>
+                                            </a>
+                                        </td>
                                     </tr>
                                     @empty
                                     <tr>
-                                        <td colspan="8" class="text-center">No hay facturas pendientes</td>
+                                        <td colspan="9" class="text-center">No hay facturas pendientes</td>
                                     </tr>
                                     @endforelse
                                 </tbody>

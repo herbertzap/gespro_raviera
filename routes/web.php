@@ -61,8 +61,9 @@ Route::get('/nvv-pendientes/ver/{numeroNvv}', [App\Http\Controllers\NvvPendiente
 // Rutas de Facturas Pendientes
 Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/facturas-pendientes', [App\Http\Controllers\FacturasPendientesController::class, 'index'])->name('facturas-pendientes.index');
-    Route::get('/facturas-pendientes/export', [App\Http\Controllers\FacturasPendientesController::class, 'export'])->name('facturas-pendientes.export');
-    Route::get('/facturas-pendientes/resumen', [App\Http\Controllers\FacturasPendientesController::class, 'resumen'])->name('facturas-pendientes.resumen');
+Route::get('/facturas-pendientes/export', [App\Http\Controllers\FacturasPendientesController::class, 'export'])->name('facturas-pendientes.export');
+Route::get('/facturas-pendientes/resumen', [App\Http\Controllers\FacturasPendientesController::class, 'resumen'])->name('facturas-pendientes.resumen');
+Route::get('/facturas-pendientes/ver/{tipoDocumento}/{numeroDocumento}', [App\Http\Controllers\FacturasPendientesController::class, 'ver'])->name('facturas-pendientes.ver');
 });
 
 // Rutas de Clientes
