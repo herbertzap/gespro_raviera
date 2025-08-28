@@ -2192,18 +2192,49 @@ class CobranzaService
             $username = env('SQLSRV_EXTERNAL_USERNAME');
             $password = env('SQLSRV_EXTERNAL_PASSWORD');
             
-            // Consulta para obtener NVV pendientes (temporariamente sin filtro de facturadas)
+            // Consulta para obtener NVV pendientes usando la consulta proporcionada con formato | delimitado
             $query = "
                 SELECT TOP {$limit}
-                    TIPO_DOCTO, NRO_DOCTO, CODIGO, CLIENTE, DIAS, SALDO, KOFU
-                FROM vw_facturas_pendientes
-                WHERE TIPO_DOCTO = 'NVV'";
+                    CAST(dbo.MAEDDO.TIDO AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEDDO.NUDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.FEEMLI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.ENDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEEN.NOKOEN AS VARCHAR(100)) + '|' +
+                    CAST(dbo.MAEDDO.KOPRCT AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEDDO.CAPRCO1 AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.NOKOPR AS VARCHAR(100)) + '|' +
+                    CAST((dbo.MAEDDO.CAPRCO1 - (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1)) AS VARCHAR(20)) + '|' +
+                    CAST((dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1) AS VARCHAR(20)) + '|' +
+                    CAST(dbo.TABFU.NOKOFU AS VARCHAR(50)) + '|' +
+                    CAST(dbo.TABCI.NOKOCI AS VARCHAR(50)) + '|' +
+                    CAST(dbo.TABCM.NOKOCM AS VARCHAR(50)) + '|' +
+                    CAST(CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) AS VARCHAR(10)) + '|' +
+                    CAST(CASE WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) < 8 THEN 'Entre 1 y 7 días' 
+                         WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) BETWEEN 8 AND 30 THEN 'Entre 8 y 30 Días' 
+                         WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) BETWEEN 31 AND 60 THEN 'Entre 31 y 60 Días' 
+                         ELSE 'Mas de 60 Días' END AS VARCHAR(20)) + '|' +
+                    CAST((dbo.MAEDDO.VANELI / NULLIF(dbo.MAEDDO.CAPRCO1, 0)) AS VARCHAR(20)) + '|' +
+                    CAST(((dbo.MAEDDO.VANELI / NULLIF(dbo.MAEDDO.CAPRCO1, 0)) * (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1)) AS VARCHAR(20)) + '|' +
+                    CAST(CASE WHEN MAEDDO_1.TIDO IS NULL THEN '' ELSE MAEDDO_1.TIDO END AS VARCHAR(10)) + '|' +
+                    CAST(CASE WHEN MAEDDO_1.NUDO IS NULL THEN '' ELSE MAEDDO_1.NUDO END AS VARCHAR(20)) + '|' +
+                    CAST(dbo.TABFU.KOFU AS VARCHAR(10)) AS DATOS
+                FROM dbo.MAEDDO 
+                INNER JOIN dbo.MAEEN ON dbo.MAEDDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEDDO.SUENDO = dbo.MAEEN.SUEN 
+                INNER JOIN dbo.TABFU ON dbo.MAEDDO.KOFULIDO = dbo.TABFU.KOFU 
+                INNER JOIN dbo.TABCI ON dbo.MAEEN.PAEN = dbo.TABCI.KOPA AND dbo.MAEEN.CIEN = dbo.TABCI.KOCI 
+                INNER JOIN dbo.TABCM ON dbo.MAEEN.PAEN = dbo.TABCM.KOPA AND dbo.MAEEN.CIEN = dbo.TABCM.KOCI AND dbo.MAEEN.CMEN = dbo.TABCM.KOCM 
+                LEFT OUTER JOIN dbo.MAEDDO AS MAEDDO_1 ON dbo.MAEDDO.IDMAEDDO = MAEDDO_1.IDRST
+                WHERE (dbo.MAEDDO.TIDO = 'NVV') 
+                AND (dbo.MAEDDO.LILG = 'SI') 
+                AND (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1 <> 0) 
+                AND (dbo.MAEDDO.KOPRCT <> 'D') 
+                AND (dbo.MAEDDO.KOPRCT <> 'FLETE')";
             
             if ($codigoVendedor) {
-                $query .= " AND KOFU = '{$codigoVendedor}'";
+                $query .= " AND dbo.TABFU.KOFU = '{$codigoVendedor}'";
             }
             
-            $query .= " ORDER BY DIAS DESC";
+            $query .= " ORDER BY dbo.MAEDDO.FEEMLI DESC";
             
             // Crear archivo temporal con la consulta
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
@@ -2220,60 +2251,71 @@ class CobranzaService
                 throw new \Exception('Error ejecutando consulta tsql: ' . $output);
             }
             
-            // Procesar la salida usando la misma lógica que las facturas
+            // Procesar la salida usando el mismo patrón que getClientesPorVendedor
             $lines = explode("\n", $output);
             $result = [];
+            $inDataSection = false;
+            $headerFound = false;
             
-            foreach ($lines as $line) {
+            // Procesar la salida usando el mismo patrón que getClientesPorVendedor
+            
+            foreach ($lines as $lineNumber => $line) {
                 $line = trim($line);
                 
-                // Saltar líneas de configuración (igual que facturas)
+                // Saltar líneas vacías o de configuración
                 if (empty($line) || 
                     strpos($line, 'locale') !== false || 
                     strpos($line, 'Setting') !== false || 
                     strpos($line, 'Msg ') !== false || 
                     strpos($line, 'Warning:') !== false ||
-                    preg_match('/^\d+>$/', $line) ||
-                    preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
-                    strpos($line, 'rows affected') !== false ||
-                    strpos($line, 'TIPO_DOCTO') !== false ||
-                    strpos($line, 'NRO_DOCTO') !== false ||
-                    strpos($line, 'CODIGO') !== false) {
+                    preg_match('/^\d+>$/', $line)) { // Líneas como "1>", "2>", etc.
                     continue;
                 }
                 
-                // Buscar líneas con datos de NVV usando posiciones fijas simplificadas
-                if (strlen($line) > 30 && strpos($line, 'NVV') === 0) {
-                    // Extraer campos usando posiciones fijas simplificadas
-                    $tipo_docto = trim(substr($line, 0, 12));
-                    $nro_docto = trim(substr($line, 12, 12));
-                    $codigo = trim(substr($line, 24, 12));
-                    $cliente = trim(substr($line, 36, 30));
-                    $dias = (int)trim(substr($line, 66, 8));
-                    $saldo = (float)trim(substr($line, 74, 12));
-                    $kofu = trim(substr($line, 86, 8));
+                // Saltar líneas con múltiples números SOLO si no contienen DATOS
+                if (preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) && strpos($line, 'DATOS') === false) {
+                    continue;
+                }
+                
+                // Detectar el header de la tabla
+                if (strpos($line, 'DATOS') !== false) {
+                    $headerFound = true;
+                    $inDataSection = true;
+                    \Log::info('Header encontrado en línea: ' . $lineNumber . ' - Contenido: ' . $line);
+                    continue;
+                }
+                
+                // También detectar si la línea termina con DATOS
+                if (trim($line) === 'DATOS') {
+                    $headerFound = true;
+                    $inDataSection = true;
+                    \Log::info('Header encontrado (línea separada) en línea: ' . $lineNumber . ' - Contenido: ' . $line);
+                    continue;
+                }
+                
+
+                
+                // Detectar cuando terminamos la sección de datos
+                if (strpos($line, '(10 rows affected)') !== false || strpos($line, 'rows affected') !== false) {
+                    $inDataSection = false;
+                    \Log::info('Fin de datos en línea: ' . $lineNumber);
+                    break;
+                }
+                
+                // Detectar cuando terminamos la sección de datos
+                if (strpos($line, '(1 row affected)') !== false || strpos($line, 'rows affected') !== false) {
+                    $inDataSection = false;
+                    break;
+                }
+                
+                // Si estamos en la sección de datos y la línea no está vacía
+                if ($inDataSection && $headerFound && !empty($line)) {
+                    // Procesar cada línea individualmente
+                    $nvv = $this->procesarLineaNvvPendiente($line, $lineNumber);
                     
-                    $result[] = [
-                        'TD' => 'NVV', // Limpiar el tipo de documento
-                        'NUM' => preg_replace('/\s+/', '', trim($nro_docto)), // Limpiar número
-                        'CODIGO' => trim($codigo),
-                        'CLIE' => trim($this->convertToUtf8($cliente)),
-                        'NOKOPR' => 'N/A', // Campo requerido por la vista
-                        'PEND' => $saldo,
-                        'DIAS' => $dias,
-                        'Rango' => $this->getRangoDias($dias), // Agregar campo Rango
-                        'KOFU' => trim($kofu),
-                        // Campos adicionales requeridos por la vista
-                        'CANTIDAD_PRODUCTOS' => 1, // Valor por defecto
-                        'TOTAL_PENDIENTE' => $saldo,
-                        'TOTAL_VALOR_PENDIENTE' => $saldo,
-                        'VENDEDOR_NOMBRE' => 'N/A',
-                        // Mantener también los nombres originales para compatibilidad
-                        'TIPO_DOCTO' => 'NVV',
-                        'NRO_DOCTO' => preg_replace('/\s+/', '', trim($nro_docto)),
-                        'CLIENTE' => trim($this->convertToUtf8($cliente)),
-                        'SALDO' => $saldo
-                    ];
+                    if ($nvv) {
+                        $result[] = $nvv;
+                    }
                 }
             }
             
@@ -2999,6 +3041,70 @@ class CobranzaService
                 'credito_cheques' => 0,
                 'credito_total' => 0
             ];
+        }
+    }
+
+    /**
+     * Procesa una línea de datos de NVV pendientes
+     */
+    private function procesarLineaNvvPendiente($line, $lineNumber)
+    {
+        try {
+            // Usar el mismo patrón que procesarLineaClienteCompleto
+            $fields = explode('|', $line);
+            
+            // Verificar que tenemos suficientes campos
+            if (count($fields) < 15) {
+                \Log::warning("Línea {$lineNumber} tiene menos de 15 campos: " . $line);
+                return null;
+            }
+            
+            // Función helper para convertir a float de forma segura
+            $safeFloat = function($value) {
+                $value = trim($value);
+                return is_numeric($value) ? (float)$value : 0.0;
+            };
+            
+            // Extraer campos según la consulta SQL
+            $nvv = [
+                'TD' => trim($fields[0] ?? ''), // TIDO
+                'NUM' => trim($fields[1] ?? ''), // NUDO
+                'EMIS_FCV' => trim($fields[2] ?? ''), // FEEMLI
+                'COD_CLI' => trim($fields[3] ?? ''), // ENDO
+                'CLIE' => trim($this->convertToUtf8($fields[4] ?? '')), // NOKOEN
+                'KOPRCT' => trim($fields[5] ?? ''), // KOPRCT
+                'CAPRCO1' => $safeFloat($fields[6] ?? 0), // CAPRCO1
+                'NOKOPR' => trim($this->convertToUtf8($fields[7] ?? '')), // NOKOPR
+                'FACT' => $safeFloat($fields[8] ?? 0), // FACT
+                'PEND' => $safeFloat($fields[9] ?? 0), // PEND
+                'NOKOFU' => trim($this->convertToUtf8($fields[10] ?? '')), // NOKOFU
+                'NOKOCI' => trim($this->convertToUtf8($fields[11] ?? '')), // NOKOCI
+                'NOKOCM' => trim($this->convertToUtf8($fields[12] ?? '')), // NOKOCM
+                'DIAS' => (int)trim($fields[13] ?? 0), // DIAS
+                'Rango' => trim($fields[14] ?? ''), // Rango
+                'PUNIT' => $safeFloat($fields[15] ?? 0), // PUNIT
+                'PEND_VAL' => $safeFloat($fields[16] ?? 0), // PEND_VAL
+                'TD_R' => trim($fields[17] ?? ''), // TD_R
+                'N_FCV' => trim($fields[18] ?? ''), // N_FCV
+                'KOFU' => trim($fields[19] ?? ''), // KOFU
+                
+                // Campos adicionales para compatibilidad con la vista
+                'TIPO_DOCTO' => 'NVV',
+                'NRO_DOCTO' => trim($fields[1] ?? ''),
+                'CODIGO' => trim($fields[3] ?? ''),
+                'CLIENTE' => trim($this->convertToUtf8($fields[4] ?? '')),
+                'SALDO' => $safeFloat($fields[9] ?? 0),
+                'CANTIDAD_PRODUCTOS' => 1,
+                'TOTAL_PENDIENTE' => $safeFloat($fields[9] ?? 0),
+                'TOTAL_VALOR_PENDIENTE' => $safeFloat($fields[16] ?? 0),
+                'VENDEDOR_NOMBRE' => trim($this->convertToUtf8($fields[10] ?? ''))
+            ];
+            
+            return $nvv;
+            
+        } catch (\Exception $e) {
+            \Log::error("Error procesando línea {$lineNumber} de NVV: " . $e->getMessage() . " - Línea: " . $line);
+            return null;
         }
     }
 
