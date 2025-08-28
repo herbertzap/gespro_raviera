@@ -3596,27 +3596,27 @@ class CobranzaService
                 throw new \Exception('Credenciales SQL Server no configuradas en .env');
             }
 
-            // Consulta corregida para obtener información de crédito del cliente
+            // Consulta corregida para obtener información de crédito del cliente con separador |
             $query = "
             SELECT 
-                dbo.CLIENTES.KOEN, 
-                dbo.CLIENTES.NOKOEN, 
-                dbo.Cobranza_CR.REGION, 
-                dbo.Cobranza_CR.COMUNA, 
-                dbo.CLIENTES.KOFUEN, 
-                CASE WHEN dbo.Cobranza_CR.SALDO IS NULL THEN 0 ELSE dbo.Cobranza_CR.SALDO END AS SALDO, 
-                dbo.CLIENTES.CRSD, 
-                dbo.CLIENTES.CRSD - CASE WHEN dbo.Cobranza_CR.SALDO IS NULL THEN 0 ELSE dbo.Cobranza_CR.SALDO END AS DISP_SD,
-                CASE WHEN dbo.[CH CARTERA R].VALOR IS NULL THEN 0 ELSE dbo.[CH CARTERA R].VALOR END AS CART, 
-                dbo.CLIENTES.CRCH, 
-                dbo.CLIENTES.CRCH - (CASE WHEN dbo.[CH CARTERA R].VALOR IS NULL THEN 0 ELSE dbo.[CH CARTERA R].VALOR END) AS DISP_CH, 
-                (CASE WHEN dbo.[CH CARTERA R].VALOR IS NULL THEN 0 ELSE dbo.[CH CARTERA R].VALOR END) + (CASE WHEN dbo.Cobranza_CR.SALDO IS NULL THEN 0 ELSE dbo.Cobranza_CR.SALDO END) AS DEUDA, 
-                dbo.CLIENTES.CRTO, 
-                dbo.CLIENTES.CRTO - ((CASE WHEN dbo.[CH CARTERA R].VALOR IS NULL THEN 0 ELSE dbo.[CH CARTERA R].VALOR END) + (CASE WHEN dbo.Cobranza_CR.SALDO IS NULL THEN 0 ELSE dbo.Cobranza_CR.SALDO END)) AS DISP, 
-                dbo.ULT_VTA_CL.ULT_VTA,
-                CASE WHEN dbo.CLIENTES.BLOQUEADO = 1 THEN 'BLOQUEADO' ELSE 'VIGENTE' END AS ESTADO, 
-                CASE WHEN dbo.Cobranza_Vta_Prom.VENTAM IS NULL THEN 0 ELSE dbo.Cobranza_Vta_Prom.VENTAM END AS Venta_Mes,
-                CASE WHEN dbo.Cobranza_Vta_Prom.VENTA3M IS NULL THEN 0 ELSE dbo.Cobranza_Vta_Prom.VENTA3M END AS Venta_3M
+                CAST(dbo.CLIENTES.KOEN AS VARCHAR(20)) + '|' +
+                CAST(dbo.CLIENTES.NOKOEN AS VARCHAR(100)) + '|' +
+                CAST(dbo.Cobranza_CR.REGION AS VARCHAR(50)) + '|' +
+                CAST(dbo.Cobranza_CR.COMUNA AS VARCHAR(50)) + '|' +
+                CAST(dbo.CLIENTES.KOFUEN AS VARCHAR(20)) + '|' +
+                CAST(CASE WHEN dbo.Cobranza_CR.SALDO IS NULL THEN 0 ELSE dbo.Cobranza_CR.SALDO END AS VARCHAR(20)) + '|' +
+                CAST(dbo.CLIENTES.CRSD AS VARCHAR(20)) + '|' +
+                CAST(dbo.CLIENTES.CRSD - CASE WHEN dbo.Cobranza_CR.SALDO IS NULL THEN 0 ELSE dbo.Cobranza_CR.SALDO END AS VARCHAR(20)) + '|' +
+                CAST(CASE WHEN dbo.[CH CARTERA R].VALOR IS NULL THEN 0 ELSE dbo.[CH CARTERA R].VALOR END AS VARCHAR(20)) + '|' +
+                CAST(dbo.CLIENTES.CRCH AS VARCHAR(20)) + '|' +
+                CAST(dbo.CLIENTES.CRCH - (CASE WHEN dbo.[CH CARTERA R].VALOR IS NULL THEN 0 ELSE dbo.[CH CARTERA R].VALOR END) AS VARCHAR(20)) + '|' +
+                CAST((CASE WHEN dbo.[CH CARTERA R].VALOR IS NULL THEN 0 ELSE dbo.[CH CARTERA R].VALOR END) + (CASE WHEN dbo.Cobranza_CR.SALDO IS NULL THEN 0 ELSE dbo.Cobranza_CR.SALDO END) AS VARCHAR(20)) + '|' +
+                CAST(dbo.CLIENTES.CRTO AS VARCHAR(20)) + '|' +
+                CAST(dbo.CLIENTES.CRTO - ((CASE WHEN dbo.[CH CARTERA R].VALOR IS NULL THEN 0 ELSE dbo.[CH CARTERA R].VALOR END) + (CASE WHEN dbo.Cobranza_CR.SALDO IS NULL THEN 0 ELSE dbo.Cobranza_CR.SALDO END)) AS VARCHAR(20)) + '|' +
+                CAST(dbo.ULT_VTA_CL.ULT_VTA AS VARCHAR(50)) + '|' +
+                CAST(CASE WHEN dbo.CLIENTES.BLOQUEADO = 1 THEN 'BLOQUEADO' ELSE 'VIGENTE' END AS VARCHAR(20)) + '|' +
+                CAST(CASE WHEN dbo.Cobranza_Vta_Prom.VENTAM IS NULL THEN 0 ELSE dbo.Cobranza_Vta_Prom.VENTAM END AS VARCHAR(20)) + '|' +
+                CAST(CASE WHEN dbo.Cobranza_Vta_Prom.VENTA3M IS NULL THEN 0 ELSE dbo.Cobranza_Vta_Prom.VENTA3M END AS VARCHAR(20)) AS DATOS
             FROM dbo.CLIENTES 
             LEFT OUTER JOIN dbo.ULT_VTA_CL ON dbo.CLIENTES.KOEN = dbo.ULT_VTA_CL.ENDO 
             LEFT OUTER JOIN dbo.Cobranza_Vta_Prom ON dbo.CLIENTES.KOEN = dbo.Cobranza_Vta_Prom.ENDO 
@@ -3673,17 +3673,13 @@ class CobranzaService
                     preg_match('/^\d+>$/', $line) ||
                     preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
                     strpos($line, 'rows affected') !== false ||
-                    strpos($line, 'KOEN') !== false ||
-                    strpos($line, 'NOKOEN') !== false ||
-                    strpos($line, 'CRSD') !== false ||
-                    strpos($line, 'CRCH') !== false ||
-                    strpos($line, 'CRTO') !== false) {
+                    strpos($line, 'DATOS') !== false) {
                     continue;
                 }
                 
-                // Procesar línea con datos de crédito usando la nueva consulta
-                // Formato esperado: KOEN NOKOEN REGION COMUNA KOFUEN SALDO CRSD DISP_SD CART CRCH DISP_CH DEUDA CRTO DISP ULT_VTA ESTADO Venta_Mes Venta_3M
-                $fields = preg_split('/\s+/', $line);
+                // Procesar línea con datos de crédito usando separador |
+                // Formato esperado: KOEN|NOKOEN|REGION|COMUNA|KOFUEN|SALDO|CRSD|DISP_SD|CART|CRCH|DISP_CH|DEUDA|CRTO|DISP|ULT_VTA|ESTADO|Venta_Mes|Venta_3M
+                $fields = explode('|', $line);
                 
                 if (count($fields) >= 18) {
                     // Función helper para convertir valores NULL a 0
