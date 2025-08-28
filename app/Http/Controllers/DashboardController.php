@@ -98,11 +98,18 @@ class DashboardController extends Controller
         $facturasPendientes = $this->cobranzaService->getFacturasPendientes($user->codigo_vendedor, 10);
         $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes($user->codigo_vendedor);
 
+        // Obtener total de notas de venta
+        $totalNotasVenta = Cotizacion::where('user_id', $user->id)->count();
+
+        // Obtener cheques en cartera
+        $chequesEnCartera = $this->cobranzaService->getChequesEnCartera($user->codigo_vendedor);
+
         // Calcular resumen de cobranza con datos reales
         $resumenCobranza = [
             'TOTAL_FACTURAS' => $resumenFacturasPendientes['total_facturas'],
+            'TOTAL_NOTAS_VENTA' => $totalNotasVenta,
             'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor'],
-            'SALDO_VIGENTE' => $resumenFacturasPendientes['por_estado']['VIGENTE']['valor'] + $resumenFacturasPendientes['por_estado']['POR VENCER']['valor']
+            'CHEQUES_EN_CARTERA' => $chequesEnCartera
         ];
 
         return [
@@ -127,8 +134,18 @@ class DashboardController extends Controller
             ->take(10)
             ->get();
 
+        // Obtener total de notas de venta
+        $totalNotasVenta = Cotizacion::count();
+
+        // Obtener cheques en cartera
+        $chequesEnCartera = $this->cobranzaService->getChequesEnCartera();
+
         // Resumen general de cobranza
         $resumenCobranza = $this->cobranzaService->getResumenCobranza();
+        
+        // Agregar los nuevos campos al resumen
+        $resumenCobranza['TOTAL_NOTAS_VENTA'] = $totalNotasVenta;
+        $resumenCobranza['CHEQUES_EN_CARTERA'] = $chequesEnCartera;
 
         // Stock temporal activo
         $stockTemporal = StockTemporal::where('estado', 'activa')
@@ -236,8 +253,18 @@ class DashboardController extends Controller
             $usuariosPorRol[$rol] = User::role($rol)->count();
         }
 
+        // Obtener total de notas de venta
+        $totalNotasVenta = Cotizacion::count();
+
+        // Obtener cheques en cartera
+        $chequesEnCartera = $this->cobranzaService->getChequesEnCartera();
+
         // Resumen general de cobranza
         $resumenCobranza = $this->cobranzaService->getResumenCobranza();
+        
+        // Agregar los nuevos campos al resumen
+        $resumenCobranza['TOTAL_NOTAS_VENTA'] = $totalNotasVenta;
+        $resumenCobranza['CHEQUES_EN_CARTERA'] = $chequesEnCartera;
 
         // Notas de venta pendientes de aprobación
         $notasPendientes = NotaVenta::where('estado', 'por_aprobar')
@@ -302,6 +329,12 @@ class DashboardController extends Controller
         $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 10);
         $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes(null);
 
+        // Obtener total de notas de venta
+        $totalNotasVenta = Cotizacion::count();
+
+        // Obtener cheques en cartera
+        $chequesEnCartera = $this->cobranzaService->getChequesEnCartera();
+
         // Obtener notas de venta pendientes de aprobación
         $notasPendientes = NotaVenta::where('estado', 'por_aprobar')
             ->with('user')
@@ -311,6 +344,10 @@ class DashboardController extends Controller
 
         // Resumen general de cobranza
         $resumenCobranza = $this->cobranzaService->getResumenCobranza();
+        
+        // Agregar los nuevos campos al resumen
+        $resumenCobranza['TOTAL_NOTAS_VENTA'] = $totalNotasVenta;
+        $resumenCobranza['CHEQUES_EN_CARTERA'] = $chequesEnCartera;
 
         return [
             'nvvPendientes' => $nvvPendientes,

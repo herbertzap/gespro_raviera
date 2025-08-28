@@ -3852,4 +3852,96 @@ class CobranzaService
         }
     }
 
+    /**
+     * Obtiene los cheques en cartera
+     */
+    public function getChequesEnCartera($codigoVendedor = null)
+    {
+        try {
+            // Obtener credenciales de las variables de entorno
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            // Verificar que las credenciales estén configuradas
+            if (!$host || !$database || !$username || !$password) {
+                throw new \Exception('Credenciales SQL Server no configuradas en .env');
+            }
+
+            // Construir la consulta con filtro de vendedor si se especifica
+            $whereVendedor = '';
+            if ($codigoVendedor) {
+                $whereVendedor = "AND dbo.CLIENTES.KOFUEN = '{$codigoVendedor}'";
+            }
+
+            // Consulta para obtener cheques en cartera
+            $query = "
+            SELECT 
+                CAST(SUM(CASE WHEN dbo.MAEDPCE.TIDP = 'CHC' THEN dbo.MAEDPCE.VADP * -1 ELSE dbo.MAEDPCE.VADP * 1 END) AS VARCHAR(20)) AS TOTAL_CHEQUES
+            FROM dbo.TABFU 
+            INNER JOIN dbo.CLIENTES ON dbo.TABFU.KOFU = dbo.CLIENTES.KOFUEN 
+            RIGHT OUTER JOIN dbo.MAEDPCE ON dbo.CLIENTES.KOEN = dbo.MAEDPCE.ENDP 
+            LEFT OUTER JOIN dbo.TABSU ON dbo.MAEDPCE.SUREDP = dbo.TABSU.KOSU 
+            LEFT OUTER JOIN dbo.TABCTAEM ON dbo.MAEDPCE.CUDP = dbo.TABCTAEM.CTACTEEM
+            WHERE (dbo.MAEDPCE.TIDP = 'CHV') 
+            AND (dbo.MAEDPCE.FEVEDP > GETDATE() - 1) 
+            AND (dbo.MAEDPCE.ESPGDP = 'P') 
+            AND (dbo.MAEDPCE.EMPRESA = '01')
+            {$whereVendedor}
+            ";
+
+            // Crear archivo temporal con la consulta
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            // Ejecutar consulta usando tsql
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+            
+            // Limpiar archivo temporal
+            unlink($tempFile);
+            
+            \Log::info('Output de getChequesEnCartera: ' . $output);
+            
+            if ($output === null) {
+                throw new \Exception('Error ejecutando consulta tsql');
+            }
+            
+            // Procesar la salida
+            $lines = explode("\n", $output);
+            $totalCheques = 0;
+            
+            foreach ($lines as $line) {
+                $line = trim($line);
+                
+                // Saltar líneas de configuración
+                if (empty($line) || 
+                    strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || 
+                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'Warning:') !== false ||
+                    preg_match('/^\d+>$/', $line) ||
+                    preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
+                    strpos($line, 'rows affected') !== false ||
+                    strpos($line, 'TOTAL_CHEQUES') !== false) {
+                    continue;
+                }
+                
+                // Procesar línea con el total de cheques
+                if (is_numeric($line)) {
+                    $totalCheques = (float)$line;
+                    break;
+                }
+            }
+            
+            return $totalCheques;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo cheques en cartera: ' . $e->getMessage());
+            return 0;
+        }
+    }
+
 } 

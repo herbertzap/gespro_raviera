@@ -12,7 +12,6 @@
                         <i class="material-icons">add_shopping_cart</i>
                         Nueva Nota de Venta
                     </h4>
-                    <p class="card-category">Crear una nueva nota de venta para el cliente</p>
                 </div>
                 <div class="card-body">
                     <!-- Información del Cliente -->
@@ -25,7 +24,6 @@
                                         <i class="material-icons">person</i>
                                         Información del Cliente
                                     </h4>
-                                    <p class="card-category">Datos del cliente seleccionado</p>
                                 </div>
                                 <div class="card-body">
                                     <div class="row">

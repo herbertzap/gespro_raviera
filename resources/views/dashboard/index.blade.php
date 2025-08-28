@@ -62,12 +62,30 @@
 
                 <div class="col-lg-3 col-md-6 col-sm-6">
                     <div class="card card-stats">
+                        <div class="card-header card-header-primary card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">shopping_cart</i>
+                            </div>
+                            <p class="card-category">Total Notas de Venta</p>
+                            <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_NOTAS_VENTA'] ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-primary">description</i>
+                                <a href="{{ route('cotizaciones.index') }}">Ver detalles</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
                         <div class="card-header card-header-danger card-header-icon">
                             <div class="card-icon">
                                 <i class="material-icons">schedule</i>
                             </div>
-                            <p class="card-category">Vencido</p>
-                            <h3 class="card-title">${{ number_format($resumenCobranza['SALDO_VENCIDO'] ?? 0, 2) }}</h3>
+                            <p class="card-category">Total Facturas Vencidas</p>
+                            <h3 class="card-title">${{ number_format($resumenCobranza['SALDO_VENCIDO'] ?? 0, 0) }}</h3>
                         </div>
                         <div class="card-footer">
                             <div class="stats">
@@ -82,15 +100,15 @@
                     <div class="card card-stats">
                         <div class="card-header card-header-info card-header-icon">
                             <div class="card-icon">
-                                <i class="material-icons">check_circle</i>
+                                <i class="material-icons">account_balance</i>
                             </div>
-                            <p class="card-category">Vigente</p>
-                            <h3 class="card-title">${{ number_format($resumenCobranza['SALDO_VIGENTE'] ?? 0, 2) }}</h3>
+                            <p class="card-category">Cheques en Cartera</p>
+                            <h3 class="card-title">${{ number_format($resumenCobranza['CHEQUES_EN_CARTERA'] ?? 0, 0) }}</h3>
                         </div>
                         <div class="card-footer">
                             <div class="stats">
-                                <i class="material-icons text-info">update</i>
-                                Al día
+                                <i class="material-icons text-info">account_balance_wallet</i>
+                                En cartera
                             </div>
                         </div>
                     </div>
