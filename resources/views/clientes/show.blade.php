@@ -22,7 +22,7 @@
                                 @if($validacion['puede'])
                                     <a href="{{ url('/cotizacion/nueva?cliente=' . $cliente->codigo_cliente . '&nombre=' . urlencode($cliente->nombre_cliente)) }}" 
                                        class="btn btn-primary">
-                                        <i class="material-icons">add_shopping_cart</i> Nueva Cotización
+                                        <i class="material-icons">add_shopping_cart</i> Nueva Nota De Venta
                                     </a>
                                 @else
                                     <button class="btn btn-danger" disabled title="{{ $validacion['motivo'] }}">
@@ -92,7 +92,7 @@
                                 <p class="text-muted">{{ $creditoCliente['ultima_venta'] ?: 'Sin registros' }}</p>
                             </div>
                             <div class="col-md-6">
-                                <p><strong>Crédito de Compras (3 meses):</strong></p>
+                                <p><strong>Compras ultimos 3 meses:</strong></p>
                                 <p class="h5 text-primary">${{ number_format($creditoCompras['venta_3_meses'] ?? 0, 0) }}</p>
                                 <p><strong>Promedio Mensual:</strong></p>
                                 <p class="h6 text-info">${{ number_format($creditoCompras['venta_mensual_promedio'] ?? 0, 0) }}</p>

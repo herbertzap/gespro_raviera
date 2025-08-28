@@ -48,46 +48,13 @@
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="row">
-                                        <div class="col-md-4">
-                                            <div class="form-group">
-                                                <label class="bmd-label-floating">Teléfono</label>
-                                                <input type="text" class="form-control" value="{{ $cliente->telefono ?? 'No disponible' }}" readonly>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <div class="form-group">
-                                                <label class="bmd-label-floating">Email</label>
-                                                <input type="text" class="form-control" value="{{ $cliente->email ?? 'No disponible' }}" readonly>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <div class="form-group">
-                                                <label class="bmd-label-floating">Lista de Precios</label>
-                                                <input type="text" class="form-control" value="{{ $cliente->lista_precios_nombre ?? 'Lista General' }}" readonly>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <div class="form-group">
-                                                <label class="bmd-label-floating">Dirección</label>
-                                                <input type="text" class="form-control" value="{{ $cliente->direccion ?? 'No disponible' }}" readonly>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-3">
-                                            <div class="form-group">
-                                                <label class="bmd-label-floating">Región</label>
-                                                <input type="text" class="form-control" value="{{ $cliente->region ?? 'No disponible' }}" readonly>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-3">
-                                            <div class="form-group">
-                                                <label class="bmd-label-floating">Comuna</label>
-                                                <input type="text" class="form-control" value="{{ $cliente->comuna ?? 'No disponible' }}" readonly>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    <!-- Campos ocultos para mantener la funcionalidad -->
+                                    <input type="hidden" name="cliente_telefono" value="{{ $cliente->telefono ?? '' }}">
+                                    <input type="hidden" name="cliente_email" value="{{ $cliente->email ?? '' }}">
+                                    <input type="hidden" name="cliente_lista_precios" value="{{ $cliente->lista_precios_nombre ?? 'Lista General' }}">
+                                    <input type="hidden" name="cliente_direccion" value="{{ $cliente->direccion ?? '' }}">
+                                    <input type="hidden" name="cliente_region" value="{{ $cliente->region ?? '' }}">
+                                    <input type="hidden" name="cliente_comuna" value="{{ $cliente->comuna ?? '' }}">
                                 </div>
                             </div>
                         </div>
