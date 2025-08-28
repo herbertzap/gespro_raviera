@@ -2319,11 +2319,239 @@ class CobranzaService
                 }
             }
             
-            return $result;
+            // Agrupar las NVV por código de documento
+            $nvvAgrupadas = [];
+            foreach ($result as $nvv) {
+                $codigoNvv = $nvv['NUM'];
+                
+                if (!isset($nvvAgrupadas[$codigoNvv])) {
+                    // Primera vez que vemos esta NVV, crear el registro base
+                    $nvvAgrupadas[$codigoNvv] = [
+                        'TD' => $nvv['TD'],
+                        'NUM' => $nvv['NUM'],
+                        'EMIS_FCV' => $nvv['EMIS_FCV'],
+                        'COD_CLI' => $nvv['COD_CLI'],
+                        'CLIE' => $nvv['CLIE'],
+                        'NOKOFU' => $nvv['NOKOFU'],
+                        'NOKOCI' => $nvv['NOKOCI'],
+                        'NOKOCM' => $nvv['NOKOCM'],
+                        'DIAS' => $nvv['DIAS'],
+                        'Rango' => $nvv['Rango'],
+                        'KOFU' => $nvv['KOFU'],
+                        'TOTAL_PENDIENTE' => 0,
+                        'TOTAL_VALOR_PENDIENTE' => 0,
+                        'CANTIDAD_PRODUCTOS' => 0,
+                        'productos' => []
+                    ];
+                }
+                
+                // Sumar los valores pendientes
+                $nvvAgrupadas[$codigoNvv]['TOTAL_PENDIENTE'] += (float)($nvv['PEND'] ?? 0);
+                $nvvAgrupadas[$codigoNvv]['TOTAL_VALOR_PENDIENTE'] += (float)($nvv['PEND_VAL'] ?? 0);
+                $nvvAgrupadas[$codigoNvv]['CANTIDAD_PRODUCTOS']++;
+                
+                // Agregar el producto a la lista
+                $nvvAgrupadas[$codigoNvv]['productos'][] = [
+                    'KOPRCT' => $nvv['KOPRCT'],
+                    'NOKOPR' => $nvv['NOKOPR'],
+                    'CAPRCO1' => $nvv['CAPRCO1'],
+                    'FACT' => $nvv['FACT'],
+                    'PEND' => $nvv['PEND'],
+                    'PUNIT' => $nvv['PUNIT'],
+                    'PEND_VAL' => $nvv['PEND_VAL']
+                ];
+            }
+            
+            // Convertir el array asociativo a array indexado
+            $resultadoFinal = array_values($nvvAgrupadas);
+            
+            return $resultadoFinal;
             
         } catch (\Exception $e) {
             \Log::error('Error obteniendo NVV pendientes detalle: ' . $e->getMessage());
             return [];
+        }
+    }
+
+    /**
+     * Obtener detalles de una NVV específica con sus productos
+     */
+    public function getNvvDetalle($numeroNvv)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            // Consulta para obtener detalles de una NVV específica
+            $query = "
+                SELECT 
+                    CAST(dbo.MAEDDO.TIDO AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEDDO.NUDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.FEEMLI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.ENDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEEN.NOKOEN AS VARCHAR(100)) + '|' +
+                    CAST(dbo.MAEDDO.KOPRCT AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEDDO.CAPRCO1 AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.NOKOPR AS VARCHAR(100)) + '|' +
+                    CAST((dbo.MAEDDO.CAPRCO1 - (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1)) AS VARCHAR(20)) + '|' +
+                    CAST((dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1) AS VARCHAR(20)) + '|' +
+                    CAST(dbo.TABFU.NOKOFU AS VARCHAR(50)) + '|' +
+                    CAST(dbo.TABCI.NOKOCI AS VARCHAR(50)) + '|' +
+                    CAST(dbo.TABCM.NOKOCM AS VARCHAR(50)) + '|' +
+                    CAST(CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) AS VARCHAR(10)) + '|' +
+                    CAST(CASE WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) < 8 THEN 'Entre 1 y 7 días' 
+                         WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) BETWEEN 8 AND 30 THEN 'Entre 8 y 30 Días' 
+                         WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) BETWEEN 31 AND 60 THEN 'Entre 31 y 60 Días' 
+                         ELSE 'Mas de 60 Días' END AS VARCHAR(20)) + '|' +
+                    CAST((dbo.MAEDDO.VANELI / NULLIF(dbo.MAEDDO.CAPRCO1, 0)) AS VARCHAR(20)) + '|' +
+                    CAST(((dbo.MAEDDO.VANELI / NULLIF(dbo.MAEDDO.CAPRCO1, 0)) * (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1)) AS VARCHAR(20)) + '|' +
+                    CAST(CASE WHEN MAEDDO_1.TIDO IS NULL THEN '' ELSE MAEDDO_1.TIDO END AS VARCHAR(10)) + '|' +
+                    CAST(CASE WHEN MAEDDO_1.NUDO IS NULL THEN '' ELSE MAEDDO_1.NUDO END AS VARCHAR(20)) + '|' +
+                    CAST(dbo.TABFU.KOFU AS VARCHAR(10)) AS DATOS
+                FROM dbo.MAEDDO 
+                INNER JOIN dbo.MAEEN ON dbo.MAEDDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEDDO.SUENDO = dbo.MAEEN.SUEN 
+                INNER JOIN dbo.TABFU ON dbo.MAEDDO.KOFULIDO = dbo.TABFU.KOFU 
+                INNER JOIN dbo.TABCI ON dbo.MAEEN.PAEN = dbo.TABCI.KOPA AND dbo.MAEEN.CIEN = dbo.TABCI.KOCI 
+                INNER JOIN dbo.TABCM ON dbo.MAEEN.PAEN = dbo.TABCM.KOPA AND dbo.MAEEN.CIEN = dbo.TABCM.KOCI AND dbo.MAEEN.CMEN = dbo.TABCM.KOCM 
+                LEFT OUTER JOIN dbo.MAEDDO AS MAEDDO_1 ON dbo.MAEDDO.IDMAEDDO = MAEDDO_1.IDRST
+                WHERE (dbo.MAEDDO.TIDO = 'NVV') 
+                AND (dbo.MAEDDO.NUDO = '{$numeroNvv}')
+                AND (dbo.MAEDDO.LILG = 'SI') 
+                AND (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1 <> 0) 
+                AND (dbo.MAEDDO.KOPRCT <> 'D') 
+                AND (dbo.MAEDDO.KOPRCT <> 'FLETE')
+                ORDER BY dbo.MAEDDO.KOPRCT";
+            
+            // Crear archivo temporal con la consulta
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            // Ejecutar consulta usando tsql
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+            
+            // Limpiar archivo temporal
+            unlink($tempFile);
+            
+            if (!$output || str_contains($output, 'error')) {
+                throw new \Exception('Error ejecutando consulta tsql: ' . $output);
+            }
+            
+            // Procesar la salida
+            $lines = explode("\n", $output);
+            $result = [];
+            $inDataSection = false;
+            $headerFound = false;
+            
+            foreach ($lines as $lineNumber => $line) {
+                $line = trim($line);
+                
+                // Saltar líneas vacías o de configuración
+                if (empty($line) || 
+                    strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || 
+                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'Warning:') !== false ||
+                    preg_match('/^\d+>$/', $line)) {
+                    continue;
+                }
+                
+                // Saltar líneas con múltiples números SOLO si no contienen DATOS
+                if (preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) && strpos($line, 'DATOS') === false) {
+                    continue;
+                }
+                
+                // Detectar el header de la tabla
+                if (strpos($line, 'DATOS') !== false) {
+                    $headerFound = true;
+                    $inDataSection = true;
+                    continue;
+                }
+                
+                // También detectar si la línea termina con DATOS
+                if (trim($line) === 'DATOS') {
+                    $headerFound = true;
+                    $inDataSection = true;
+                    continue;
+                }
+                
+                // Detectar cuando terminamos la sección de datos
+                if (strpos($line, '(10 rows affected)') !== false || strpos($line, 'rows affected') !== false) {
+                    $inDataSection = false;
+                    break;
+                }
+                
+                // Detectar cuando terminamos la sección de datos
+                if (strpos($line, '(1 row affected)') !== false || strpos($line, 'rows affected') !== false) {
+                    $inDataSection = false;
+                    break;
+                }
+                
+                // Si estamos en la sección de datos y la línea no está vacía
+                if ($inDataSection && $headerFound && !empty($line)) {
+                    // Procesar cada línea individualmente
+                    $nvv = $this->procesarLineaNvvPendiente($line, $lineNumber);
+                    
+                    if ($nvv) {
+                        $result[] = $nvv;
+                    }
+                }
+            }
+            
+            // Agrupar los productos de la NVV
+            $nvvAgrupada = null;
+            $productos = [];
+            
+            foreach ($result as $nvv) {
+                if ($nvvAgrupada === null) {
+                    // Primera vez, crear el registro base
+                    $nvvAgrupada = [
+                        'TD' => $nvv['TD'],
+                        'NUM' => $nvv['NUM'],
+                        'EMIS_FCV' => $nvv['EMIS_FCV'],
+                        'COD_CLI' => $nvv['COD_CLI'],
+                        'CLIE' => $nvv['CLIE'],
+                        'NOKOFU' => $nvv['NOKOFU'],
+                        'NOKOCI' => $nvv['NOKOCI'],
+                        'NOKOCM' => $nvv['NOKOCM'],
+                        'DIAS' => $nvv['DIAS'],
+                        'Rango' => $nvv['Rango'],
+                        'KOFU' => $nvv['KOFU'],
+                        'TOTAL_PENDIENTE' => 0,
+                        'TOTAL_VALOR_PENDIENTE' => 0,
+                        'CANTIDAD_PRODUCTOS' => 0
+                    ];
+                }
+                
+                // Sumar los valores pendientes
+                $nvvAgrupada['TOTAL_PENDIENTE'] += (float)($nvv['PEND'] ?? 0);
+                $nvvAgrupada['TOTAL_VALOR_PENDIENTE'] += (float)($nvv['PEND_VAL'] ?? 0);
+                $nvvAgrupada['CANTIDAD_PRODUCTOS']++;
+                
+                // Agregar el producto a la lista
+                $productos[] = [
+                    'KOPRCT' => $nvv['KOPRCT'],
+                    'NOKOPR' => $nvv['NOKOPR'],
+                    'CAPRCO1' => $nvv['CAPRCO1'],
+                    'FACT' => $nvv['FACT'],
+                    'PEND' => $nvv['PEND'],
+                    'PUNIT' => $nvv['PUNIT'],
+                    'PEND_VAL' => $nvv['PEND_VAL']
+                ];
+            }
+            
+            if ($nvvAgrupada) {
+                $nvvAgrupada['productos'] = $productos;
+            }
+            
+            return $nvvAgrupada;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo detalles de NVV ' . $numeroNvv . ': ' . $e->getMessage());
+            return null;
         }
     }
 

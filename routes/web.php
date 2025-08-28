@@ -49,8 +49,9 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
 // Rutas de NVV Pendientes
 Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/nvv-pendientes', [App\Http\Controllers\NvvPendientesController::class, 'index'])->name('nvv-pendientes.index');
-    Route::get('/nvv-pendientes/export', [App\Http\Controllers\NvvPendientesController::class, 'export'])->name('nvv-pendientes.export');
-    Route::get('/nvv-pendientes/resumen', [App\Http\Controllers\NvvPendientesController::class, 'resumen'])->name('nvv-pendientes.resumen');
+Route::get('/nvv-pendientes/export', [App\Http\Controllers\NvvPendientesController::class, 'export'])->name('nvv-pendientes.export');
+Route::get('/nvv-pendientes/resumen', [App\Http\Controllers\NvvPendientesController::class, 'resumen'])->name('nvv-pendientes.resumen');
+Route::get('/nvv-pendientes/ver/{numeroNvv}', [App\Http\Controllers\NvvPendientesController::class, 'ver'])->name('nvv-pendientes.ver');
     
     // Rutas para detalle de NVV
     Route::get('/nvv-detalle/{numeroNvv}', [App\Http\Controllers\NvvDetalleController::class, 'show'])->name('nvv-detalle.show');

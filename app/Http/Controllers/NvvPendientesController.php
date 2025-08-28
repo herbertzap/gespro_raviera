@@ -90,6 +90,45 @@ class NvvPendientesController extends Controller
         return response()->json($resumen);
     }
 
+    public function ver($numeroNvv)
+    {
+        $user = Auth::user();
+        
+        // Verificar permisos
+        if (!$user->hasRole('Super Admin') && !$user->hasRole('Supervisor') && !$user->hasRole('Compras') && !$user->hasRole('Picking') && !$user->hasRole('Vendedor')) {
+            abort(403, 'Acceso denegado.');
+        }
+        
+        // Si es vendedor, verificar que la NVV pertenezca a su código
+        if ($user->hasRole('Vendedor')) {
+            $nvvPendientes = $this->cobranzaService->getNvvPendientesDetalle($user->codigo_vendedor, 1000);
+            $nvvEncontrada = false;
+            
+            foreach ($nvvPendientes as $nvv) {
+                if ($nvv['NUM'] === $numeroNvv) {
+                    $nvvEncontrada = true;
+                    break;
+                }
+            }
+            
+            if (!$nvvEncontrada) {
+                abort(403, 'No tienes permisos para ver esta NVV.');
+            }
+        }
+        
+        // Obtener detalles de la NVV
+        $nvvDetalle = $this->cobranzaService->getNvvDetalle($numeroNvv);
+        
+        if (!$nvvDetalle) {
+            abort(404, 'NVV no encontrada.');
+        }
+        
+        return view('nvv-pendientes.ver', [
+            'nvv' => $nvvDetalle,
+            'pageSlug' => 'nvv-pendientes'
+        ]);
+    }
+
     public function export(Request $request)
     {
         $user = Auth::user();

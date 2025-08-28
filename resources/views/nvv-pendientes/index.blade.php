@@ -255,17 +255,16 @@
                                         </th>
                                         <th>Rango</th>
                                         <th>Vendedor</th>
+                                        <th>Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @forelse($nvvPendientes ?? [] as $nvv)
                                     <tr>
                                         <td>
-                                            <a href="{{ route('nvv-detalle.show', $nvv['NUM']) }}" 
-                                               class="badge badge-warning" 
-                                               title="Ver detalle de NVV {{ $nvv['NUM'] }}">
+                                            <span class="badge badge-warning">
                                                 {{ $nvv['TD'] }}-{{ $nvv['NUM'] }}
-                                            </a>
+                                            </span>
                                         </td>
                                         <td>{{ $nvv['CLIE'] }}</td>
                                         <td>{{ $nvv['CANTIDAD_PRODUCTOS'] ?? 1 }}</td>
@@ -290,10 +289,17 @@
                                             </span>
                                         </td>
                                         <td>{{ $nvv['VENDEDOR_NOMBRE'] ?? 'N/A' }}</td>
+                                        <td>
+                                            <a href="{{ route('nvv-pendientes.ver', $nvv['NUM']) }}" 
+                                               class="btn btn-sm btn-info" 
+                                               title="Ver detalles">
+                                                <i class="material-icons">visibility</i>
+                                            </a>
+                                        </td>
                                     </tr>
                                     @empty
                                     <tr>
-                                        <td colspan="8" class="text-center">No hay NVV pendientes</td>
+                                        <td colspan="9" class="text-center">No hay NVV pendientes</td>
                                     </tr>
                                     @endforelse
                                 </tbody>
