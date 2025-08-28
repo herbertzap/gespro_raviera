@@ -2385,7 +2385,7 @@ class CobranzaService
             $username = env('SQLSRV_EXTERNAL_USERNAME');
             $password = env('SQLSRV_EXTERNAL_PASSWORD');
             
-            // Consulta para obtener detalles de una factura específica con productos
+            // Consulta para obtener detalles de una factura específica (sin productos)
             $query = "
                 SELECT 
                     CAST(dbo.MAEEDO.TIDO AS VARCHAR(10)) + '|' +
@@ -2410,24 +2410,17 @@ class CobranzaService
                     CAST(CASE WHEN dbo.MAEEDO.TIDO = 'NCV' THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * - 1 ELSE (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) END AS VARCHAR(20)) + '|' +
                     CAST(CASE WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) < - 8 THEN 'VIGENTE' WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN - 7 AND - 1 THEN 'POR VENCER' WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN 0 AND 7 THEN 'VENCIDO' WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN 8 AND 30 THEN 'MOROSO' ELSE 'BLOQUEAR' END AS VARCHAR(20)) + '|' +
                     CAST(dbo.TABFU.KOFU AS VARCHAR(10)) + '|' +
-                    CAST(dbo.MAEEN.KOFUEN AS VARCHAR(10)) + '|' +
-                    CAST(dbo.MAEDDO.KOPRCT AS VARCHAR(10)) + '|' +
-                    CAST(dbo.MAEDDO.NOKOPR AS VARCHAR(100)) + '|' +
-                    CAST(dbo.MAEDDO.CAPRCO1 AS VARCHAR(20)) + '|' +
-                    CAST((dbo.MAEDDO.VANELI / NULLIF(dbo.MAEDDO.CAPRCO1, 0)) AS VARCHAR(20)) + '|' +
-                    CAST(dbo.MAEDDO.VANELI AS VARCHAR(20)) AS DATOS
+                    CAST(dbo.MAEEN.KOFUEN AS VARCHAR(10)) AS DATOS
                 FROM dbo.TABFU RIGHT OUTER JOIN
                          dbo.MAEEN ON dbo.TABFU.KOFU = dbo.MAEEN.KOFUEN LEFT OUTER JOIN
                          dbo.TABCM ON dbo.MAEEN.CIEN = dbo.TABCM.KOCI AND dbo.MAEEN.CMEN = dbo.TABCM.KOCM RIGHT OUTER JOIN
                          dbo.MAEEDO ON dbo.MAEEN.KOEN = dbo.MAEEDO.ENDO AND dbo.MAEEN.SUEN = dbo.MAEEDO.SUENDO LEFT OUTER JOIN
-                         dbo.TABCI ON dbo.MAEEN.CIEN = dbo.TABCI.KOCI LEFT OUTER JOIN
-                         dbo.MAEDDO ON dbo.MAEEDO.IDMAEDO = dbo.MAEDDO.IDMAEDO
+                         dbo.TABCI ON dbo.MAEEN.CIEN = dbo.TABCI.KOCI
                 WHERE (dbo.MAEEDO.EMPRESA = '01') 
                 AND (dbo.MAEEDO.TIDO = '{$tipoDocumento}') 
                 AND (dbo.MAEEDO.NUDO = '{$numeroDocumento}')
                 AND (dbo.MAEEDO.FEEMDO > CONVERT(DATETIME, '2000-01-01 00:00:00', 102)) 
-                AND (dbo.MAEEDO.VABRDO > dbo.MAEEDO.VAABDO)
-                ORDER BY dbo.MAEDDO.KOPRCT";
+                AND (dbo.MAEEDO.VABRDO > dbo.MAEEDO.VAABDO)";
             
             // Crear archivo temporal con la consulta
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
@@ -2505,9 +2498,8 @@ class CobranzaService
                 }
             }
             
-            // Agrupar los productos de la factura
+            // Obtener la información básica de la factura
             $facturaAgrupada = null;
-            $productos = [];
             
             foreach ($result as $factura) {
                 if ($facturaAgrupada === null) {
@@ -2527,48 +2519,185 @@ class CobranzaService
                         'REGION' => $factura['REGION'],
                         'COMUNA' => $factura['COMUNA'],
                         'VENDEDOR' => $factura['VENDEDOR'],
-                        'VALOR' => 0,
-                        'ABONOS' => 0,
-                        'POR_VENCER' => 0,
-                        'VIGENTE' => 0,
-                        'VENCIDO' => 0,
-                        'SALDO' => 0,
+                        'VALOR' => (float)($factura['VALOR'] ?? 0),
+                        'ABONOS' => (float)($factura['ABONOS'] ?? 0),
+                        'POR_VENCER' => (float)($factura['POR_VENCER'] ?? 0),
+                        'VIGENTE' => (float)($factura['VIGENTE'] ?? 0),
+                        'VENCIDO' => (float)($factura['VENCIDO'] ?? 0),
+                        'SALDO' => (float)($factura['SALDO'] ?? 0),
                         'ESTADO' => $factura['ESTADO'],
                         'KOFU' => $factura['KOFU'],
-                        'KOFUEN' => $factura['KOFUEN'],
+                        'KOFUEN' => $factura['KOFU'] ?? '', // Usar KOFU como KOFUEN si no existe
                         'CANTIDAD_PRODUCTOS' => 0
                     ];
                 }
-                
-                // Sumar los valores
-                $facturaAgrupada['VALOR'] += (float)($factura['VALOR'] ?? 0);
-                $facturaAgrupada['ABONOS'] += (float)($factura['ABONOS'] ?? 0);
-                $facturaAgrupada['POR_VENCER'] += (float)($factura['POR_VENCER'] ?? 0);
-                $facturaAgrupada['VIGENTE'] += (float)($factura['VIGENTE'] ?? 0);
-                $facturaAgrupada['VENCIDO'] += (float)($factura['VENCIDO'] ?? 0);
-                $facturaAgrupada['SALDO'] += (float)($factura['SALDO'] ?? 0);
-                $facturaAgrupada['CANTIDAD_PRODUCTOS']++;
-                
-                // Agregar el producto a la lista
-                if (isset($factura['KOPRCT'])) {
-                    $productos[] = [
-                        'KOPRCT' => $factura['KOPRCT'],
-                        'NOKOPR' => $factura['NOKOPR'],
-                        'CAPRCO1' => $factura['CAPRCO1'],
-                        'PUNIT' => $factura['PUNIT'],
-                        'VALOR' => $factura['VALOR_PRODUCTO']
-                    ];
-                }
+                break; // Solo necesitamos la primera línea para la información básica
             }
             
+            // Ahora obtener los productos de la factura
             if ($facturaAgrupada) {
+                $productos = $this->getProductosFactura($tipoDocumento, $numeroDocumento);
                 $facturaAgrupada['productos'] = $productos;
+                $facturaAgrupada['CANTIDAD_PRODUCTOS'] = count($productos);
             }
             
             return $facturaAgrupada;
             
         } catch (\Exception $e) {
             \Log::error('Error obteniendo detalles de factura ' . $tipoDocumento . '-' . $numeroDocumento . ': ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Obtener productos de una factura específica
+     */
+    public function getProductosFactura($tipoDocumento, $numeroDocumento)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            // Consulta para obtener productos de una factura específica usando la relación exacta proporcionada
+            $query = "
+                SELECT 
+                    CAST(MAEDDO_2.KOPRCT AS VARCHAR(10)) + '|' +
+                    CAST(MAEDDO_2.NOKOPR AS VARCHAR(100)) + '|' +
+                    CAST(MAEDDO_2.CAPRCO1 AS VARCHAR(20)) + '|' +
+                    CAST((MAEDDO_2.VANELI / NULLIF(MAEDDO_2.CAPRCO1, 0)) AS VARCHAR(20)) + '|' +
+                    CAST(MAEDDO_2.VANELI AS VARCHAR(20)) AS DATOS
+                FROM dbo.MAEDDO AS MAEDDO_2 
+                INNER JOIN dbo.MAEDDO AS MAEDDO_1 ON MAEDDO_2.IDMAEDO = MAEDDO_1.IDRST 
+                FULL OUTER JOIN dbo.MAEDDO 
+                INNER JOIN dbo.MAEEN ON dbo.MAEDDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEDDO.SUENDO = dbo.MAEEN.SUEN 
+                ON MAEDDO_1.IDMAEDO = dbo.MAEDDO.IDRST
+                WHERE dbo.MAEDDO.TIDO = '{$tipoDocumento}' 
+                AND dbo.MAEDDO.NUDO = '{$numeroDocumento}'
+                ORDER BY MAEDDO_2.KOPRCT";
+            
+            // Crear archivo temporal con la consulta
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            // Ejecutar consulta usando tsql
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+            
+            // Limpiar archivo temporal
+            unlink($tempFile);
+            
+            if (!$output || str_contains($output, 'error')) {
+                \Log::warning('Error obteniendo productos de factura: ' . $output);
+                return [];
+            }
+            
+            // Procesar la salida
+            $lines = explode("\n", $output);
+            $productos = [];
+            $inDataSection = false;
+            $headerFound = false;
+            
+            foreach ($lines as $lineNumber => $line) {
+                $line = trim($line);
+                
+                // Saltar líneas vacías o de configuración
+                if (empty($line) || 
+                    strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || 
+                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'Warning:') !== false ||
+                    preg_match('/^\d+>$/', $line)) {
+                    continue;
+                }
+                
+                // Saltar líneas con múltiples números SOLO si no contienen DATOS
+                if (preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) && strpos($line, 'DATOS') === false) {
+                    continue;
+                }
+                
+                // Detectar el header de la tabla
+                if (strpos($line, 'DATOS') !== false) {
+                    $headerFound = true;
+                    $inDataSection = true;
+                    continue;
+                }
+                
+                // También detectar si la línea termina con DATOS
+                if (trim($line) === 'DATOS') {
+                    $headerFound = true;
+                    $inDataSection = true;
+                    continue;
+                }
+                
+                // Detectar cuando terminamos la sección de datos
+                if (strpos($line, '(10 rows affected)') !== false || strpos($line, 'rows affected') !== false) {
+                    $inDataSection = false;
+                    break;
+                }
+                
+                // Detectar cuando terminamos la sección de datos
+                if (strpos($line, '(1 row affected)') !== false || strpos($line, 'rows affected') !== false) {
+                    $inDataSection = false;
+                    break;
+                }
+                
+                // Si estamos en la sección de datos y la línea no está vacía
+                if ($inDataSection && $headerFound && !empty($line)) {
+                    // Procesar cada línea individualmente
+                    $producto = $this->procesarLineaProductoFactura($line, $lineNumber);
+                    
+                    if ($producto) {
+                        $productos[] = $producto;
+                    }
+                }
+            }
+            
+            return $productos;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo productos de factura ' . $tipoDocumento . '-' . $numeroDocumento . ': ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Procesar línea de producto de factura
+     */
+    private function procesarLineaProductoFactura($line, $lineNumber)
+    {
+        try {
+            // Verificar que la línea tenga el formato esperado
+            if (strlen($line) < 20) {
+                \Log::warning('Línea de producto factura muy corta: ' . $line);
+                return null;
+            }
+            
+            // Extraer campos usando el separador |
+            $campos = explode('|', $line);
+            
+            if (count($campos) < 5) {
+                \Log::warning('Línea de producto factura con campos insuficientes: ' . $line);
+                return null;
+            }
+            
+            // Mapear campos según la consulta
+            $productoData = [
+                'KOPRCT' => trim($campos[0]),
+                'NOKOPR' => $this->convertToUtf8(trim($campos[1])),
+                'CAPRCO1' => (float)trim($campos[2]),
+                'PUNIT' => (float)trim($campos[3]),
+                'VALOR' => (float)trim($campos[4])
+            ];
+            
+            \Log::info('Producto de factura extraído correctamente: ' . $productoData['KOPRCT'] . ' - ' . $productoData['NOKOPR']);
+            
+            return $productoData;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error extrayendo datos de producto factura: ' . $e->getMessage());
             return null;
         }
     }
@@ -2588,12 +2717,12 @@ class CobranzaService
             // Extraer campos usando el separador |
             $campos = explode('|', $line);
             
-            if (count($campos) < 25) {
+            if (count($campos) < 22) {
                 \Log::warning('Línea de factura detalle con campos insuficientes: ' . $line);
                 return null;
             }
             
-            // Mapear campos según la consulta
+            // Mapear campos según la consulta (22 campos)
             $facturaData = [
                 'TIPO_DOCTO' => trim($campos[0]),
                 'NRO_DOCTO' => trim($campos[1]),
@@ -2616,13 +2745,7 @@ class CobranzaService
                 'VENCIDO' => (float)trim($campos[18]),
                 'SALDO' => (float)trim($campos[19]),
                 'ESTADO' => trim($campos[20]),
-                'KOFU' => trim($campos[21]),
-                'KOFUEN' => trim($campos[22]),
-                'KOPRCT' => trim($campos[23]),
-                'NOKOPR' => $this->convertToUtf8(trim($campos[24])),
-                'CAPRCO1' => (float)trim($campos[25]),
-                'PUNIT' => (float)trim($campos[26]),
-                'VALOR_PRODUCTO' => (float)trim($campos[27])
+                'KOFU' => trim($campos[21])
             ];
             
             \Log::info('Factura detalle extraída correctamente: ' . $facturaData['TIPO_DOCTO'] . '-' . $facturaData['NRO_DOCTO'] . ' - ' . $facturaData['CLIENTE']);
