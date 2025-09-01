@@ -28,7 +28,12 @@ class AprobacionController extends Controller
         $cotizaciones = collect();
 
         if ($user->hasRole('Supervisor')) {
-            $cotizaciones = Cotizacion::pendientesSupervisor()
+            // Supervisor ve todas las notas pendientes de aprobación (crédito o stock)
+            $cotizaciones = Cotizacion::whereIn('estado_aprobacion', ['pendiente', 'pendiente_picking'])
+                ->where(function($query) {
+                    $query->where('tiene_problemas_credito', true)
+                          ->orWhere('tiene_problemas_stock', true);
+                })
                 ->with(['user', 'productos'])
                 ->latest()
                 ->paginate(15);

@@ -101,6 +101,45 @@
             </li>
             @endif
 
+            <!-- Supervisor -->
+            @if(auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Super Admin'))
+            <li>
+                <a data-toggle="collapse" href="#Supervisor" aria-expanded="false">
+                    <i class="tim-icons icon-settings"></i>
+                    <span class="nav-link-text">{{ __('Supervisor') }}</span>
+                    <b class="caret mt-1"></b>
+                </a>
+                <div class="collapse" id="Supervisor">
+                    <ul class="nav pl-4">
+                        <li @if ($pageSlug == 'supervisor-dashboard') class="active " @endif>
+                            <a href="{{ route('supervisor.dashboard') }}">
+                                <i class="tim-icons icon-chart-pie-36"></i>
+                                <p>{{ __('Dashboard') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'supervisor-clientes') class="active " @endif>
+                            <a href="{{ route('supervisor.clientes') }}">
+                                <i class="tim-icons icon-single-02"></i>
+                                <p>{{ __('Todos los Clientes') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'supervisor-notas-venta') class="active " @endif>
+                            <a href="{{ route('supervisor.notas-venta') }}">
+                                <i class="tim-icons icon-notes"></i>
+                                <p>{{ __('Todas las Notas de Venta') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'supervisor-facturas') class="active " @endif>
+                            <a href="{{ route('supervisor.facturas') }}">
+                                <i class="tim-icons icon-money-coins"></i>
+                                <p>{{ __('Facturas del Sistema') }}</p>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </li>
+            @endif
+
             @can('gestionar usuarios')
             <li>
                 <a data-toggle="collapse" href="#Usuarios" aria-expanded="true">

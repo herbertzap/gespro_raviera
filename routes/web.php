@@ -61,6 +61,18 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/aprobaciones/{id}/separar-stock', [App\Http\Controllers\AprobacionController::class, 'separarProductosStock'])->name('aprobaciones.separar-stock');
 });
 
+// Rutas del Supervisor
+Route::middleware(['auth', 'role:Supervisor|Super Admin'])->group(function () {
+    Route::get('/supervisor', [App\Http\Controllers\SupervisorController::class, 'index'])->name('supervisor.index');
+    Route::get('/supervisor/dashboard', [App\Http\Controllers\SupervisorController::class, 'dashboard'])->name('supervisor.dashboard');
+    Route::get('/supervisor/clientes', [App\Http\Controllers\SupervisorController::class, 'clientes'])->name('supervisor.clientes');
+    Route::get('/supervisor/cliente/{codigoCliente}', [App\Http\Controllers\SupervisorController::class, 'verCliente'])->name('supervisor.ver-cliente');
+    Route::get('/supervisor/notas-venta', [App\Http\Controllers\SupervisorController::class, 'notasVenta'])->name('supervisor.notas-venta');
+    Route::get('/supervisor/nota-venta/{id}', [App\Http\Controllers\SupervisorController::class, 'verNotaVenta'])->name('supervisor.ver-nota-venta');
+    Route::get('/supervisor/facturas', [App\Http\Controllers\SupervisorController::class, 'facturas'])->name('supervisor.facturas');
+    Route::get('/supervisor/factura/{tipoDocumento}/{numeroDocumento}', [App\Http\Controllers\SupervisorController::class, 'verFactura'])->name('supervisor.ver-factura');
+});
+
 // Rutas de NVV Pendientes
 Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/nvv-pendientes', [App\Http\Controllers\NvvPendientesController::class, 'index'])->name('nvv-pendientes.index');
