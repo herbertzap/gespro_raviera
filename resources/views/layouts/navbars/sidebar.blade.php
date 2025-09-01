@@ -91,6 +91,16 @@
             </li>
             @endif
 
+            <!-- Aprobaciones -->
+            @if(auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Picking') || auth()->user()->hasRole('Super Admin'))
+            <li @if ($pageSlug == 'aprobaciones') class="active " @endif>
+                <a href="{{ route('aprobaciones.index') }}">
+                    <i class="tim-icons icon-check-2"></i>
+                    <p>{{ __('Aprobaciones') }}</p>
+                </a>
+            </li>
+            @endif
+
             @can('gestionar usuarios')
             <li>
                 <a data-toggle="collapse" href="#Usuarios" aria-expanded="true">
