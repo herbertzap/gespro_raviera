@@ -46,6 +46,21 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/cotizacion/resumen-stock-comprometido', [App\Http\Controllers\CotizacionController::class, 'resumenStockComprometido'])->name('cotizacion.resumen-stock-comprometido');
 });
 
+// Rutas de Aprobaciones
+Route::middleware(['auth'])->group(function () {
+    Route::get('/aprobaciones', [App\Http\Controllers\AprobacionController::class, 'index'])->name('aprobaciones.index');
+    Route::get('/aprobaciones/{id}', [App\Http\Controllers\AprobacionController::class, 'show'])->name('aprobaciones.show');
+    
+    // Aprobaciones por rol
+    Route::post('/aprobaciones/{id}/supervisor', [App\Http\Controllers\AprobacionController::class, 'aprobarSupervisor'])->name('aprobaciones.supervisor');
+    Route::post('/aprobaciones/{id}/compras', [App\Http\Controllers\AprobacionController::class, 'aprobarCompras'])->name('aprobaciones.compras');
+    Route::post('/aprobaciones/{id}/picking', [App\Http\Controllers\AprobacionController::class, 'aprobarPicking'])->name('aprobaciones.picking');
+    
+    // Rechazar y separar productos
+    Route::post('/aprobaciones/{id}/rechazar', [App\Http\Controllers\AprobacionController::class, 'rechazar'])->name('aprobaciones.rechazar');
+    Route::post('/aprobaciones/{id}/separar-stock', [App\Http\Controllers\AprobacionController::class, 'separarProductosStock'])->name('aprobaciones.separar-stock');
+});
+
 // Rutas de NVV Pendientes
 Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/nvv-pendientes', [App\Http\Controllers\NvvPendientesController::class, 'index'])->name('nvv-pendientes.index');
