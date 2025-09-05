@@ -1176,6 +1176,8 @@ class CotizacionController extends Controller
      */
     public function index(Request $request)
     {
+        $user = auth()->user();
+        
         // Filtros
         $estado = $request->get('estado', '');
         $cliente = $request->get('cliente', '');
@@ -1185,14 +1187,23 @@ class CotizacionController extends Controller
         $montoMin = $request->get('monto_min', '');
         $montoMax = $request->get('monto_max', '');
         
-        // Obtener código del vendedor actual
-        $codigoVendedor = auth()->user()->codigo_vendedor ?? '';
-        
-        // Obtener cotizaciones desde SQL Server filtradas por vendedor
-        $cotizacionesSQL = $this->obtenerCotizacionesDesdeSQLServer($estado, $cliente, $fechaInicio, $fechaFin, $codigoVendedor, $buscar, $montoMin, $montoMax);
-        
-        // Obtener cotizaciones locales del vendedor
-        $cotizacionesLocales = $this->obtenerCotizacionesLocales($estado, $cliente, $fechaInicio, $fechaFin, $buscar, $montoMin, $montoMax);
+        // Si es Supervisor, puede ver todas las cotizaciones
+        if ($user->hasRole('Supervisor') || $user->hasRole('Super Admin')) {
+            // Obtener cotizaciones desde SQL Server (todas)
+            $cotizacionesSQL = $this->obtenerCotizacionesDesdeSQLServer($estado, $cliente, $fechaInicio, $fechaFin, '', $buscar, $montoMin, $montoMax);
+            
+            // Obtener cotizaciones locales (todas)
+            $cotizacionesLocales = $this->obtenerCotizacionesLocales($estado, $cliente, $fechaInicio, $fechaFin, $buscar, $montoMin, $montoMax, true);
+        } else {
+            // Si es Vendedor, solo sus cotizaciones
+            $codigoVendedor = $user->codigo_vendedor ?? '';
+            
+            // Obtener cotizaciones desde SQL Server filtradas por vendedor
+            $cotizacionesSQL = $this->obtenerCotizacionesDesdeSQLServer($estado, $cliente, $fechaInicio, $fechaFin, $codigoVendedor, $buscar, $montoMin, $montoMax);
+            
+            // Obtener cotizaciones locales del vendedor
+            $cotizacionesLocales = $this->obtenerCotizacionesLocales($estado, $cliente, $fechaInicio, $fechaFin, $buscar, $montoMin, $montoMax);
+        }
         
         // Combinar ambas listas
         $cotizaciones = array_merge($cotizacionesSQL, $cotizacionesLocales);
@@ -1215,11 +1226,15 @@ class CotizacionController extends Controller
     /**
      * Obtener cotizaciones locales del vendedor
      */
-    private function obtenerCotizacionesLocales($estado = '', $cliente = '', $fechaInicio = '', $fechaFin = '', $buscar = '', $montoMin = '', $montoMax = '')
+    private function obtenerCotizacionesLocales($estado = '', $cliente = '', $fechaInicio = '', $fechaFin = '', $buscar = '', $montoMin = '', $montoMax = '', $verTodas = false)
     {
         try {
-            $query = Cotizacion::with(['user', 'productos'])
-                ->where('user_id', auth()->id());
+            $query = Cotizacion::with(['user', 'productos']);
+            
+            // Si no es para ver todas, filtrar por usuario actual
+            if (!$verTodas) {
+                $query->where('user_id', auth()->id());
+            }
             
             // Filtro por estado
             if ($estado) {

@@ -19,12 +19,17 @@ class ClienteController extends Controller
     {
         $user = auth()->user();
         
-        if (!$user->hasRole('Vendedor')) {
+        if (!$user->hasRole('Vendedor') && !$user->hasRole('Supervisor') && !$user->hasRole('Super Admin')) {
             return redirect()->route('dashboard')->with('error', 'Acceso no autorizado');
         }
 
-        // Obtener clientes desde base de datos local
-        $clientes = Cliente::getClientesActivosPorVendedor($user->codigo_vendedor);
+        // Si es Supervisor, puede ver todos los clientes
+        if ($user->hasRole('Supervisor') || $user->hasRole('Super Admin')) {
+            $clientes = Cliente::where('activo', true)->paginate(15);
+        } else {
+            // Si es Vendedor, solo sus clientes
+            $clientes = Cliente::getClientesActivosPorVendedor($user->codigo_vendedor);
+        }
         
         return view('clientes.index', compact('clientes'));
     }
@@ -244,19 +249,29 @@ class ClienteController extends Controller
     {
         $user = auth()->user();
         
-        if (!$user->hasRole('Vendedor')) {
+        if (!$user->hasRole('Vendedor') && !$user->hasRole('Supervisor') && !$user->hasRole('Super Admin')) {
             return redirect()->route('dashboard')->with('error', 'Acceso no autorizado');
         }
 
-        // Buscar cliente en base local
-        $cliente = Cliente::buscarPorCodigo($codigo, $user->codigo_vendedor);
+        // Si es Supervisor, puede ver cualquier cliente
+        if ($user->hasRole('Supervisor') || $user->hasRole('Super Admin')) {
+            $cliente = Cliente::where('codigo_cliente', $codigo)->first();
+        } else {
+            // Si es Vendedor, solo sus clientes
+            $cliente = Cliente::buscarPorCodigo($codigo, $user->codigo_vendedor);
+        }
         
         if (!$cliente) {
             // Si no está en local, buscar en SQL Server
             $clienteExterno = $this->cobranzaService->getClienteInfo($codigo);
             
-            if (!$clienteExterno || $clienteExterno['CODIGO_VENDEDOR'] !== $user->codigo_vendedor) {
-                return redirect()->route('dashboard')->with('error', 'Cliente no encontrado o no autorizado');
+            if (!$clienteExterno) {
+                return redirect()->route('dashboard')->with('error', 'Cliente no encontrado');
+            }
+
+            // Si es Vendedor, verificar que el cliente le pertenece
+            if ($user->hasRole('Vendedor') && $clienteExterno['CODIGO_VENDEDOR'] !== $user->codigo_vendedor) {
+                return redirect()->route('dashboard')->with('error', 'Cliente no autorizado');
             }
 
             // Crear cliente en base local
