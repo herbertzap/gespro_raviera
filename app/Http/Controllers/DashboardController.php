@@ -303,14 +303,71 @@ class DashboardController extends Controller
 
     private function getProductosBajoStock()
     {
-        // Implementar lógica para obtener productos con bajo stock
-        return [];
+        // Obtener productos con stock bajo desde la base de datos
+        $productos = \DB::connection('sqlsrv')
+            ->table('PRODUCTOS')
+            ->select([
+                'CODIGO_PRODUCTO',
+                'NOMBRE_PRODUCTO', 
+                'STOCK_ACTUAL',
+                'STOCK_MINIMO',
+                'PRECIO_COMPRA',
+                'PROVEEDOR'
+            ])
+            ->whereRaw('STOCK_ACTUAL <= STOCK_MINIMO')
+            ->orderBy('STOCK_ACTUAL', 'asc')
+            ->limit(20)
+            ->get();
+
+        return $productos->map(function($producto) {
+            return [
+                'codigo' => $producto->CODIGO_PRODUCTO,
+                'nombre' => $producto->NOMBRE_PRODUCTO,
+                'stock_actual' => $producto->STOCK_ACTUAL,
+                'stock_minimo' => $producto->STOCK_MINIMO,
+                'precio_compra' => $producto->PRECIO_COMPRA,
+                'proveedor' => $producto->PROVEEDOR,
+                'diferencia' => $producto->STOCK_ACTUAL - $producto->STOCK_MINIMO,
+                'estado' => $producto->STOCK_ACTUAL <= 0 ? 'Sin Stock' : 'Bajo Stock'
+            ];
+        });
     }
 
     private function getResumenCompras()
     {
-        // Implementar lógica para resumen de compras
-        return [];
+        // Obtener resumen de compras del año actual
+        $añoActual = date('Y');
+        
+        $comprasMensuales = \DB::connection('sqlsrv')
+            ->table('COMPRAS')
+            ->selectRaw('MONTH(FECHA_COMPRA) as mes, COUNT(*) as cantidad, SUM(TOTAL) as total')
+            ->whereYear('FECHA_COMPRA', $añoActual)
+            ->groupBy('MONTH(FECHA_COMPRA)')
+            ->get();
+
+        $totalCompras = \DB::connection('sqlsrv')
+            ->table('COMPRAS')
+            ->whereYear('FECHA_COMPRA', $añoActual)
+            ->count();
+
+        $totalMontoCompras = \DB::connection('sqlsrv')
+            ->table('COMPRAS')
+            ->whereYear('FECHA_COMPRA', $añoActual)
+            ->sum('TOTAL');
+
+        $productosBajoStock = \DB::connection('sqlsrv')
+            ->table('PRODUCTOS')
+            ->whereRaw('STOCK_ACTUAL <= STOCK_MINIMO')
+            ->count();
+
+        return [
+            'año_actual' => $añoActual,
+            'total_compras' => $totalCompras,
+            'total_monto' => $totalMontoCompras,
+            'compras_mensuales' => $comprasMensuales,
+            'productos_bajo_stock' => $productosBajoStock,
+            'promedio_mensual' => $totalCompras > 0 ? round($totalCompras / 12, 2) : 0
+        ];
     }
 
     private function getProductosStockCritico()
@@ -319,43 +376,219 @@ class DashboardController extends Controller
         return [];
     }
 
-    private function getPickingDashboard($user)
+    private function getPedidosPendientesPicking()
     {
-        // Obtener NVV pendientes detalle para validación de stock
-        $nvvPendientes = $this->cobranzaService->getNvvPendientesDetalle(null, 20);
-        $resumenNvvPendientes = $this->cobranzaService->getResumenNvvPendientes(null);
-
-        // Obtener facturas pendientes
-        $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 10);
-        $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes(null);
-
-        // Obtener total de notas de venta
-        $totalNotasVenta = Cotizacion::count();
-
-        // Obtener cheques en cartera
-        $chequesEnCartera = $this->cobranzaService->getChequesEnCartera();
-
-        // Obtener notas de venta pendientes de aprobación
-        $notasPendientes = NotaVenta::where('estado', 'por_aprobar')
-            ->with('user')
-            ->latest()
-            ->take(10)
+        // Obtener pedidos aprobados que están pendientes de preparación
+        $pedidos = \DB::connection('sqlsrv')
+            ->table('NOTAS_VENTA')
+            ->select([
+                'NUMERO_NVV',
+                'FECHA_NVV',
+                'CODIGO_CLIENTE',
+                'NOMBRE_CLIENTE',
+                'TOTAL_NVV',
+                'ESTADO'
+            ])
+            ->where('ESTADO', 'APROBADO')
+            ->where('ESTADO_PICKING', 'PENDIENTE')
+            ->orderBy('FECHA_NVV', 'asc')
+            ->limit(20)
             ->get();
 
-        // Resumen general de cobranza
-        $resumenCobranza = $this->cobranzaService->getResumenCobranza();
+        return $pedidos->map(function($pedido) {
+            return [
+                'numero_nvv' => $pedido->NUMERO_NVV,
+                'fecha' => $pedido->FECHA_NVV,
+                'cliente_codigo' => $pedido->CODIGO_CLIENTE,
+                'cliente_nombre' => $pedido->NOMBRE_CLIENTE,
+                'total' => $pedido->TOTAL_NVV,
+                'estado' => $pedido->ESTADO,
+                'prioridad' => $this->calcularPrioridad($pedido->FECHA_NVV)
+            ];
+        });
+    }
+
+    private function getPedidosEnPreparacion()
+    {
+        // Obtener pedidos que están siendo preparados
+        $pedidos = \DB::connection('sqlsrv')
+            ->table('NOTAS_VENTA')
+            ->select([
+                'NUMERO_NVV',
+                'FECHA_NVV',
+                'CODIGO_CLIENTE',
+                'NOMBRE_CLIENTE',
+                'TOTAL_NVV',
+                'PREPARADOR',
+                'FECHA_INICIO_PICKING'
+            ])
+            ->where('ESTADO_PICKING', 'EN_PREPARACION')
+            ->orderBy('FECHA_INICIO_PICKING', 'asc')
+            ->limit(15)
+            ->get();
+
+        return $pedidos->map(function($pedido) {
+            return [
+                'numero_nvv' => $pedido->NUMERO_NVV,
+                'fecha' => $pedido->FECHA_NVV,
+                'cliente_codigo' => $pedido->CODIGO_CLIENTE,
+                'cliente_nombre' => $pedido->NOMBRE_CLIENTE,
+                'total' => $pedido->TOTAL_NVV,
+                'preparador' => $pedido->PREPARADOR,
+                'tiempo_transcurrido' => $this->calcularTiempoTranscurrido($pedido->FECHA_INICIO_PICKING)
+            ];
+        });
+    }
+
+    private function getResumenPickingDia()
+    {
+        $hoy = date('Y-m-d');
         
-        // Agregar los nuevos campos al resumen
-        $resumenCobranza['TOTAL_NOTAS_VENTA'] = $totalNotasVenta;
-        $resumenCobranza['CHEQUES_EN_CARTERA'] = $chequesEnCartera;
+        $pedidosCompletados = \DB::connection('sqlsrv')
+            ->table('NOTAS_VENTA')
+            ->whereDate('FECHA_COMPLETADO_PICKING', $hoy)
+            ->count();
+
+        $pedidosIniciados = \DB::connection('sqlsrv')
+            ->table('NOTAS_VENTA')
+            ->whereDate('FECHA_INICIO_PICKING', $hoy)
+            ->count();
+
+        $pedidosPendientes = \DB::connection('sqlsrv')
+            ->table('NOTAS_VENTA')
+            ->where('ESTADO_PICKING', 'PENDIENTE')
+            ->count();
+
+        $tiempoPromedio = \DB::connection('sqlsrv')
+            ->table('NOTAS_VENTA')
+            ->whereDate('FECHA_COMPLETADO_PICKING', $hoy)
+            ->whereNotNull('FECHA_INICIO_PICKING')
+            ->selectRaw('AVG(DATEDIFF(MINUTE, FECHA_INICIO_PICKING, FECHA_COMPLETADO_PICKING)) as tiempo_promedio')
+            ->first();
 
         return [
-            'nvvPendientes' => $nvvPendientes,
-            'resumenNvvPendientes' => $resumenNvvPendientes,
-            'facturasPendientes' => $facturasPendientes,
-            'resumenFacturasPendientes' => $resumenFacturasPendientes,
-            'notasPendientes' => $notasPendientes,
-            'resumenCobranza' => $resumenCobranza,
+            'fecha' => $hoy,
+            'pedidos_completados' => $pedidosCompletados,
+            'pedidos_iniciados' => $pedidosIniciados,
+            'pedidos_pendientes' => $pedidosPendientes,
+            'tiempo_promedio_minutos' => $tiempoPromedio->tiempo_promedio ?? 0,
+            'eficiencia' => $pedidosIniciados > 0 ? round(($pedidosCompletados / $pedidosIniciados) * 100, 2) : 0
+        ];
+    }
+
+    private function getProductosStockInsuficiente()
+    {
+        // Obtener productos que no tienen stock suficiente para pedidos pendientes
+        $productos = \DB::connection('sqlsrv')
+            ->table('PRODUCTOS as p')
+            ->join('NVV_DETALLE as d', 'p.CODIGO_PRODUCTO', '=', 'd.CODIGO_PRODUCTO')
+            ->join('NOTAS_VENTA as n', 'd.NUMERO_NVV', '=', 'n.NUMERO_NVV')
+            ->select([
+                'p.CODIGO_PRODUCTO',
+                'p.NOMBRE_PRODUCTO',
+                'p.STOCK_ACTUAL',
+                'd.CANTIDAD_SOLICITADA',
+                'n.NUMERO_NVV',
+                'n.NOMBRE_CLIENTE'
+            ])
+            ->where('n.ESTADO_PICKING', 'PENDIENTE')
+            ->whereRaw('p.STOCK_ACTUAL < d.CANTIDAD_SOLICITADA')
+            ->orderBy('p.STOCK_ACTUAL', 'asc')
+            ->limit(15)
+            ->get();
+
+        return $productos->map(function($producto) {
+            return [
+                'codigo_producto' => $producto->CODIGO_PRODUCTO,
+                'nombre_producto' => $producto->NOMBRE_PRODUCTO,
+                'stock_actual' => $producto->STOCK_ACTUAL,
+                'cantidad_solicitada' => $producto->CANTIDAD_SOLICITADA,
+                'numero_nvv' => $producto->NUMERO_NVV,
+                'cliente' => $producto->NOMBRE_CLIENTE,
+                'diferencia' => $producto->CANTIDAD_SOLICITADA - $producto->STOCK_ACTUAL
+            ];
+        });
+    }
+
+    private function getPedidosCompletadosHoy()
+    {
+        $hoy = date('Y-m-d');
+        
+        $pedidos = \DB::connection('sqlsrv')
+            ->table('NOTAS_VENTA')
+            ->select([
+                'NUMERO_NVV',
+                'CODIGO_CLIENTE',
+                'NOMBRE_CLIENTE',
+                'TOTAL_NVV',
+                'PREPARADOR',
+                'FECHA_COMPLETADO_PICKING',
+                'CANTIDAD_BULTOS'
+            ])
+            ->whereDate('FECHA_COMPLETADO_PICKING', $hoy)
+            ->orderBy('FECHA_COMPLETADO_PICKING', 'desc')
+            ->limit(10)
+            ->get();
+
+        return $pedidos->map(function($pedido) {
+            return [
+                'numero_nvv' => $pedido->NUMERO_NVV,
+                'cliente_codigo' => $pedido->CODIGO_CLIENTE,
+                'cliente_nombre' => $pedido->NOMBRE_CLIENTE,
+                'total' => $pedido->TOTAL_NVV,
+                'preparador' => $pedido->PREPARADOR,
+                'fecha_completado' => $pedido->FECHA_COMPLETADO_PICKING,
+                'cantidad_bultos' => $pedido->CANTIDAD_BULTOS
+            ];
+        });
+    }
+
+    private function calcularPrioridad($fechaNvv)
+    {
+        $diasTranscurridos = now()->diffInDays($fechaNvv);
+        
+        if ($diasTranscurridos >= 3) return 'Alta';
+        if ($diasTranscurridos >= 1) return 'Media';
+        return 'Baja';
+    }
+
+    private function calcularTiempoTranscurrido($fechaInicio)
+    {
+        if (!$fechaInicio) return '0 min';
+        
+        $minutos = now()->diffInMinutes($fechaInicio);
+        
+        if ($minutos < 60) return $minutos . ' min';
+        
+        $horas = floor($minutos / 60);
+        $minutosRestantes = $minutos % 60;
+        
+        return $horas . 'h ' . $minutosRestantes . 'min';
+    }
+
+    private function getPickingDashboard($user)
+    {
+        // Obtener pedidos pendientes de preparación
+        $pedidosPendientes = $this->getPedidosPendientesPicking();
+        
+        // Obtener pedidos en preparación
+        $pedidosEnPreparacion = $this->getPedidosEnPreparacion();
+        
+        // Obtener resumen de picking del día
+        $resumenPicking = $this->getResumenPickingDia();
+        
+        // Obtener productos con stock insuficiente para pedidos
+        $productosStockInsuficiente = $this->getProductosStockInsuficiente();
+        
+        // Obtener pedidos completados hoy
+        $pedidosCompletadosHoy = $this->getPedidosCompletadosHoy();
+
+        return [
+            'pedidosPendientes' => $pedidosPendientes,
+            'pedidosEnPreparacion' => $pedidosEnPreparacion,
+            'resumenPicking' => $resumenPicking,
+            'productosStockInsuficiente' => $productosStockInsuficiente,
+            'pedidosCompletadosHoy' => $pedidosCompletadosHoy,
             'tipoUsuario' => 'Picking'
         ];
     }

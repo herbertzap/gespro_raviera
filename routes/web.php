@@ -115,6 +115,29 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/clientes/estadisticas', [App\Http\Controllers\ClienteController::class, 'estadisticas'])->name('clientes.estadisticas');
 });
 
+// Rutas de Compras
+Route::middleware(['auth'])->group(function () {
+    Route::get('/compras', [App\Http\Controllers\ComprasController::class, 'index'])->name('compras.index');
+    Route::get('/compras/productos-bajo-stock', [App\Http\Controllers\ComprasController::class, 'productosBajoStock'])->name('compras.productos-bajo-stock');
+    Route::get('/compras/historial', [App\Http\Controllers\ComprasController::class, 'historial'])->name('compras.historial');
+    Route::get('/compras/crear', [App\Http\Controllers\ComprasController::class, 'crear'])->name('compras.crear');
+    Route::post('/compras', [App\Http\Controllers\ComprasController::class, 'store'])->name('compras.store');
+    Route::get('/compras/{id}', [App\Http\Controllers\ComprasController::class, 'show'])->name('compras.show');
+    Route::post('/compras/{id}/actualizar-estado', [App\Http\Controllers\ComprasController::class, 'actualizarEstado'])->name('compras.actualizar-estado');
+});
+
+// Rutas de Picking
+Route::middleware(['auth'])->group(function () {
+    Route::get('/picking', [App\Http\Controllers\PickingController::class, 'index'])->name('picking.index');
+    Route::get('/picking/pendientes', [App\Http\Controllers\PickingController::class, 'pendientes'])->name('picking.pendientes');
+    Route::get('/picking/en-preparacion', [App\Http\Controllers\PickingController::class, 'enPreparacion'])->name('picking.en-preparacion');
+    Route::post('/picking/{numeroNvv}/iniciar', [App\Http\Controllers\PickingController::class, 'iniciarPreparacion'])->name('picking.iniciar');
+    Route::get('/picking/{numeroNvv}/preparar', [App\Http\Controllers\PickingController::class, 'preparar'])->name('picking.preparar');
+    Route::post('/picking/{numeroNvv}/completar', [App\Http\Controllers\PickingController::class, 'completarPreparacion'])->name('picking.completar');
+    Route::get('/picking/historial', [App\Http\Controllers\PickingController::class, 'historial'])->name('picking.historial');
+    Route::get('/picking/{numeroNvv}/imprimir', [App\Http\Controllers\PickingController::class, 'imprimirPicking'])->name('picking.imprimir');
+});
+
 // Ruta para página de cliente
 Route::get('/cliente/{codigo}', [App\Http\Controllers\ClienteController::class, 'show'])->name('cliente.show');
 
