@@ -349,8 +349,13 @@ class AprobacionController extends Controller
         // Obtener historial completo
         $historial = \App\Models\CotizacionHistorial::obtenerHistorialCompleto($id);
         
-        // Obtener resumen de tiempos
-        $resumenTiempos = \App\Services\HistorialCotizacionService::obtenerResumenTiempos($cotizacion);
+        // Obtener resumen de tiempos (crear uno básico si el servicio no existe)
+        try {
+            $resumenTiempos = \App\Services\HistorialCotizacionService::obtenerResumenTiempos($cotizacion);
+        } catch (\Exception $e) {
+            // Crear resumen básico si el servicio no existe
+            $resumenTiempos = $this->crearResumenTiemposBasico($cotizacion);
+        }
 
         return view('aprobaciones.historial', compact('cotizacion', 'historial', 'resumenTiempos'))
             ->with('pageSlug', 'aprobaciones');
@@ -536,6 +541,73 @@ class AprobacionController extends Controller
 
         } catch (\Exception $e) {
             Log::error("Error al enviar notificación de separación: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Crear resumen básico de tiempos para el historial
+     */
+    private function crearResumenTiemposBasico($cotizacion)
+    {
+        $fechaCreacion = \Carbon\Carbon::parse($cotizacion->fecha_creacion);
+        $fechaActual = now();
+        $tiempoTotal = $fechaCreacion->diffInHours($fechaActual);
+
+        return [
+            [
+                'etapa' => 'Creación',
+                'tiempo' => $fechaCreacion->format('d/m/Y H:i'),
+                'descripcion' => 'Fecha de creación de la NVV',
+                'color' => 'primary',
+                'icono' => 'add_circle'
+            ],
+            [
+                'etapa' => 'Tiempo Total',
+                'tiempo' => $tiempoTotal . ' hrs',
+                'descripcion' => 'Tiempo transcurrido desde la creación',
+                'color' => 'info',
+                'icono' => 'schedule'
+            ],
+            [
+                'etapa' => 'Estado Actual',
+                'tiempo' => ucfirst($cotizacion->estado_aprobacion ?? 'pendiente'),
+                'descripcion' => 'Estado actual de la aprobación',
+                'color' => $this->getColorEstado($cotizacion->estado_aprobacion ?? 'pendiente'),
+                'icono' => $this->getIconoEstado($cotizacion->estado_aprobacion ?? 'pendiente')
+            ],
+            [
+                'etapa' => 'Última Modificación',
+                'tiempo' => $cotizacion->fecha_modificacion ? \Carbon\Carbon::parse($cotizacion->fecha_modificacion)->format('d/m/Y H:i') : 'N/A',
+                'descripcion' => 'Última actualización de la NVV',
+                'color' => 'warning',
+                'icono' => 'update'
+            ]
+        ];
+    }
+
+    /**
+     * Obtener color según el estado
+     */
+    private function getColorEstado($estado)
+    {
+        switch($estado) {
+            case 'aprobada': return 'success';
+            case 'rechazada': return 'danger';
+            case 'pendiente': return 'warning';
+            default: return 'secondary';
+        }
+    }
+
+    /**
+     * Obtener icono según el estado
+     */
+    private function getIconoEstado($estado)
+    {
+        switch($estado) {
+            case 'aprobada': return 'check_circle';
+            case 'rechazada': return 'cancel';
+            case 'pendiente': return 'schedule';
+            default: return 'help';
         }
     }
 }

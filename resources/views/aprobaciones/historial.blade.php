@@ -33,7 +33,7 @@
         </div>
 
         <!-- Resumen de Tiempos -->
-        @if($resumenTiempos && count($resumenTiempos) > 0)
+        @if($resumenTiempos && is_array($resumenTiempos) && count($resumenTiempos) > 0)
         <div class="row">
             <div class="col-md-12">
                 <div class="card">
@@ -46,23 +46,25 @@
                     <div class="card-body">
                         <div class="row">
                             @foreach($resumenTiempos as $resumen)
-                            <div class="col-md-3">
-                                <div class="card card-stats">
-                                    <div class="card-header card-header-{{ $resumen['color'] }} card-header-icon">
-                                        <div class="card-icon">
-                                            <i class="material-icons">{{ $resumen['icono'] }}</i>
+                                @if(is_array($resumen) && isset($resumen['color']) && isset($resumen['icono']) && isset($resumen['etapa']) && isset($resumen['tiempo']))
+                                <div class="col-md-3">
+                                    <div class="card card-stats">
+                                        <div class="card-header card-header-{{ $resumen['color'] }} card-header-icon">
+                                            <div class="card-icon">
+                                                <i class="material-icons">{{ $resumen['icono'] }}</i>
+                                            </div>
+                                            <p class="card-category">{{ $resumen['etapa'] }}</p>
+                                            <h3 class="card-title">{{ $resumen['tiempo'] }}</h3>
                                         </div>
-                                        <p class="card-category">{{ $resumen['etapa'] }}</p>
-                                        <h3 class="card-title">{{ $resumen['tiempo'] }}</h3>
-                                    </div>
-                                    <div class="card-footer">
-                                        <div class="stats">
-                                            <i class="material-icons">{{ $resumen['icono'] }}</i>
-                                            {{ $resumen['descripcion'] }}
+                                        <div class="card-footer">
+                                            <div class="stats">
+                                                <i class="material-icons">{{ $resumen['icono'] }}</i>
+                                                {{ $resumen['descripcion'] ?? '' }}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                                @endif
                             @endforeach
                         </div>
                     </div>
