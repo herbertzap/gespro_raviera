@@ -2698,6 +2698,6 @@ class CotizacionController extends Controller
         // Obtener resumen de tiempos
         $resumenTiempos = \App\Services\HistorialCotizacionService::obtenerResumenTiempos($cotizacion);
 
-        return view('cotizaciones.historial', compact('cotizacion', 'historial', 'resumenTiempos'))->with('pageSlug', 'cotizaciones');
+        return view('cotizaciones.historial-simple', compact('cotizacion', 'historial', 'resumenTiempos'))->with('pageSlug', 'cotizaciones');
     }
 } 
