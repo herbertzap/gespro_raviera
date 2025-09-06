@@ -113,6 +113,11 @@ class Cotizacion extends Model
         return $this->hasMany(Cotizacion::class, 'nota_original_id');
     }
 
+    public function historial()
+    {
+        return $this->hasMany(CotizacionHistorial::class);
+    }
+
     // Scopes
     public function scopePorVendedor($query, $userId)
     {

@@ -1118,6 +1118,9 @@ class CotizacionController extends Controller
             DB::commit();
             \Log::info('✅ TRANSACCIÓN CONFIRMADA EXITOSAMENTE');
             
+            // Registrar en el historial
+            \App\Services\HistorialCotizacionService::registrarCreacion($cotizacion);
+            
             $response = [
                 'success' => true,
                 'message' => 'Cotización guardada exitosamente',
@@ -2663,5 +2666,32 @@ class CotizacionController extends Controller
                 'message' => 'Error eliminando cotización: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Mostrar historial de una cotización
+     */
+    public function historial($id)
+    {
+        $user = auth()->user();
+        
+        if (!$user->hasRole('Vendedor') && !$user->hasRole('Supervisor') && !$user->hasRole('Super Admin')) {
+            return redirect()->route('dashboard')->with('error', 'Acceso no autorizado');
+        }
+
+        $cotizacion = Cotizacion::with(['user', 'productos'])->findOrFail($id);
+        
+        // Si es Vendedor, verificar que la cotización le pertenece
+        if ($user->hasRole('Vendedor') && $cotizacion->user_id !== $user->id) {
+            return redirect()->route('cotizaciones.index')->with('error', 'No tienes permisos para ver esta cotización');
+        }
+
+        // Obtener historial completo
+        $historial = \App\Models\CotizacionHistorial::obtenerHistorialCompleto($id);
+        
+        // Obtener resumen de tiempos
+        $resumenTiempos = \App\Services\HistorialCotizacionService::obtenerResumenTiempos($cotizacion);
+
+        return view('cotizaciones.historial', compact('cotizacion', 'historial', 'resumenTiempos'))->with('pageSlug', 'cotizaciones');
     }
 } 

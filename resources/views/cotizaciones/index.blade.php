@@ -224,6 +224,10 @@
                                                            class="btn btn-sm btn-warning" title="Editar">
                                                             <i class="material-icons">edit</i>
                                                         </a>
+                                                        <a href="{{ route('cotizacion.historial', $cotizacion['id']) }}" 
+                                                           class="btn btn-sm btn-secondary" title="Historial">
+                                                            <i class="material-icons">history</i>
+                                                        </a>
                                                         <button type="button" class="btn btn-sm btn-danger" 
                                                                 onclick="eliminarCotizacion({{ $cotizacion['id'] }})" title="Eliminar">
                                                             <i class="material-icons">delete</i>
@@ -236,6 +240,10 @@
                                                            class="btn btn-sm btn-info" title="Ver">
                                                             <i class="material-icons">visibility</i>
                                                         </a>
+                                                        <a href="{{ route('cotizacion.historial', $cotizacion['id']) }}" 
+                                                           class="btn btn-sm btn-secondary" title="Historial">
+                                                            <i class="material-icons">history</i>
+                                                        </a>
                                                         <button type="button" class="btn btn-sm btn-success" 
                                                                 onclick="generarNotaVenta({{ $cotizacion['id'] }})" title="Generar Nota de Venta">
                                                             <i class="material-icons">receipt</i>
@@ -243,10 +251,16 @@
                                                     </div>
                                                 @elseif(in_array($cotizacion['estado'], ['procesada', 'ingresada', 'pendiente']))
                                                     <!-- Solo ver para cotizaciones procesadas -->
-                                                    <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
-                                                       class="btn btn-sm btn-info" title="Ver">
-                                                        <i class="material-icons">visibility</i>
-                                                    </a>
+                                                    <div class="btn-group" role="group">
+                                                        <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
+                                                           class="btn btn-sm btn-info" title="Ver">
+                                                            <i class="material-icons">visibility</i>
+                                                        </a>
+                                                        <a href="{{ route('cotizacion.historial', $cotizacion['id']) }}" 
+                                                           class="btn btn-sm btn-secondary" title="Historial">
+                                                            <i class="material-icons">history</i>
+                                                        </a>
+                                                    </div>
                                                 @else
                                                     <!-- Estado desconocido -->
                                                     <span class="text-muted">
@@ -256,10 +270,16 @@
                                                 @endif
                                             @else
                                                 <!-- Cotizaciones de SQL Server (solo ver) -->
-                                                <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
-                                                   class="btn btn-sm btn-info" title="Ver">
-                                                    <i class="material-icons">visibility</i>
-                                                </a>
+                                                <div class="btn-group" role="group">
+                                                    <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
+                                                       class="btn btn-sm btn-info" title="Ver">
+                                                        <i class="material-icons">visibility</i>
+                                                    </a>
+                                                    <a href="{{ route('cotizacion.historial', $cotizacion['id']) }}" 
+                                                       class="btn btn-sm btn-secondary" title="Historial">
+                                                        <i class="material-icons">history</i>
+                                                    </a>
+                                                </div>
                                             @endif
                                         </td>
                                     </tr>

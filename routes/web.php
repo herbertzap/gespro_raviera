@@ -34,6 +34,7 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/cotizacion/nueva', [App\Http\Controllers\CotizacionController::class, 'nueva'])->name('cotizacion.nueva');
     Route::get('/cotizacion/editar/{id}', [App\Http\Controllers\CotizacionController::class, 'editar'])->name('cotizacion.editar');
     Route::get('/cotizacion/ver/{id}', [App\Http\Controllers\CotizacionController::class, 'ver'])->name('cotizacion.ver');
+    Route::get('/cotizacion/historial/{id}', [App\Http\Controllers\CotizacionController::class, 'historial'])->name('cotizacion.historial');
     Route::delete('/cotizacion/{id}', [App\Http\Controllers\CotizacionController::class, 'eliminar'])->name('cotizacion.eliminar');
     Route::get('/cotizacion/buscar-productos', [App\Http\Controllers\CotizacionController::class, 'buscarProductos'])->name('cotizacion.buscar-productos');
     Route::get('/cotizacion/obtener-precios', [App\Http\Controllers\CotizacionController::class, 'obtenerPrecios'])->name('cotizacion.obtener-precios');

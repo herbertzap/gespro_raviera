@@ -88,6 +88,9 @@ class AprobacionController extends Controller
         try {
             $cotizacion->aprobarPorSupervisor($user->id, $request->comentarios);
             
+            // Registrar en el historial
+            \App\Services\HistorialCotizacionService::registrarAprobacionSupervisor($cotizacion, $request->comentarios);
+            
             Log::info("Nota de venta {$cotizacion->id} aprobada por supervisor {$user->id}");
             
             return response()->json([
