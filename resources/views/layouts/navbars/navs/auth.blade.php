@@ -56,10 +56,8 @@
                         </li>
                         <li class="dropdown-divider"></li>
                         <li class="nav-link">
-                            <form method="POST" action="{{ route('logout') }}" style="display: inline;">
-                                @csrf
-                                <button type="submit" class="nav-item dropdown-item btn btn-link text-left" style="border: none; background: none; padding: 0; color: inherit; text-decoration: none; width: 100%;">{{ __('Log out') }}</button>
-                            </form>
+                            <!-- ARCHIVO PERSONALIZADO - NO VENDOR -->
+                            <a href="#" class="nav-item dropdown-item" onclick="event.preventDefault(); document.getElementById('logout-form').submit();">{{ __('Log out') }} CUSTOM</a>
                         </li>
                     </ul>
                 </li>

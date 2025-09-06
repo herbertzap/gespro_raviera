@@ -144,6 +144,11 @@ Route::get('/cliente/{codigo}', [App\Http\Controllers\ClienteController::class, 
 // Autenticación
 Auth::routes();
 
+// Ruta GET temporal para logout que redirija al POST
+Route::get('/logout', function() {
+    return redirect()->route('login')->with('message', 'Por favor use el botón de logout del menú');
+})->name('logout.get');
+
 // Página de inicio después del login
 Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home')->middleware(['auth', 'sincronizar.clientes']);
 
