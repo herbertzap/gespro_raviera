@@ -331,4 +331,28 @@ class AprobacionController extends Controller
 
         return view('aprobaciones.show', compact('cotizacion', 'puedeAprobar', 'tipoAprobacion', 'historial', 'resumenTiempos'));
     }
+
+    /**
+     * Mostrar historial completo de una cotización
+     */
+    public function historial($id)
+    {
+        $user = Auth::user();
+        
+        // Verificar permisos
+        if (!$user->hasRole('Supervisor') && !$user->hasRole('Compras') && !$user->hasRole('Picking') && !$user->hasRole('Super Admin')) {
+            return redirect()->route('dashboard')->with('error', 'Acceso no autorizado');
+        }
+
+        $cotizacion = Cotizacion::with(['user', 'productos'])->findOrFail($id);
+        
+        // Obtener historial completo
+        $historial = \App\Models\CotizacionHistorial::obtenerHistorialCompleto($id);
+        
+        // Obtener resumen de tiempos
+        $resumenTiempos = \App\Services\HistorialCotizacionService::obtenerResumenTiempos($cotizacion);
+
+        return view('aprobaciones.historial', compact('cotizacion', 'historial', 'resumenTiempos'))
+            ->with('pageSlug', 'aprobaciones');
+    }
 }

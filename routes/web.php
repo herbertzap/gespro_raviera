@@ -51,6 +51,7 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
 Route::middleware(['auth'])->group(function () {
     Route::get('/aprobaciones', [App\Http\Controllers\AprobacionController::class, 'index'])->name('aprobaciones.index');
     Route::get('/aprobaciones/{id}', [App\Http\Controllers\AprobacionController::class, 'show'])->name('aprobaciones.show');
+    Route::get('/aprobaciones/{id}/historial', [App\Http\Controllers\AprobacionController::class, 'historial'])->name('aprobaciones.historial');
     
     // Aprobaciones por rol
     Route::post('/aprobaciones/{id}/supervisor', [App\Http\Controllers\AprobacionController::class, 'aprobarSupervisor'])->name('aprobaciones.supervisor');
@@ -116,7 +117,7 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
 });
 
 // Rutas de Compras
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'handle.errors'])->group(function () {
     Route::get('/compras', [App\Http\Controllers\ComprasController::class, 'index'])->name('compras.index');
     Route::get('/compras/productos-bajo-stock', [App\Http\Controllers\ComprasController::class, 'productosBajoStock'])->name('compras.productos-bajo-stock');
     Route::get('/compras/historial', [App\Http\Controllers\ComprasController::class, 'historial'])->name('compras.historial');
@@ -127,7 +128,7 @@ Route::middleware(['auth'])->group(function () {
 });
 
 // Rutas de Picking
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'handle.errors'])->group(function () {
     Route::get('/picking', [App\Http\Controllers\PickingController::class, 'index'])->name('picking.index');
     Route::get('/picking/pendientes', [App\Http\Controllers\PickingController::class, 'pendientes'])->name('picking.pendientes');
     Route::get('/picking/en-preparacion', [App\Http\Controllers\PickingController::class, 'enPreparacion'])->name('picking.en-preparacion');
@@ -148,7 +149,7 @@ Auth::routes();
 Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home')->middleware(['auth', 'sincronizar.clientes']);
 
 // Rutas protegidas
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'handle.errors'])->group(function () {
     // **Gestión de Usuarios**
     Route::middleware('permission:gestionar usuarios')->group(function () {
         Route::resource('user', UserController::class)->except('show');

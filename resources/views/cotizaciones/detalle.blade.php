@@ -20,6 +20,9 @@
                             <a href="{{ route('cotizaciones.index') }}" class="btn btn-sm btn-secondary">
                                 <i class="tim-icons icon-minimal-left"></i> Volver
                             </a>
+                            <a href="{{ route('aprobaciones.historial', $cotizacion->id) }}" class="btn btn-sm btn-info ml-2">
+                                <i class="tim-icons icon-time-alarm"></i> Historial
+                            </a>
                         </div>
                     </div>
                 </div>

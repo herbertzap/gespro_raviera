@@ -4,16 +4,28 @@
 
 @section('content')
 <div class="container-fluid">
-    <div class="row">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-header card-header-warning">
-                    <h4 class="card-title">
-                        <i class="material-icons">visibility</i>
-                        Ver Nota de Venta #{{ $cotizacion->id }}
-                    </h4>
-                    <p class="card-category">Visualizar nota de venta (solo lectura)</p>
-                </div>
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header card-header-warning">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <h4 class="card-title">
+                                    <i class="material-icons">visibility</i>
+                                    Ver Nota de Venta #{{ $cotizacion->id }}
+                                </h4>
+                                <p class="card-category">Visualizar nota de venta (solo lectura)</p>
+                            </div>
+                            <div class="col-md-4 text-right">
+                                <a href="{{ route('cotizaciones.index') }}" class="btn btn-secondary">
+                                    <i class="material-icons">arrow_back</i> Volver
+                                </a>
+                                <a href="{{ route('aprobaciones.historial', $cotizacion->id) }}" class="btn btn-info ml-2">
+                                    <i class="material-icons">history</i> Historial
+                                </a>
+                            </div>
+                        </div>
+                    </div>
                 <div class="card-body">
                     <!-- Información del Cliente -->
                     @if($cliente)

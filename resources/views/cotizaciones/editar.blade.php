@@ -8,11 +8,23 @@
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header card-header-warning">
-                    <h4 class="card-title">
-                        <i class="material-icons">edit</i>
-                        Editar Nota de Venta #{{ $cotizacion->id }}
-                    </h4>
-                    <p class="card-category">Modificar nota de venta existente</p>
+                    <div class="row">
+                        <div class="col-md-8">
+                            <h4 class="card-title">
+                                <i class="material-icons">edit</i>
+                                Editar Nota de Venta #{{ $cotizacion->id }}
+                            </h4>
+                            <p class="card-category">Modificar nota de venta existente</p>
+                        </div>
+                        <div class="col-md-4 text-right">
+                            <a href="{{ route('cotizaciones.index') }}" class="btn btn-secondary">
+                                <i class="material-icons">arrow_back</i> Volver
+                            </a>
+                            <a href="{{ route('aprobaciones.historial', $cotizacion->id) }}" class="btn btn-info ml-2">
+                                <i class="material-icons">history</i> Historial
+                            </a>
+                        </div>
+                    </div>
                 </div>
                 <div class="card-body">
                     <!-- Información del Cliente -->

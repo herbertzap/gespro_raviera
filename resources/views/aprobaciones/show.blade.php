@@ -22,6 +22,9 @@
                                 <a href="{{ route('aprobaciones.index') }}" class="btn btn-secondary">
                                     <i class="material-icons">arrow_back</i> Volver
                                 </a>
+                                <a href="{{ route('aprobaciones.historial', $cotizacion->id) }}" class="btn btn-info ml-2">
+                                    <i class="material-icons">history</i> Historial
+                                </a>
                             </div>
                         </div>
                     </div>
