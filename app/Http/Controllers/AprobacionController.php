@@ -355,4 +355,187 @@ class AprobacionController extends Controller
         return view('aprobaciones.historial', compact('cotizacion', 'historial', 'resumenTiempos'))
             ->with('pageSlug', 'aprobaciones');
     }
+
+    /**
+     * Separar producto con problemas de stock en una NVV duplicada
+     */
+    public function separarPorStock(Request $request, $id)
+    {
+        $user = Auth::user();
+        
+        // Verificar permisos - solo Cobranza puede separar por stock
+        if (!$user->hasRole('Cobranza') && !$user->hasRole('Super Admin')) {
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'No tienes permisos para realizar esta acción');
+        }
+
+        $request->validate([
+            'producto_id' => 'required|integer|exists:cotizacion_productos,id',
+            'motivo' => 'required|string|max:500'
+        ]);
+
+        try {
+            $cotizacion = Cotizacion::with(['productos', 'user'])->findOrFail($id);
+            
+            // Buscar el producto específico
+            $producto = $cotizacion->productos()->findOrFail($request->producto_id);
+            
+            // Verificar que el producto tenga problemas de stock
+            if ($producto->stock_disponible >= $producto->cantidad) {
+                return redirect()->route('aprobaciones.show', $id)
+                    ->with('error', 'Este producto no tiene problemas de stock');
+            }
+
+            // Crear la nueva NVV duplicada con solo el producto problemático
+            $nuevaCotizacion = $this->crearNvvDuplicada($cotizacion, $producto, $request->motivo);
+            
+            // Eliminar el producto de la NVV original
+            $producto->delete();
+            
+            // Actualizar totales de la NVV original
+            $this->actualizarTotalesCotizacion($cotizacion);
+            
+            // Registrar en el historial
+            $this->registrarSeparacionStock($cotizacion, $nuevaCotizacion, $producto, $request->motivo, $user);
+            
+            // Enviar notificación al vendedor
+            $this->enviarNotificacionSeparacion($cotizacion, $nuevaCotizacion, $producto, $user);
+            
+            Log::info("Producto separado por stock", [
+                'cotizacion_original' => $cotizacion->id,
+                'cotizacion_nueva' => $nuevaCotizacion->id,
+                'producto' => $producto->producto_codigo,
+                'usuario' => $user->name
+            ]);
+
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('success', "Producto '{$producto->producto_nombre}' separado exitosamente. Nueva NVV #{$nuevaCotizacion->id} creada para el producto con problemas de stock.");
+
+        } catch (\Exception $e) {
+            Log::error("Error al separar producto por stock: " . $e->getMessage(), [
+                'cotizacion_id' => $id,
+                'producto_id' => $request->producto_id,
+                'usuario' => $user->name
+            ]);
+
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'Error al separar el producto: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Crear una nueva NVV duplicada con solo el producto problemático
+     */
+    private function crearNvvDuplicada($cotizacionOriginal, $producto, $motivo)
+    {
+        // Crear nueva cotización
+        $nuevaCotizacion = $cotizacionOriginal->replicate();
+        $nuevaCotizacion->estado = 'pendiente_stock';
+        $nuevaCotizacion->estado_aprobacion = 'pendiente';
+        $nuevaCotizacion->fecha_creacion = now();
+        $nuevaCotizacion->fecha_modificacion = now();
+        $nuevaCotizacion->comentarios = "NVV separada por problemas de stock del producto: {$producto->producto_nombre}. Motivo: {$motivo}";
+        $nuevaCotizacion->save();
+
+        // Duplicar el producto problemático
+        $nuevoProducto = $producto->replicate();
+        $nuevoProducto->cotizacion_id = $nuevaCotizacion->id;
+        $nuevoProducto->save();
+
+        // Calcular totales de la nueva cotización
+        $this->actualizarTotalesCotizacion($nuevaCotizacion);
+
+        return $nuevaCotizacion;
+    }
+
+    /**
+     * Actualizar totales de una cotización
+     */
+    private function actualizarTotalesCotizacion($cotizacion)
+    {
+        $productos = $cotizacion->productos;
+        $subtotal = $productos->sum(function($producto) {
+            return $producto->precio_unitario * $producto->cantidad;
+        });
+        
+        $descuento = $subtotal * ($cotizacion->descuento_porcentaje / 100);
+        $total = $subtotal - $descuento;
+
+        $cotizacion->update([
+            'subtotal' => $subtotal,
+            'descuento_monto' => $descuento,
+            'total' => $total
+        ]);
+    }
+
+    /**
+     * Registrar la separación en el historial
+     */
+    private function registrarSeparacionStock($cotizacionOriginal, $cotizacionNueva, $producto, $motivo, $user)
+    {
+        // Historial para la cotización original
+        \App\Models\CotizacionHistorial::create([
+            'cotizacion_id' => $cotizacionOriginal->id,
+            'usuario_id' => $user->id,
+            'estado_anterior' => $cotizacionOriginal->estado_aprobacion,
+            'estado_nuevo' => $cotizacionOriginal->estado_aprobacion,
+            'fecha_cambio' => now(),
+            'comentarios' => "Producto '{$producto->producto_nombre}' separado por problemas de stock. Nueva NVV #{$cotizacionNueva->id} creada.",
+            'detalles_cambio' => json_encode([
+                'accion' => 'separar_por_stock',
+                'producto_codigo' => $producto->producto_codigo,
+                'producto_nombre' => $producto->producto_nombre,
+                'nueva_cotizacion_id' => $cotizacionNueva->id,
+                'motivo' => $motivo
+            ])
+        ]);
+
+        // Historial para la nueva cotización
+        \App\Models\CotizacionHistorial::create([
+            'cotizacion_id' => $cotizacionNueva->id,
+            'usuario_id' => $user->id,
+            'estado_anterior' => null,
+            'estado_nuevo' => 'pendiente',
+            'fecha_cambio' => now(),
+            'comentarios' => "NVV creada por separación de stock del producto '{$producto->producto_nombre}'. NVV original: #{$cotizacionOriginal->id}",
+            'detalles_cambio' => json_encode([
+                'accion' => 'creada_por_separacion_stock',
+                'cotizacion_original_id' => $cotizacionOriginal->id,
+                'producto_codigo' => $producto->producto_codigo,
+                'producto_nombre' => $producto->producto_nombre,
+                'motivo' => $motivo
+            ])
+        ]);
+    }
+
+    /**
+     * Enviar notificación al vendedor sobre la separación
+     */
+    private function enviarNotificacionSeparacion($cotizacionOriginal, $cotizacionNueva, $producto, $user)
+    {
+        try {
+            // Crear notificación en la base de datos
+            \App\Models\Notificacion::create([
+                'usuario_id' => $cotizacionOriginal->user_id,
+                'tipo' => 'separacion_stock',
+                'titulo' => 'Producto Separado por Problemas de Stock',
+                'mensaje' => "Se ha separado el producto '{$producto->producto_nombre}' de la NVV #{$cotizacionOriginal->id} por problemas de stock. Se ha creado una nueva NVV #{$cotizacionNueva->id} específicamente para este producto.",
+                'datos_adicionales' => json_encode([
+                    'cotizacion_original_id' => $cotizacionOriginal->id,
+                    'cotizacion_nueva_id' => $cotizacionNueva->id,
+                    'producto_codigo' => $producto->producto_codigo,
+                    'producto_nombre' => $producto->producto_nombre,
+                    'usuario_separacion' => $user->name
+                ]),
+                'leida' => false,
+                'fecha_creacion' => now()
+            ]);
+
+            // Aquí podrías agregar envío de email si es necesario
+            // Mail::to($cotizacionOriginal->user->email)->send(new SeparacionStockMail($cotizacionOriginal, $cotizacionNueva, $producto));
+
+        } catch (\Exception $e) {
+            Log::error("Error al enviar notificación de separación: " . $e->getMessage());
+        }
+    }
 }

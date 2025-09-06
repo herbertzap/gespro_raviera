@@ -61,6 +61,7 @@ Route::middleware(['auth'])->group(function () {
     // Rechazar y separar productos
     Route::post('/aprobaciones/{id}/rechazar', [App\Http\Controllers\AprobacionController::class, 'rechazar'])->name('aprobaciones.rechazar');
     Route::post('/aprobaciones/{id}/separar-stock', [App\Http\Controllers\AprobacionController::class, 'separarProductosStock'])->name('aprobaciones.separar-stock');
+    Route::post('/aprobaciones/{id}/separar-por-stock', [App\Http\Controllers\AprobacionController::class, 'separarPorStock'])->name('aprobaciones.separar-por-stock');
 });
 
 // Ruta de prueba para historial

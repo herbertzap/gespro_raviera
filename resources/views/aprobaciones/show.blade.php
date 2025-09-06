@@ -278,6 +278,9 @@
                                             <th>Subtotal</th>
                                             <th>Stock</th>
                                             <th>Estado</th>
+                                            @if(Auth::user()->hasRole('Cobranza') || Auth::user()->hasRole('Super Admin'))
+                                                <th>Acciones</th>
+                                            @endif
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -313,6 +316,21 @@
                                                         <span class="badge badge-warning">Stock Insuficiente</span>
                                                     @endif
                                                 </td>
+                                                @if(Auth::user()->hasRole('Cobranza') || Auth::user()->hasRole('Super Admin'))
+                                                    <td>
+                                                        @if($producto->stock_disponible < $producto->cantidad)
+                                                            <button type="button" 
+                                                                    class="btn btn-warning btn-sm" 
+                                                                    onclick="separarPorStock({{ $producto->id }}, '{{ $producto->nombre_producto }}')"
+                                                                    title="Separar producto por problemas de stock">
+                                                                <i class="material-icons">call_split</i>
+                                                                Separar
+                                                            </button>
+                                                        @else
+                                                            <span class="text-muted">-</span>
+                                                        @endif
+                                                    </td>
+                                                @endif
                                             </tr>
                                         @endforeach
                                     </tbody>
@@ -456,6 +474,51 @@
             </div>
         </div>
     </div>
+</div>
+
+<!-- Modal de Separación por Stock -->
+<div class="modal fade" id="modalSepararStock" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Separar Producto por Problemas de Stock</h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="formSepararStock">
+                    <input type="hidden" id="productoIdSeparar" name="producto_id" value="">
+                    <input type="hidden" id="cotizacionIdSeparar" name="cotizacion_id" value="{{ $cotizacion->id }}">
+                    
+                    <div class="alert alert-warning">
+                        <i class="material-icons">warning</i>
+                        <strong>¿Estás seguro?</strong><br>
+                        Esta acción creará una nueva NVV con solo el producto seleccionado y lo eliminará de la NVV actual.
+                    </div>
+                    
+                    <div class="form-group">
+                        <label><strong>Producto a separar:</strong></label>
+                        <p id="productoNombreSeparar" class="form-control-plaintext"></p>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="motivoSeparacion">Motivo de la Separación *</label>
+                        <textarea id="motivoSeparacion" name="motivo" class="form-control" rows="3" 
+                                  placeholder="Especificar el motivo de la separación por problemas de stock..." required></textarea>
+                        <small class="form-text text-muted">Este motivo se registrará en el historial y se notificará al vendedor.</small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-warning" onclick="confirmarSeparacionStock()">
+                    <i class="material-icons">call_split</i> Separar Producto
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
     <!-- Historial de la Cotización -->
     <div class="row mt-4">
@@ -725,10 +788,50 @@ function confirmarRechazo() {
     });
 }
 
-// Mostrar separación de productos
-function mostrarSeparacionProductos() {
-    // Implementar lógica para separar productos problemáticos
-    showNotification('info', 'Funcionalidad de separación de productos en desarrollo');
+// Separar producto por stock
+function separarPorStock(productoId, productoNombre) {
+    document.getElementById('productoIdSeparar').value = productoId;
+    document.getElementById('productoNombreSeparar').textContent = productoNombre;
+    document.getElementById('motivoSeparacion').value = '';
+    $('#modalSepararStock').modal('show');
+}
+
+// Confirmar separación por stock
+function confirmarSeparacionStock() {
+    const productoId = document.getElementById('productoIdSeparar').value;
+    const cotizacionId = document.getElementById('cotizacionIdSeparar').value;
+    const motivo = document.getElementById('motivoSeparacion').value;
+    
+    if (!motivo.trim()) {
+        showNotification('warning', 'Por favor, especifica el motivo de la separación');
+        return;
+    }
+    
+    fetch(`/aprobaciones/${cotizacionId}/separar-por-stock`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        },
+        body: JSON.stringify({ 
+            producto_id: productoId,
+            motivo: motivo
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('success', data.message || 'Producto separado exitosamente');
+            $('#modalSepararStock').modal('hide');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showNotification('danger', data.error || 'Error al separar el producto');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('danger', 'Error al procesar la solicitud');
+    });
 }
 
 // Mostrar notificación
