@@ -175,6 +175,81 @@
                     </div>
                 </div>
             @endif
+
+            @if($tipoUsuario == 'Compras')
+                <!-- Compras - Resumen -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-info card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">shopping_cart</i>
+                            </div>
+                            <p class="card-category">Compras del Mes</p>
+                            <h3 class="card-title">{{ number_format($resumenCompras['total_compras_mes'] ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-info">date_range</i>
+                                {{ $resumenCompras['mes_actual'] ?? date('Y-m') }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-warning card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">warning</i>
+                            </div>
+                            <p class="card-category">Productos Bajo Stock</p>
+                            <h3 class="card-title">{{ number_format($resumenCompras['productos_bajo_stock'] ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-warning">inventory_2</i>
+                                Requieren reposición
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-success card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">receipt</i>
+                            </div>
+                            <p class="card-category">NVV Pendientes</p>
+                            <h3 class="card-title">{{ count($nvvPendientes ?? []) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-success">pending_actions</i>
+                                Por aprobar
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-primary card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">pending</i>
+                            </div>
+                            <p class="card-category">Compras Pendientes</p>
+                            <h3 class="card-title">{{ number_format($resumenCompras['compras_pendientes'] ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-primary">schedule</i>
+                                En proceso
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endif
         </div>
 
         <!-- Contenido Específico por Rol -->
@@ -695,6 +770,162 @@
                 </div>
             </div>
         </div>
+
+        <!-- Sección específica para Compras -->
+        @if($tipoUsuario == 'Compras')
+        <div class="row">
+            <!-- NVV Pendientes de Aprobación -->
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header card-header-success">
+                        <h4 class="card-title">
+                            <i class="material-icons">pending_actions</i>
+                            Notas de Venta Pendientes de Aprobación
+                        </h4>
+                        <p class="card-category">NVV que requieren aprobación de Compras</p>
+                    </div>
+                    <div class="card-body">
+                        @if(isset($nvvPendientes) && count($nvvPendientes) > 0)
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>NVV</th>
+                                            <th>Cliente</th>
+                                            <th>Vendedor</th>
+                                            <th>Total</th>
+                                            <th>Fecha</th>
+                                            <th>Estado</th>
+                                            <th>Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach($nvvPendientes as $nvv)
+                                        <tr>
+                                            <td>
+                                                <strong>#{{ $nvv['id'] }}</strong>
+                                            </td>
+                                            <td>
+                                                <div>
+                                                    <strong>{{ $nvv['cliente_codigo'] }}</strong><br>
+                                                    <small class="text-muted">{{ $nvv['cliente_nombre'] }}</small>
+                                                </div>
+                                            </td>
+                                            <td>{{ $nvv['vendedor'] }}</td>
+                                            <td>
+                                                <strong>${{ number_format($nvv['total'], 0) }}</strong>
+                                            </td>
+                                            <td>
+                                                <small>{{ \Carbon\Carbon::parse($nvv['fecha_creacion'])->format('d/m/Y') }}</small>
+                                            </td>
+                                            <td>
+                                                @if($nvv['tiene_problemas_stock'])
+                                                    <span class="badge badge-warning">Stock</span>
+                                                @endif
+                                                @if($nvv['tiene_problemas_credito'])
+                                                    <span class="badge badge-danger">Crédito</span>
+                                                @endif
+                                                @if(!$nvv['tiene_problemas_stock'] && !$nvv['tiene_problemas_credito'])
+                                                    <span class="badge badge-success">OK</span>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                <a href="{{ $nvv['url'] }}" class="btn btn-info btn-sm">
+                                                    <i class="material-icons">visibility</i> Ver
+                                                </a>
+                                            </td>
+                                        </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        @else
+                            <div class="text-center py-4">
+                                <i class="material-icons text-muted" style="font-size: 64px;">check_circle</i>
+                                <h4 class="text-muted">No hay NVV pendientes</h4>
+                                <p class="text-muted">Todas las notas de venta han sido procesadas</p>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+
+            <!-- Productos con Bajo Stock -->
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header card-header-warning">
+                        <h4 class="card-title">
+                            <i class="material-icons">warning</i>
+                            Productos Bajo Stock
+                        </h4>
+                        <p class="card-category">Requieren reposición urgente</p>
+                    </div>
+                    <div class="card-body">
+                        @if(isset($productosBajoStock) && count($productosBajoStock) > 0)
+                            <div class="list-group">
+                                @foreach($productosBajoStock as $producto)
+                                <div class="list-group-item">
+                                    <div class="d-flex w-100 justify-content-between">
+                                        <h6 class="mb-1">{{ $producto['codigo'] }}</h6>
+                                        <small class="text-danger">{{ $producto['stock_actual'] }}/{{ $producto['stock_minimo'] }}</small>
+                                    </div>
+                                    <p class="mb-1">{{ $producto['nombre'] }}</p>
+                                    <small class="text-warning">
+                                        <i class="material-icons" style="font-size: 16px;">warning</i>
+                                        Faltan {{ $producto['diferencia'] }} unidades
+                                    </small>
+                                </div>
+                                @endforeach
+                            </div>
+                        @else
+                            <div class="text-center py-3">
+                                <i class="material-icons text-success" style="font-size: 48px;">inventory</i>
+                                <p class="text-muted mt-2">Todos los productos tienen stock suficiente</p>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Acciones Rápidas para Compras -->
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header card-header-info">
+                        <h4 class="card-title">
+                            <i class="material-icons">flash_on</i>
+                            Acciones Rápidas
+                        </h4>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <a href="{{ route('aprobaciones.index') }}" class="btn btn-success btn-block">
+                                    <i class="material-icons">pending_actions</i> Aprobar NVV
+                                </a>
+                            </div>
+                            <div class="col-md-3">
+                                <a href="{{ route('compras.index') }}" class="btn btn-info btn-block">
+                                    <i class="material-icons">shopping_cart</i> Gestión Compras
+                                </a>
+                            </div>
+                            <div class="col-md-3">
+                                <a href="#" class="btn btn-warning btn-block">
+                                    <i class="material-icons">inventory_2</i> Control Stock
+                                </a>
+                            </div>
+                            <div class="col-md-3">
+                                <a href="#" class="btn btn-primary btn-block">
+                                    <i class="material-icons">assessment</i> Reportes
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endif
     </div>
 </div>
 

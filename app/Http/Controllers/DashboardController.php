@@ -164,17 +164,38 @@ class DashboardController extends Controller
 
     private function getComprasDashboard($user)
     {
-        // Productos con bajo stock
-        $productosBajoStock = $this->getProductosBajoStock();
+        try {
+            // Productos con bajo stock (limitado para evitar timeout)
+            $productosBajoStock = $this->getProductosBajoStockOptimizado();
 
-        // Resumen de compras del año
-        $resumenCompras = $this->getResumenCompras();
+            // Resumen básico de compras
+            $resumenCompras = $this->getResumenComprasOptimizado();
 
-        return [
-            'productosBajoStock' => $productosBajoStock,
-            'resumenCompras' => $resumenCompras,
-            'tipoUsuario' => 'Compras'
-        ];
+            // Notas de venta pendientes de aprobación por Compras
+            $nvvPendientes = $this->getNvvPendientesCompras();
+
+            return [
+                'productosBajoStock' => $productosBajoStock,
+                'resumenCompras' => $resumenCompras,
+                'nvvPendientes' => $nvvPendientes,
+                'tipoUsuario' => 'Compras'
+            ];
+        } catch (\Exception $e) {
+            \Log::error("Error en dashboard de Compras: " . $e->getMessage());
+            
+            // Retornar datos básicos en caso de error
+            return [
+                'productosBajoStock' => [],
+                'resumenCompras' => [
+                    'total_compras_mes' => 0,
+                    'productos_bajo_stock' => 0,
+                    'compras_pendientes' => 0
+                ],
+                'nvvPendientes' => [],
+                'tipoUsuario' => 'Compras',
+                'error' => 'Error al cargar datos del dashboard'
+            ];
+        }
     }
 
     private function aplicarFiltrosClientes($clientes, $filtros)
@@ -568,28 +589,162 @@ class DashboardController extends Controller
 
     private function getPickingDashboard($user)
     {
-        // Obtener pedidos pendientes de preparación
-        $pedidosPendientes = $this->getPedidosPendientesPicking();
-        
-        // Obtener pedidos en preparación
-        $pedidosEnPreparacion = $this->getPedidosEnPreparacion();
-        
-        // Obtener resumen de picking del día
-        $resumenPicking = $this->getResumenPickingDia();
-        
-        // Obtener productos con stock insuficiente para pedidos
-        $productosStockInsuficiente = $this->getProductosStockInsuficiente();
-        
-        // Obtener pedidos completados hoy
-        $pedidosCompletadosHoy = $this->getPedidosCompletadosHoy();
+        try {
+            // Obtener pedidos pendientes de preparación (limitado)
+            $pedidosPendientes = $this->getPedidosPendientesPickingOptimizado();
+            
+            // Obtener pedidos en preparación (limitado)
+            $pedidosEnPreparacion = $this->getPedidosEnPreparacionOptimizado();
+            
+            // Obtener resumen de picking del día (optimizado)
+            $resumenPicking = $this->getResumenPickingDiaOptimizado();
+            
+            // Obtener productos con stock insuficiente (limitado)
+            $productosStockInsuficiente = $this->getProductosStockInsuficienteOptimizado();
+            
+            // Obtener pedidos completados hoy (limitado)
+            $pedidosCompletadosHoy = $this->getPedidosCompletadosHoyOptimizado();
 
-        return [
-            'pedidosPendientes' => $pedidosPendientes,
-            'pedidosEnPreparacion' => $pedidosEnPreparacion,
-            'resumenPicking' => $resumenPicking,
-            'productosStockInsuficiente' => $productosStockInsuficiente,
-            'pedidosCompletadosHoy' => $pedidosCompletadosHoy,
-            'tipoUsuario' => 'Picking'
-        ];
+            return [
+                'pedidosPendientes' => $pedidosPendientes,
+                'pedidosEnPreparacion' => $pedidosEnPreparacion,
+                'resumenPicking' => $resumenPicking,
+                'productosStockInsuficiente' => $productosStockInsuficiente,
+                'pedidosCompletadosHoy' => $pedidosCompletadosHoy,
+                'tipoUsuario' => 'Picking'
+            ];
+        } catch (\Exception $e) {
+            \Log::error("Error en dashboard de Picking: " . $e->getMessage());
+            
+            // Retornar datos básicos en caso de error
+            return [
+                'pedidosPendientes' => [],
+                'pedidosEnPreparacion' => [],
+                'resumenPicking' => [
+                    'fecha' => date('Y-m-d'),
+                    'pedidos_completados' => 0,
+                    'pedidos_iniciados' => 0,
+                    'pedidos_pendientes' => 0,
+                    'tiempo_promedio_minutos' => 0,
+                    'eficiencia' => 0
+                ],
+                'productosStockInsuficiente' => [],
+                'pedidosCompletadosHoy' => [],
+                'tipoUsuario' => 'Picking',
+                'error' => 'Error al cargar datos del dashboard'
+            ];
+        }
+    }
+
+    /**
+     * Métodos optimizados para el dashboard de Compras
+     */
+    private function getProductosBajoStockOptimizado()
+    {
+        try {
+            // Consulta optimizada con límite y timeout
+            $productos = \DB::connection('sqlsrv')
+                ->table('PRODUCTOS')
+                ->select([
+                    'CODIGO_PRODUCTO',
+                    'NOMBRE_PRODUCTO',
+                    'STOCK_ACTUAL',
+                    'STOCK_MINIMO',
+                    'PRECIO_COMPRA'
+                ])
+                ->where('STOCK_ACTUAL', '<=', \DB::raw('STOCK_MINIMO'))
+                ->where('ACTIVO', 1)
+                ->orderBy('STOCK_ACTUAL', 'asc')
+                ->limit(10) // Limitar a 10 productos para evitar timeout
+                ->get();
+
+            return $productos->map(function($producto) {
+                return [
+                    'codigo' => $producto->CODIGO_PRODUCTO,
+                    'nombre' => $producto->NOMBRE_PRODUCTO,
+                    'stock_actual' => $producto->STOCK_ACTUAL,
+                    'stock_minimo' => $producto->STOCK_MINIMO,
+                    'precio_compra' => $producto->PRECIO_COMPRA,
+                    'diferencia' => $producto->STOCK_MINIMO - $producto->STOCK_ACTUAL
+                ];
+            });
+        } catch (\Exception $e) {
+            \Log::error("Error al obtener productos bajo stock: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    private function getResumenComprasOptimizado()
+    {
+        try {
+            $mesActual = date('Y-m');
+            
+            // Consultas optimizadas con límites
+            $totalComprasMes = \DB::connection('sqlsrv')
+                ->table('COMPRAS')
+                ->where('FECHA_COMPRA', 'like', $mesActual . '%')
+                ->count();
+
+            $productosBajoStock = \DB::connection('sqlsrv')
+                ->table('PRODUCTOS')
+                ->where('STOCK_ACTUAL', '<=', \DB::raw('STOCK_MINIMO'))
+                ->where('ACTIVO', 1)
+                ->count();
+
+            $comprasPendientes = \DB::connection('sqlsrv')
+                ->table('COMPRAS')
+                ->where('ESTADO', 'PENDIENTE')
+                ->count();
+
+            return [
+                'total_compras_mes' => $totalComprasMes,
+                'productos_bajo_stock' => $productosBajoStock,
+                'compras_pendientes' => $comprasPendientes,
+                'mes_actual' => $mesActual
+            ];
+        } catch (\Exception $e) {
+            \Log::error("Error al obtener resumen de compras: " . $e->getMessage());
+            return [
+                'total_compras_mes' => 0,
+                'productos_bajo_stock' => 0,
+                'compras_pendientes' => 0,
+                'mes_actual' => date('Y-m')
+            ];
+        }
+    }
+
+    /**
+     * Obtener NVV pendientes de aprobación por Compras
+     */
+    private function getNvvPendientesCompras()
+    {
+        try {
+            // Obtener cotizaciones pendientes de aprobación por Compras
+            $cotizaciones = \App\Models\Cotizacion::with(['user', 'productos'])
+                ->where('estado_aprobacion', 'pendiente')
+                ->where('aprobacion_supervisor', true)
+                ->where('aprobacion_compras', false)
+                ->orderBy('fecha_creacion', 'desc')
+                ->limit(10) // Limitar para evitar timeout
+                ->get();
+
+            return $cotizaciones->map(function($cotizacion) {
+                return [
+                    'id' => $cotizacion->id,
+                    'cliente_codigo' => $cotizacion->cliente_codigo,
+                    'cliente_nombre' => $cotizacion->cliente_nombre,
+                    'total' => $cotizacion->total,
+                    'fecha_creacion' => $cotizacion->fecha_creacion,
+                    'vendedor' => $cotizacion->user->name ?? 'N/A',
+                    'productos_count' => $cotizacion->productos->count(),
+                    'tiene_problemas_stock' => $cotizacion->tiene_problemas_stock ?? false,
+                    'tiene_problemas_credito' => $cotizacion->tiene_problemas_credito ?? false,
+                    'url' => route('aprobaciones.show', $cotizacion->id)
+                ];
+            });
+        } catch (\Exception $e) {
+            \Log::error("Error al obtener NVV pendientes de Compras: " . $e->getMessage());
+            return [];
+        }
     }
 }
