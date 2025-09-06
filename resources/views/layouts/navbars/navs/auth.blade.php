@@ -56,11 +56,14 @@
                         </li>
                         <li class="dropdown-divider"></li>
                         <li class="nav-link">
-                            <a href="#" class="nav-item dropdown-item" onclick="event.preventDefault(); document.getElementById('logout-form').submit();">{{ __('Log out') }}</a>
+                            <form method="POST" action="{{ route('logout') }}" style="display: inline;">
+                                @csrf
+                                <button type="submit" class="nav-item dropdown-item btn btn-link text-left" style="border: none; background: none; padding: 0; color: inherit; text-decoration: none; width: 100%;">{{ __('Log out') }}</button>
+                            </form>
                         </li>
                     </ul>
-                </li>>
-                <li class="separator d-lg-none"></li
+                </li>
+                <li class="separator d-lg-none"></li>
             </ul>
         </div>
     </div>
