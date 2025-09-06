@@ -113,11 +113,17 @@ class RolesAndPermissionsSeeder extends Seeder
         // Asignar permisos a Compras
         $compras->givePermissionTo([
             'view_dashboard',
+            'view_clients',
             'view_products',
+            'search_products',
             'manage_products',
+            'view_quotations',
+            'view_sale_notes',
+            'approve_sale_notes',
             'view_purchases',
             'manage_purchases',
             'view_stock',
+            'manage_stock',
             'view_reports',
             'export_reports',
         ]);
@@ -138,14 +144,17 @@ class RolesAndPermissionsSeeder extends Seeder
         // Asignar permisos a Picking
         $picking->givePermissionTo([
             'view_dashboard',
+            'view_clients',
             'view_products',
+            'search_products',
+            'view_quotations',
+            'view_sale_notes',
+            'approve_sale_notes',
             'view_stock',
             'manage_stock',
             'reserve_stock',
-            'view_sale_notes',
-            'approve_sale_notes',
-            'view_quotations',
             'view_reports',
+            'export_reports',
         ]);
 
         // Asignar TODOS los permisos a Super Admin
