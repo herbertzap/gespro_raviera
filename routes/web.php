@@ -62,6 +62,18 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/aprobaciones/{id}/separar-stock', [App\Http\Controllers\AprobacionController::class, 'separarProductosStock'])->name('aprobaciones.separar-stock');
 });
 
+// Ruta de prueba para historial
+Route::get('/test-historial', function () {
+    return view('test-historial');
+});
+
+// Ruta de prueba para historial simple
+Route::get('/historial-simple/{id}', function ($id) {
+    $cotizacion = \App\Models\Cotizacion::findOrFail($id);
+    $historial = \App\Models\CotizacionHistorial::obtenerHistorialCompleto($id);
+    return view('cotizaciones.historial-simple', compact('cotizacion', 'historial'));
+});
+
 // Rutas de Notificaciones
 Route::middleware(['auth'])->group(function () {
     Route::get('/notificaciones/navbar', [App\Http\Controllers\NotificacionController::class, 'obtenerParaNavbar'])->name('notificaciones.navbar');
