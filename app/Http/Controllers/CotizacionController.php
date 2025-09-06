@@ -2534,7 +2534,13 @@ class CotizacionController extends Controller
             // Variable para controlar si se puede generar nota de venta
             $puedeGenerarNotaVenta = false; // En modo vista no se puede generar
             
-            return view('cotizaciones.ver', compact('cotizacion', 'cliente', 'productosCotizacion', 'puedeGenerarNotaVenta'));
+            // Obtener historial completo
+            $historial = \App\Models\CotizacionHistorial::obtenerHistorialCompleto($id);
+            
+            // Obtener resumen de tiempos
+            $resumenTiempos = \App\Services\HistorialCotizacionService::obtenerResumenTiempos($cotizacion);
+            
+            return view('cotizaciones.detalle', compact('cotizacion', 'cliente', 'productosCotizacion', 'puedeGenerarNotaVenta', 'historial', 'resumenTiempos'));
             
         } catch (\Exception $e) {
             \Log::error('Error viendo cotización: ' . $e->getMessage());

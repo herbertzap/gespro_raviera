@@ -23,26 +23,19 @@
                     </button>
                 </li>
                 <li class="dropdown nav-item">
-                    <a href="#" class="dropdown-toggle nav-link" data-toggle="dropdown">
-                        <div class="notification d-none d-lg-block d-xl-block"></div>
+                    <a href="#" class="dropdown-toggle nav-link" data-toggle="dropdown" id="notificationsDropdown">
+                        <div class="notification d-none d-lg-block d-xl-block" id="notificationBadge" style="display: none;"></div>
                         <i class="tim-icons icon-sound-wave"></i>
                         <p class="d-lg-none"> {{ __('Notifications') }} </p>
                     </a>
-                    <ul class="dropdown-menu dropdown-menu-right dropdown-navbar">
+                    <ul class="dropdown-menu dropdown-menu-right dropdown-navbar" id="notificationsList">
                         <li class="nav-link">
-                            <a href="#" class="nav-item dropdown-item">{{ __('Mike John responded to your email') }}</a>
-                        </li>
-                        <li class="nav-link">
-                            <a href="#" class="nav-item dropdown-item">{{ __('You have 5 more tasks') }}</a>
-                        </li>
-                        <li class="nav-link">
-                            <a href="#" class="nav-item dropdown-item">{{ __('Your friend Michael is in town') }}</a>
-                        </li>
-                        <li class="nav-link">
-                            <a href="#" class="nav-item dropdown-item">{{ __('Another notification') }}</a>
-                        </li>
-                        <li class="nav-link">
-                            <a href="#" class="nav-item dropdown-item">{{ __('Another one') }}</a>
+                            <div class="text-center py-3">
+                                <div class="spinner-border spinner-border-sm" role="status">
+                                    <span class="sr-only">Cargando...</span>
+                                </div>
+                                <p class="text-muted mb-0">Cargando notificaciones...</p>
+                            </div>
                         </li>
                     </ul>
                 </li>

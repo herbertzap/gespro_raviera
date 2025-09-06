@@ -62,6 +62,17 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/aprobaciones/{id}/separar-stock', [App\Http\Controllers\AprobacionController::class, 'separarProductosStock'])->name('aprobaciones.separar-stock');
 });
 
+// Rutas de Notificaciones
+Route::middleware(['auth'])->group(function () {
+    Route::get('/notificaciones/navbar', [App\Http\Controllers\NotificacionController::class, 'obtenerParaNavbar'])->name('notificaciones.navbar');
+    Route::post('/notificaciones/{id}/marcar-leida', [App\Http\Controllers\NotificacionController::class, 'marcarComoLeida'])->name('notificaciones.marcar-leida');
+    Route::post('/notificaciones/marcar-todas-leidas', [App\Http\Controllers\NotificacionController::class, 'marcarTodasComoLeidas'])->name('notificaciones.marcar-todas-leidas');
+    Route::post('/notificaciones/{id}/archivar', [App\Http\Controllers\NotificacionController::class, 'archivar'])->name('notificaciones.archivar');
+    Route::get('/notificaciones', [App\Http\Controllers\NotificacionController::class, 'index'])->name('notificaciones.index');
+    Route::get('/notificaciones/{id}', [App\Http\Controllers\NotificacionController::class, 'show'])->name('notificaciones.show');
+    Route::get('/notificaciones/estadisticas', [App\Http\Controllers\NotificacionController::class, 'estadisticas'])->name('notificaciones.estadisticas');
+});
+
 
 // Rutas de NVV Pendientes
 Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
