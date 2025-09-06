@@ -323,6 +323,12 @@ class AprobacionController extends Controller
             $tipoAprobacion = 'picking';
         }
 
-        return view('aprobaciones.show', compact('cotizacion', 'puedeAprobar', 'tipoAprobacion'));
+        // Obtener historial completo
+        $historial = \App\Models\CotizacionHistorial::obtenerHistorialCompleto($id);
+        
+        // Obtener resumen de tiempos
+        $resumenTiempos = \App\Services\HistorialCotizacionService::obtenerResumenTiempos($cotizacion);
+
+        return view('aprobaciones.show', compact('cotizacion', 'puedeAprobar', 'tipoAprobacion', 'historial', 'resumenTiempos'));
     }
 }

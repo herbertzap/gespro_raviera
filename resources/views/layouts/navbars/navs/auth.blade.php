@@ -59,8 +59,8 @@
                             <a href="{{ route('logout') }}" class="nav-item dropdown-item" onclick="event.preventDefault();  document.getElementById('logout-form').submit();">{{ __('Log out') }}</a>
                         </li>
                     </ul>
-                </li>
-                <li class="separator d-lg-none"></li>
+                </li>>
+                <li class="separator d-lg-none"></li
             </ul>
         </div>
     </div>
