@@ -56,8 +56,7 @@
                         </li>
                         <li class="dropdown-divider"></li>
                         <li class="nav-link">
-                            <!-- ARCHIVO PERSONALIZADO - NO VENDOR -->
-                            <a href="#" class="nav-item dropdown-item" onclick="event.preventDefault(); document.getElementById('logout-form').submit();">{{ __('Log out') }} CUSTOM</a>
+                            <a href="#" class="nav-item dropdown-item" onclick="event.preventDefault(); document.getElementById('logout-form').submit();">{{ __('Log out') }}</a>
                         </li>
                     </ul>
                 </li>
