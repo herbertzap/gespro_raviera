@@ -1,3 +1,24 @@
+@php
+use App\Helpers\EstadoHelper;
+
+// Funciones helper para la vista
+function getEstadoColor($estado) {
+    return \App\Helpers\EstadoHelper::getEstadoColor($estado);
+}
+
+function getEstadoIcon($tipoAccion) {
+    return \App\Helpers\EstadoHelper::getEstadoIcon($tipoAccion);
+}
+
+function getEstadoNombre($estado) {
+    return \App\Helpers\EstadoHelper::getEstadoNombre($estado);
+}
+
+function getTipoAccionNombre($tipoAccion) {
+    return \App\Helpers\EstadoHelper::getTipoAccionNombre($tipoAccion);
+}
+@endphp
+
 <div class="mt-4">
     <!-- Resumen de tiempos -->
     <div class="row mb-4">
@@ -41,7 +62,7 @@
     <div class="timeline">
         @foreach($historial as $index => $registro)
         <div class="timeline-item">
-                            <div class="timeline-marker bg-{{ getEstadoColor($registro->estado_nuevo) }}"></div>
+            <div class="timeline-marker bg-{{ getEstadoColor($registro->estado_nuevo) }}"></div>
             <div class="timeline-content">
                 <div class="card">
                     <div class="card-header">
@@ -148,24 +169,3 @@
     margin-left: 20px;
 }
 </style>
-
-@php
-use App\Helpers\EstadoHelper;
-
-// Funciones helper para la vista
-function getEstadoColor($estado) {
-    return \App\Helpers\EstadoHelper::getEstadoColor($estado);
-}
-
-function getEstadoIcon($tipoAccion) {
-    return \App\Helpers\EstadoHelper::getEstadoIcon($tipoAccion);
-}
-
-function getEstadoNombre($estado) {
-    return \App\Helpers\EstadoHelper::getEstadoNombre($estado);
-}
-
-function getTipoAccionNombre($tipoAccion) {
-    return \App\Helpers\EstadoHelper::getTipoAccionNombre($tipoAccion);
-}
-@endphp
