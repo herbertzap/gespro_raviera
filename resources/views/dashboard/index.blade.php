@@ -156,9 +156,9 @@
             @endif
 
             @if($tipoUsuario == 'Supervisor')
-                <!-- Supervisor - Tarjetas Específicas -->
+                <!-- Supervisor - Solo 3 Tarjetas Principales -->
                 <!-- 1. Facturas Pendientes -->
-                <div class="col-lg-3 col-md-6 col-sm-6">
+                <div class="col-lg-4 col-md-6 col-sm-6">
                     <div class="card card-stats">
                         <div class="card-header card-header-danger card-header-icon">
                             <div class="card-icon">
@@ -177,7 +177,7 @@
                 </div>
 
                 <!-- 2. Total Notas de Venta en SQL -->
-                <div class="col-lg-3 col-md-6 col-sm-6">
+                <div class="col-lg-4 col-md-6 col-sm-6">
                     <div class="card card-stats">
                         <div class="card-header card-header-info card-header-icon">
                             <div class="card-icon">
@@ -196,7 +196,7 @@
                 </div>
 
                 <!-- 3. Notas Pendientes por Validar -->
-                <div class="col-lg-3 col-md-6 col-sm-6">
+                <div class="col-lg-4 col-md-6 col-sm-6">
                     <div class="card card-stats">
                         <div class="card-header card-header-warning card-header-icon">
                             <div class="card-icon">
@@ -209,25 +209,6 @@
                             <div class="stats">
                                 <i class="material-icons text-warning">pending_actions</i>
                                 <a href="{{ route('aprobaciones.index') }}" class="text-warning">Ver aprobaciones</a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 4. Cheques en Cartera -->
-                <div class="col-lg-3 col-md-6 col-sm-6">
-                    <div class="card card-stats">
-                        <div class="card-header card-header-success card-header-icon">
-                            <div class="card-icon">
-                                <i class="material-icons">account_balance</i>
-                            </div>
-                            <p class="card-category">Cheques en Cartera</p>
-                            <h3 class="card-title">${{ number_format($resumenCobranza['CHEQUES_EN_CARTERA'] ?? 0, 0, ',', '.') }}</h3>
-                        </div>
-                        <div class="card-footer">
-                            <div class="stats">
-                                <i class="material-icons text-success">account_balance</i>
-                                <a href="{{ route('cobranza.index') }}" class="text-success">Ver cartera</a>
                             </div>
                         </div>
                     </div>
@@ -636,17 +617,17 @@
                     </div>
                 </div>
 
-                <!-- Facturas Ingresadas (col-12) -->
+                <!-- Facturas Pendientes (col-12) -->
                 <div class="col-md-12">
                     <div class="card">
-                        <div class="card-header card-header-success">
-                            <h4 class="card-title">Facturas Ingresadas</h4>
-                            <p class="card-category">Facturas en el sistema SQL Server</p>
+                        <div class="card-header card-header-danger">
+                            <h4 class="card-title">Facturas Pendientes</h4>
+                            <p class="card-category">Facturas por cobrar del sistema SQL Server</p>
                         </div>
                         <div class="card-body">
                             <div class="table-responsive">
                                 <table class="table">
-                                    <thead class="text-success">
+                                    <thead class="text-danger">
                                         <tr>
                                             <th>Tipo</th>
                                             <th>Número</th>
@@ -655,14 +636,15 @@
                                             <th>Valor</th>
                                             <th>Abonos</th>
                                             <th>Saldo</th>
-                                            <th>Emisión</th>
-                                            <th>Vencimiento</th>
+                                            <th>Días</th>
+                                            <th>Estado</th>
+                                            <th>Acción</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        @forelse($facturasIngresadas ?? [] as $factura)
+                                        @forelse($facturasPendientes ?? [] as $factura)
                                         <tr>
-                                            <td><span class="badge badge-success">{{ $factura['TIPO_DOCTO'] }}</span></td>
+                                            <td><span class="badge badge-danger">{{ $factura['TIPO_DOCTO'] }}</span></td>
                                             <td>{{ $factura['NRO_DOCTO'] }}</td>
                                             <td>{{ $factura['NOMBRE_CLIENTE'] }}</td>
                                             <td>{{ $factura['NOMBRE_VENDEDOR'] }}</td>
@@ -673,12 +655,33 @@
                                                     ${{ number_format($factura['SALDO'], 0) }}
                                                 </span>
                                             </td>
-                                            <td>{{ \Carbon\Carbon::parse($factura['FECHA_EMISION'])->format('d/m/Y') }}</td>
-                                            <td>{{ \Carbon\Carbon::parse($factura['FECHA_VENCIMIENTO'])->format('d/m/Y') }}</td>
+                                            <td>
+                                                <span class="badge badge-{{ 
+                                                    $factura['DIAS'] < 8 ? 'success' : 
+                                                    ($factura['DIAS'] < 31 ? 'warning' : 
+                                                    ($factura['DIAS'] < 61 ? 'danger' : 'dark')) 
+                                                }}">
+                                                    {{ $factura['DIAS'] }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span class="badge badge-{{ 
+                                                    $factura['ESTADO'] == 'VIGENTE' ? 'success' : 
+                                                    ($factura['ESTADO'] == 'POR VENCER' ? 'warning' : 
+                                                    ($factura['ESTADO'] == 'VENCIDO' ? 'danger' : 'dark')) 
+                                                }}">
+                                                    {{ $factura['ESTADO'] }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <a href="{{ route('facturas-pendientes.ver', [$factura['TIPO_DOCTO'], $factura['NRO_DOCTO']]) }}" class="btn btn-sm btn-primary">
+                                                    <i class="material-icons">visibility</i> Ver
+                                                </a>
+                                            </td>
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="9" class="text-center">No hay facturas ingresadas</td>
+                                            <td colspan="10" class="text-center">No hay facturas pendientes</td>
                                         </tr>
                                         @endforelse
                                     </tbody>
@@ -909,22 +912,17 @@
 
                             @if($tipoUsuario == 'Supervisor')
                                 <!-- Acciones específicas del Supervisor -->
-                                <div class="col-md-3">
+                                <div class="col-md-4">
                                     <a href="{{ route('aprobaciones.index') }}" class="btn btn-warning btn-block">
                                         <i class="material-icons">pending_actions</i> Notas Pendientes
                                     </a>
                                 </div>
-                                <div class="col-md-3">
-                                    <a href="#notas-sql" class="btn btn-info btn-block">
-                                        <i class="material-icons">storage</i> Notas en Sistema
-                                    </a>
-                                </div>
-                                <div class="col-md-3">
+                                <div class="col-md-4">
                                     <a href="{{ route('facturas-pendientes.index') }}" class="btn btn-danger btn-block">
                                         <i class="material-icons">receipt</i> Facturas Sistema
                                     </a>
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-4">
                                     <a href="{{ route('clientes.index') }}" class="btn btn-primary btn-block">
                                         <i class="material-icons">people</i> Listado Clientes
                                     </a>

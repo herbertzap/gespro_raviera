@@ -130,11 +130,11 @@ class DashboardController extends Controller
     private function getSupervisorDashboard($user)
     {
         try {
-            // 1. FACTURAS PENDIENTES (cantidad)
-            $facturasPendientes = $this->cobranzaService->getFacturasPendientes('', 100); // Sin filtro de vendedor para ver todas
+            // 1. FACTURAS PENDIENTES (cantidad y listado)
+            $facturasPendientes = $this->cobranzaService->getFacturasPendientes('', 50); // Sin filtro de vendedor para ver todas
             $totalFacturasPendientes = count($facturasPendientes);
 
-            // 2. TOTAL NOTAS DE VENTAS EN RANDOM (cantidad en SQL)
+            // 2. TOTAL NOTAS DE VENTAS EN SQL (cantidad)
             $totalNotasVentaSQL = $this->cobranzaService->getTotalNotasVentaSQL();
 
             // 3. TOTAL NOTAS DE VENTAS PENDIENTES POR VALIDAR (cantidad)
@@ -152,17 +152,8 @@ class DashboardController extends Controller
                 ->take(20)
                 ->get();
 
-            // 5. NOTAS DE VENTA EN RANDOM (SQL) - listado
+            // 5. NOTAS DE VENTA EN SQL (listado)
             $notasVentaSQL = $this->cobranzaService->getNotasVentaSQL(20);
-
-            // 6. FACTURAS INGRESADAS (listado)
-            $facturasIngresadas = $this->cobranzaService->getFacturasIngresadas(20);
-
-            // 7. LISTADO CLIENTES
-            $clientes = Cliente::with('user')
-                ->latest()
-                ->take(20)
-                ->get();
 
             // Resumen para las tarjetas principales
             $resumenCobranza = [
@@ -171,14 +162,13 @@ class DashboardController extends Controller
                 'TOTAL_NOTAS_PENDIENTES_VALIDAR' => $notasPendientesSupervisor,
                 'TOTAL_FACTURAS' => $totalFacturasPendientes,
                 'TOTAL_NOTAS_VENTA' => $totalNotasVentaSQL,
-                'CHEQUES_EN_CARTERA' => 0 // Se puede agregar si es necesario
+                'CHEQUES_EN_CARTERA' => 0
             ];
 
             return [
                 'notasPendientes' => $notasPendientes,
                 'notasVentaSQL' => $notasVentaSQL,
-                'facturasIngresadas' => $facturasIngresadas,
-                'clientes' => $clientes,
+                'facturasPendientes' => $facturasPendientes, // Agregado para la tabla
                 'resumenCobranza' => $resumenCobranza,
                 'tipoUsuario' => 'Supervisor'
             ];
@@ -190,8 +180,7 @@ class DashboardController extends Controller
             return [
                 'notasPendientes' => collect(),
                 'notasVentaSQL' => [],
-                'facturasIngresadas' => [],
-                'clientes' => collect(),
+                'facturasPendientes' => [],
                 'resumenCobranza' => [
                     'TOTAL_FACTURAS_PENDIENTES' => 0,
                     'TOTAL_NOTAS_VENTA_SQL' => 0,
