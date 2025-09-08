@@ -127,39 +127,80 @@ class DashboardController extends Controller
 
     private function getSupervisorDashboard($user)
     {
-        // Notas de venta pendientes de aprobación
-        $notasPendientes = NotaVenta::where('estado', 'por_aprobar')
-            ->with('user')
-            ->latest()
-            ->take(10)
-            ->get();
+        try {
+            // 1. FACTURAS PENDIENTES (cantidad)
+            $facturasPendientes = $this->cobranzaService->getFacturasPendientes('', 100); // Sin filtro de vendedor para ver todas
+            $totalFacturasPendientes = count($facturasPendientes);
 
-        // Obtener total de notas de venta
-        $totalNotasVenta = Cotizacion::count();
+            // 2. TOTAL NOTAS DE VENTAS EN RANDOM (cantidad en SQL)
+            $totalNotasVentaSQL = $this->cobranzaService->getTotalNotasVentaSQL();
 
-        // Obtener cheques en cartera
-        $chequesEnCartera = $this->cobranzaService->getChequesEnCartera();
+            // 3. TOTAL NOTAS DE VENTAS PENDIENTES POR VALIDAR (cantidad)
+            $notasPendientesSupervisor = Cotizacion::where('estado_aprobacion', 'pendiente_supervisor')
+                ->orWhere('estado_aprobacion', 'pendiente_compras')
+                ->orWhere('estado_aprobacion', 'pendiente_picking')
+                ->count();
 
-        // Resumen general de cobranza
-        $resumenCobranza = $this->cobranzaService->getResumenCobranza();
-        
-        // Agregar los nuevos campos al resumen
-        $resumenCobranza['TOTAL_NOTAS_VENTA'] = $totalNotasVenta;
-        $resumenCobranza['CHEQUES_EN_CARTERA'] = $chequesEnCartera;
+            // 4. NOTAS DE VENTA PENDIENTES (listado completo)
+            $notasPendientes = Cotizacion::where('estado_aprobacion', 'pendiente_supervisor')
+                ->orWhere('estado_aprobacion', 'pendiente_compras')
+                ->orWhere('estado_aprobacion', 'pendiente_picking')
+                ->with(['user', 'cliente'])
+                ->latest()
+                ->take(20)
+                ->get();
 
-        // Stock temporal activo
-        $stockTemporal = StockTemporal::where('estado', 'activa')
-            ->with('user')
-            ->latest()
-            ->take(10)
-            ->get();
+            // 5. NOTAS DE VENTA EN RANDOM (SQL) - listado
+            $notasVentaSQL = $this->cobranzaService->getNotasVentaSQL(20);
 
-        return [
-            'notasPendientes' => $notasPendientes,
-            'resumenCobranza' => $resumenCobranza,
-            'stockTemporal' => $stockTemporal,
-            'tipoUsuario' => 'Supervisor'
-        ];
+            // 6. FACTURAS INGRESADAS (listado)
+            $facturasIngresadas = $this->cobranzaService->getFacturasIngresadas(20);
+
+            // 7. LISTADO CLIENTES
+            $clientes = Cliente::with('user')
+                ->latest()
+                ->take(20)
+                ->get();
+
+            // Resumen para las tarjetas principales
+            $resumenCobranza = [
+                'TOTAL_FACTURAS_PENDIENTES' => $totalFacturasPendientes,
+                'TOTAL_NOTAS_VENTA_SQL' => $totalNotasVentaSQL,
+                'TOTAL_NOTAS_PENDIENTES_VALIDAR' => $notasPendientesSupervisor,
+                'TOTAL_FACTURAS' => $totalFacturasPendientes,
+                'TOTAL_NOTAS_VENTA' => $totalNotasVentaSQL,
+                'CHEQUES_EN_CARTERA' => 0 // Se puede agregar si es necesario
+            ];
+
+            return [
+                'notasPendientes' => $notasPendientes,
+                'notasVentaSQL' => $notasVentaSQL,
+                'facturasIngresadas' => $facturasIngresadas,
+                'clientes' => $clientes,
+                'resumenCobranza' => $resumenCobranza,
+                'tipoUsuario' => 'Supervisor'
+            ];
+
+        } catch (\Exception $e) {
+            Log::error("Error en getSupervisorDashboard: " . $e->getMessage());
+            
+            // Fallback con datos básicos
+            return [
+                'notasPendientes' => collect(),
+                'notasVentaSQL' => [],
+                'facturasIngresadas' => [],
+                'clientes' => collect(),
+                'resumenCobranza' => [
+                    'TOTAL_FACTURAS_PENDIENTES' => 0,
+                    'TOTAL_NOTAS_VENTA_SQL' => 0,
+                    'TOTAL_NOTAS_PENDIENTES_VALIDAR' => 0,
+                    'TOTAL_FACTURAS' => 0,
+                    'TOTAL_NOTAS_VENTA' => 0,
+                    'CHEQUES_EN_CARTERA' => 0
+                ],
+                'tipoUsuario' => 'Supervisor'
+            ];
+        }
     }
 
     private function getComprasDashboard($user)

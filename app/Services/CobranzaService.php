@@ -3944,4 +3944,134 @@ class CobranzaService
         }
     }
 
+    /**
+     * Obtener total de notas de venta en SQL Server
+     */
+    public function getTotalNotasVentaSQL()
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            $dsn = "sqlsrv:Server={$host},{$port};Database={$database};Encrypt=no;TrustServerCertificate=yes;";
+            $pdo = new PDO($dsn, $username, $password);
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            
+            $query = "
+                SELECT COUNT(*) as total
+                FROM dbo.MAEEDO 
+                WHERE TIDO = 'NVV' 
+                AND FEEMDO > CONVERT(DATETIME, '2024-01-01 00:00:00', 102)
+            ";
+            
+            $stmt = $pdo->prepare($query);
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return $result['total'] ?? 0;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo total notas de venta SQL: ' . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Obtener listado de notas de venta en SQL Server
+     */
+    public function getNotasVentaSQL($limit = 20)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            $dsn = "sqlsrv:Server={$host},{$port};Database={$database};Encrypt=no;TrustServerCertificate=yes;";
+            $pdo = new PDO($dsn, $username, $password);
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            
+            $query = "
+                SELECT TOP {$limit}
+                    dbo.MAEEDO.TIDO AS TIPO_DOCTO,
+                    dbo.MAEEDO.NUDO AS NRO_DOCTO,
+                    dbo.MAEEDO.ENDO AS CODIGO_CLIENTE,
+                    dbo.MAEEN.NOKOEN AS NOMBRE_CLIENTE,
+                    dbo.MAEEDO.FEEMDO AS FECHA_EMISION,
+                    dbo.MAEEDO.VABRDO AS VALOR_DOCUMENTO,
+                    ISNULL(dbo.TABFU.NOKOFU, 'SIN VENDEDOR') AS NOMBRE_VENDEDOR,
+                    dbo.TABFU.KOFU AS CODIGO_VENDEDOR
+                FROM dbo.MAEEDO 
+                LEFT JOIN dbo.MAEEN ON dbo.MAEEDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEEDO.SUENDO = dbo.MAEEN.SUEN
+                LEFT JOIN dbo.TABFU ON dbo.MAEEN.KOFUEN = dbo.TABFU.KOFU
+                WHERE dbo.MAEEDO.TIDO = 'NVV' 
+                AND dbo.MAEEDO.FEEMDO > CONVERT(DATETIME, '2024-01-01 00:00:00', 102)
+                ORDER BY dbo.MAEEDO.FEEMDO DESC
+            ";
+            
+            $stmt = $pdo->prepare($query);
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            return $results;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo notas de venta SQL: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Obtener listado de facturas ingresadas
+     */
+    public function getFacturasIngresadas($limit = 20)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            $dsn = "sqlsrv:Server={$host},{$port};Database={$database};Encrypt=no;TrustServerCertificate=yes;";
+            $pdo = new PDO($dsn, $username, $password);
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            
+            $query = "
+                SELECT TOP {$limit}
+                    dbo.MAEEDO.TIDO AS TIPO_DOCTO,
+                    dbo.MAEEDO.NUDO AS NRO_DOCTO,
+                    dbo.MAEEDO.ENDO AS CODIGO_CLIENTE,
+                    dbo.MAEEN.NOKOEN AS NOMBRE_CLIENTE,
+                    dbo.MAEEDO.FEEMDO AS FECHA_EMISION,
+                    dbo.MAEEDO.FEULVEDO AS FECHA_VENCIMIENTO,
+                    dbo.MAEEDO.VABRDO AS VALOR_DOCUMENTO,
+                    dbo.MAEEDO.VAABDO AS ABONOS,
+                    (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) AS SALDO,
+                    ISNULL(dbo.TABFU.NOKOFU, 'SIN VENDEDOR') AS NOMBRE_VENDEDOR,
+                    dbo.TABFU.KOFU AS CODIGO_VENDEDOR
+                FROM dbo.MAEEDO 
+                LEFT JOIN dbo.MAEEN ON dbo.MAEEDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEEDO.SUENDO = dbo.MAEEN.SUEN
+                LEFT JOIN dbo.TABFU ON dbo.MAEEN.KOFUEN = dbo.TABFU.KOFU
+                WHERE dbo.MAEEDO.TIDO IN ('FCV', 'FDV', 'NCV')
+                AND dbo.MAEEDO.FEEMDO > CONVERT(DATETIME, '2024-01-01 00:00:00', 102)
+                ORDER BY dbo.MAEEDO.FEEMDO DESC
+            ";
+            
+            $stmt = $pdo->prepare($query);
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            return $results;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo facturas ingresadas: ' . $e->getMessage());
+            return [];
+        }
+    }
+
 } 

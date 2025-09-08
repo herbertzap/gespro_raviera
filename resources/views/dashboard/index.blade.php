@@ -155,21 +155,79 @@
                 @endif
             @endif
 
-            @if(in_array($tipoUsuario, ['Super Admin', 'Supervisor']))
-                <!-- Notas de Venta Pendientes -->
+            @if($tipoUsuario == 'Supervisor')
+                <!-- Supervisor - Tarjetas Específicas -->
+                <!-- 1. Facturas Pendientes -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-danger card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">receipt</i>
+                            </div>
+                            <p class="card-category">Facturas Pendientes</p>
+                            <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_FACTURAS_PENDIENTES'] ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-danger">receipt</i>
+                                <a href="{{ route('facturas-pendientes.index') }}" class="text-danger">Ver detalles</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Total Notas de Venta en SQL -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-info card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">storage</i>
+                            </div>
+                            <p class="card-category">NVV en Sistema</p>
+                            <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_NOTAS_VENTA_SQL'] ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-info">storage</i>
+                                <a href="#notas-sql" class="text-info">Ver en sistema</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Notas Pendientes por Validar -->
                 <div class="col-lg-3 col-md-6 col-sm-6">
                     <div class="card card-stats">
                         <div class="card-header card-header-warning card-header-icon">
                             <div class="card-icon">
                                 <i class="material-icons">pending_actions</i>
                             </div>
-                            <p class="card-category">NV Pendientes</p>
-                            <h3 class="card-title">{{ count($notasPendientes ?? []) }}</h3>
+                            <p class="card-category">Por Validar</p>
+                            <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_NOTAS_PENDIENTES_VALIDAR'] ?? 0) }}</h3>
                         </div>
                         <div class="card-footer">
                             <div class="stats">
-                                <i class="material-icons text-warning">schedule</i>
-                                Por aprobar
+                                <i class="material-icons text-warning">pending_actions</i>
+                                <a href="{{ route('aprobaciones.index') }}" class="text-warning">Ver aprobaciones</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Cheques en Cartera -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-success card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">account_balance</i>
+                            </div>
+                            <p class="card-category">Cheques en Cartera</p>
+                            <h3 class="card-title">${{ number_format($resumenCobranza['CHEQUES_EN_CARTERA'] ?? 0, 0, ',', '.') }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-success">account_balance</i>
+                                <a href="{{ route('cobranza.index') }}" class="text-success">Ver cartera</a>
                             </div>
                         </div>
                     </div>
@@ -480,13 +538,15 @@
                 </div>
             @endif
 
-            @if(in_array($tipoUsuario, ['Super Admin', 'Supervisor']))
-                <!-- Notas de Venta Pendientes -->
+            @if($tipoUsuario == 'Supervisor')
+                <!-- Supervisor - Tablas de Información -->
+                
+                <!-- Notas de Venta Pendientes (col-6) -->
                 <div class="col-md-6">
                     <div class="card">
                         <div class="card-header card-header-warning">
                             <h4 class="card-title">Notas de Venta Pendientes</h4>
-                            <p class="card-category">Esperando aprobación</p>
+                            <p class="card-category">Esperando aprobación por Supervisor</p>
                         </div>
                         <div class="card-body">
                             <div class="table-responsive">
@@ -498,6 +558,7 @@
                                             <th>Cliente</th>
                                             <th>Total</th>
                                             <th>Estado</th>
+                                            <th>Acción</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -505,15 +566,119 @@
                                         <tr>
                                             <td>{{ $nota->numero_nota_venta ?? 'N/A' }}</td>
                                             <td>{{ $nota->user->name ?? 'N/A' }}</td>
-                                            <td>{{ $nota->nombre_cliente ?? 'N/A' }}</td>
+                                            <td>{{ $nota->cliente->nombre ?? $nota->nombre_cliente ?? 'N/A' }}</td>
                                             <td>${{ number_format($nota->total ?? 0, 2) }}</td>
                                             <td>
-                                                <span class="badge badge-warning">Por Aprobar</span>
+                                                <span class="badge badge-{{ 
+                                                    $nota->estado_aprobacion == 'pendiente_supervisor' ? 'warning' : 
+                                                    ($nota->estado_aprobacion == 'pendiente_compras' ? 'info' : 'primary')
+                                                }}">
+                                                    {{ ucfirst(str_replace('_', ' ', $nota->estado_aprobacion ?? 'pendiente')) }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <a href="{{ route('aprobaciones.show', $nota->id) }}" class="btn btn-sm btn-primary">
+                                                    <i class="material-icons">visibility</i> Ver
+                                                </a>
                                             </td>
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="5" class="text-center">No hay notas de venta pendientes</td>
+                                            <td colspan="6" class="text-center">No hay notas de venta pendientes</td>
+                                        </tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notas de Venta en Sistema SQL (col-6) -->
+                <div class="col-md-6" id="notas-sql">
+                    <div class="card">
+                        <div class="card-header card-header-info">
+                            <h4 class="card-title">Notas de Venta en Sistema</h4>
+                            <p class="card-category">NVV ingresadas en SQL Server</p>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead class="text-info">
+                                        <tr>
+                                            <th>Tipo</th>
+                                            <th>Número</th>
+                                            <th>Cliente</th>
+                                            <th>Vendedor</th>
+                                            <th>Valor</th>
+                                            <th>Fecha</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @forelse($notasVentaSQL ?? [] as $nota)
+                                        <tr>
+                                            <td><span class="badge badge-info">{{ $nota['TIPO_DOCTO'] }}</span></td>
+                                            <td>{{ $nota['NRO_DOCTO'] }}</td>
+                                            <td>{{ $nota['NOMBRE_CLIENTE'] }}</td>
+                                            <td>{{ $nota['NOMBRE_VENDEDOR'] }}</td>
+                                            <td>${{ number_format($nota['VALOR_DOCUMENTO'], 0) }}</td>
+                                            <td>{{ \Carbon\Carbon::parse($nota['FECHA_EMISION'])->format('d/m/Y') }}</td>
+                                        </tr>
+                                        @empty
+                                        <tr>
+                                            <td colspan="6" class="text-center">No hay notas de venta en sistema</td>
+                                        </tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Facturas Ingresadas (col-12) -->
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header card-header-success">
+                            <h4 class="card-title">Facturas Ingresadas</h4>
+                            <p class="card-category">Facturas en el sistema SQL Server</p>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead class="text-success">
+                                        <tr>
+                                            <th>Tipo</th>
+                                            <th>Número</th>
+                                            <th>Cliente</th>
+                                            <th>Vendedor</th>
+                                            <th>Valor</th>
+                                            <th>Abonos</th>
+                                            <th>Saldo</th>
+                                            <th>Emisión</th>
+                                            <th>Vencimiento</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @forelse($facturasIngresadas ?? [] as $factura)
+                                        <tr>
+                                            <td><span class="badge badge-success">{{ $factura['TIPO_DOCTO'] }}</span></td>
+                                            <td>{{ $factura['NRO_DOCTO'] }}</td>
+                                            <td>{{ $factura['NOMBRE_CLIENTE'] }}</td>
+                                            <td>{{ $factura['NOMBRE_VENDEDOR'] }}</td>
+                                            <td>${{ number_format($factura['VALOR_DOCUMENTO'], 0) }}</td>
+                                            <td>${{ number_format($factura['ABONOS'], 0) }}</td>
+                                            <td>
+                                                <span class="badge badge-{{ $factura['SALDO'] > 0 ? 'warning' : 'success' }}">
+                                                    ${{ number_format($factura['SALDO'], 0) }}
+                                                </span>
+                                            </td>
+                                            <td>{{ \Carbon\Carbon::parse($factura['FECHA_EMISION'])->format('d/m/Y') }}</td>
+                                            <td>{{ \Carbon\Carbon::parse($factura['FECHA_VENCIMIENTO'])->format('d/m/Y') }}</td>
+                                        </tr>
+                                        @empty
+                                        <tr>
+                                            <td colspan="9" class="text-center">No hay facturas ingresadas</td>
                                         </tr>
                                         @endforelse
                                     </tbody>
@@ -742,7 +907,29 @@
                                 </div>
                             @endif
 
-                            @if(in_array($tipoUsuario, ['Super Admin', 'Vendedor', 'Supervisor']))
+                            @if($tipoUsuario == 'Supervisor')
+                                <!-- Acciones específicas del Supervisor -->
+                                <div class="col-md-3">
+                                    <a href="{{ route('aprobaciones.index') }}" class="btn btn-warning btn-block">
+                                        <i class="material-icons">pending_actions</i> Notas Pendientes
+                                    </a>
+                                </div>
+                                <div class="col-md-3">
+                                    <a href="#notas-sql" class="btn btn-info btn-block">
+                                        <i class="material-icons">storage</i> Notas en Sistema
+                                    </a>
+                                </div>
+                                <div class="col-md-3">
+                                    <a href="{{ route('facturas-pendientes.index') }}" class="btn btn-danger btn-block">
+                                        <i class="material-icons">receipt</i> Facturas Sistema
+                                    </a>
+                                </div>
+                                <div class="col-md-3">
+                                    <a href="{{ route('clientes.index') }}" class="btn btn-primary btn-block">
+                                        <i class="material-icons">people</i> Listado Clientes
+                                    </a>
+                                </div>
+                            @elseif(in_array($tipoUsuario, ['Super Admin', 'Vendedor']))
                                 <div class="col-md-3">
                                     <a href="{{ route('cobranza.index') }}" class="btn btn-success btn-block">
                                         <i class="material-icons">receipt</i> Ver Cobranza
