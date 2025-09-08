@@ -3197,7 +3197,7 @@ class CobranzaService
                 $query .= " AND dbo.TABFU.KOFU = '{$codigoVendedor}'";
             }
             
-            $query .= " ORDER BY CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) DESC";
+            $query .= " ORDER BY dbo.MAEEDO.FEEMDO DESC";
             
             // Crear archivo temporal con la consulta
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');

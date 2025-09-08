@@ -132,8 +132,8 @@ class DashboardController extends Controller
     private function getSupervisorDashboard($user)
     {
         try {
-            // 1. FACTURAS PENDIENTES (cantidad y listado) - TODAS las facturas del sistema
-            $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 50); // Sin filtro de vendedor para ver todas
+            // 1. FACTURAS PENDIENTES (cantidad y listado) - Solo 10 más recientes
+            $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 10); // Sin filtro de vendedor, limitado a 10
             $totalFacturasPendientes = count($facturasPendientes);
 
             // 2. TOTAL NOTAS DE VENTAS EN SQL (cantidad) - TODAS las notas del sistema
