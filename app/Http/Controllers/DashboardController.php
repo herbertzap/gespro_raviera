@@ -8,6 +8,8 @@ use App\Models\Cotizacion;
 use App\Models\NotaVenta;
 use App\Models\StockTemporal;
 use App\Models\User;
+use App\Models\Cliente;
+use Illuminate\Support\Facades\Log;
 
 class DashboardController extends Controller
 {

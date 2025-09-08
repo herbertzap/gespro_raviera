@@ -29,7 +29,7 @@
             </li>
 
             <!-- Ventas -->
-            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Supervisor'))
+            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin'))
             <li>
                 <a data-toggle="collapse" href="#Ventas" aria-expanded="false">
                     <i class="tim-icons icon-cart"></i>
@@ -55,6 +55,16 @@
                         </li>
                     </ul>
                 </div>
+            </li>
+            @endif
+
+            <!-- Supervisor - Solo Clientes -->
+            @if(auth()->user()->hasRole('Supervisor'))
+            <li @if ($pageSlug == 'clientes') class="active " @endif>
+                <a href="{{ route('clientes.index') }}">
+                    <i class="tim-icons icon-single-02"></i>
+                    <p>{{ __('Clientes') }}</p>
+                </a>
             </li>
             @endif
 
