@@ -160,9 +160,9 @@
                                     <tr>
                                         <td><span class="badge badge-info">{{ $nota['TIPO_DOCTO'] }}</span></td>
                                         <td>{{ $nota['NRO_DOCTO'] }}</td>
-                                        <td>{{ $nota['NOMBRE_CLIENTE'] }}</td>
-                                        <td>{{ $nota['NOMBRE_VENDEDOR'] }}</td>
-                                        <td>${{ number_format($nota['VALOR_DOCUMENTO'], 0) }}</td>
+                                        <td>{{ $nota['CLIENTE'] }}</td>
+                                        <td>{{ $nota['VENDEDOR'] }}</td>
+                                        <td>${{ number_format($nota['VALOR'], 0) }}</td>
                                         <td>{{ \Carbon\Carbon::parse($nota['FECHA_EMISION'])->format('d/m/Y') }}</td>
                                     </tr>
                                     @empty
@@ -208,9 +208,9 @@
                                     <tr>
                                         <td><span class="badge badge-danger">{{ $factura['TIPO_DOCTO'] }}</span></td>
                                         <td>{{ $factura['NRO_DOCTO'] }}</td>
-                                        <td>{{ $factura['NOMBRE_CLIENTE'] }}</td>
-                                        <td>{{ $factura['NOMBRE_VENDEDOR'] }}</td>
-                                        <td>${{ number_format($factura['VALOR_DOCUMENTO'], 0) }}</td>
+                                        <td>{{ $factura['CLIENTE'] }}</td>
+                                        <td>{{ $factura['VENDEDOR'] }}</td>
+                                        <td>${{ number_format($factura['VALOR'], 0) }}</td>
                                         <td>${{ number_format($factura['ABONOS'], 0) }}</td>
                                         <td>
                                             <span class="badge badge-{{ $factura['SALDO'] > 0 ? 'warning' : 'success' }}">
