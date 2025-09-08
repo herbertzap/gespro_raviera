@@ -72,6 +72,11 @@ class Cotizacion extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function cliente()
+    {
+        return $this->belongsTo(Cliente::class, 'cliente_codigo', 'codigo');
+    }
+
     public function productos()
     {
         return $this->hasMany(CotizacionProducto::class);

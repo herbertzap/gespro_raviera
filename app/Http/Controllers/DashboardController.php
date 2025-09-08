@@ -140,15 +140,15 @@ class DashboardController extends Controller
             $totalNotasVentaSQL = $this->cobranzaService->getTotalNotasVentaSQL();
 
             // 3. TOTAL NOTAS DE VENTAS PENDIENTES POR VALIDAR (cantidad)
-            $notasPendientesSupervisor = Cotizacion::where('estado_aprobacion', 'pendiente_supervisor')
-                ->orWhere('estado_aprobacion', 'pendiente_compras')
+            $notasPendientesSupervisor = Cotizacion::where('estado_aprobacion', 'pendiente')
                 ->orWhere('estado_aprobacion', 'pendiente_picking')
+                ->orWhere('estado_aprobacion', 'aprobada_supervisor')
                 ->count();
 
             // 4. NOTAS DE VENTA PENDIENTES (listado completo)
-            $notasPendientes = Cotizacion::where('estado_aprobacion', 'pendiente_supervisor')
-                ->orWhere('estado_aprobacion', 'pendiente_compras')
+            $notasPendientes = Cotizacion::where('estado_aprobacion', 'pendiente')
                 ->orWhere('estado_aprobacion', 'pendiente_picking')
+                ->orWhere('estado_aprobacion', 'aprobada_supervisor')
                 ->with(['user', 'cliente'])
                 ->latest()
                 ->take(20)
