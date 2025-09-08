@@ -4088,7 +4088,46 @@ class CobranzaService
                 }
             }
             
-            return $result;
+            // Agrupar por número de documento y sumar valores
+            $agrupados = [];
+            foreach ($result as $item) {
+                $key = $item['TIPO_DOCTO'] . '-' . $item['NRO_DOCTO'];
+                
+                if (!isset($agrupados[$key])) {
+                    $agrupados[$key] = [
+                        'TIPO_DOCTO' => $item['TIPO_DOCTO'],
+                        'NRO_DOCTO' => $item['NRO_DOCTO'],
+                        'FECHA_EMISION' => $item['FECHA_EMISION'],
+                        'CODIGO_CLIENTE' => $item['CODIGO_CLIENTE'],
+                        'CLIENTE' => $item['CLIENTE'],
+                        'VENDEDOR' => $item['VENDEDOR'],
+                        'REGION' => $item['REGION'],
+                        'COMUNA' => $item['COMUNA'],
+                        'DIAS' => $item['DIAS'],
+                        'CODIGO_VENDEDOR' => $item['CODIGO_VENDEDOR'],
+                        'VALOR_PENDIENTE' => 0,
+                        'CANTIDAD_TOTAL' => 0,
+                        'PRODUCTOS' => []
+                    ];
+                }
+                
+                $agrupados[$key]['VALOR_PENDIENTE'] += (float) $item['VALOR_PENDIENTE'];
+                $agrupados[$key]['CANTIDAD_TOTAL'] += (float) $item['CANTIDAD'];
+                $agrupados[$key]['PRODUCTOS'][] = [
+                    'CODIGO_PRODUCTO' => $item['CODIGO_PRODUCTO'],
+                    'NOMBRE_PRODUCTO' => $item['NOMBRE_PRODUCTO'],
+                    'CANTIDAD' => $item['CANTIDAD'],
+                    'PRECIO_UNITARIO' => $item['PRECIO_UNITARIO']
+                ];
+            }
+            
+            // Convertir a array indexado y ordenar por fecha más reciente
+            $resultadoFinal = array_values($agrupados);
+            usort($resultadoFinal, function($a, $b) {
+                return strtotime($b['FECHA_EMISION']) - strtotime($a['FECHA_EMISION']);
+            });
+            
+            return $resultadoFinal;
             
         } catch (\Exception $e) {
             \Log::error('Error obteniendo notas de venta SQL: ' . $e->getMessage());

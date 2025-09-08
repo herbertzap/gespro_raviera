@@ -145,17 +145,17 @@ class DashboardController extends Controller
                 ->orWhere('estado_aprobacion', 'aprobada_supervisor')
                 ->count();
 
-            // 4. NOTAS DE VENTA PENDIENTES (listado completo) - TODAS las notas pendientes
+            // 4. NOTAS DE VENTA PENDIENTES (listado limitado) - Solo 10 más recientes
             $notasPendientes = Cotizacion::where('estado_aprobacion', 'pendiente')
                 ->orWhere('estado_aprobacion', 'pendiente_picking')
                 ->orWhere('estado_aprobacion', 'aprobada_supervisor')
                 ->with(['user', 'cliente'])
                 ->latest()
-                ->take(20)
+                ->take(10)
                 ->get();
 
-            // 5. NOTAS DE VENTA EN SQL (listado) - TODAS las notas del sistema
-            $notasVentaSQL = $this->cobranzaService->getNotasVentaSQL(20);
+            // 5. NOTAS DE VENTA EN SQL (listado limitado) - Solo 10 más recientes
+            $notasVentaSQL = $this->cobranzaService->getNotasVentaSQL(10);
 
             // 6. CHEQUES EN CARTERA - TODOS los cheques del sistema
             $chequesEnCartera = $this->cobranzaService->getChequesEnCartera(null); // Sin filtro de vendedor

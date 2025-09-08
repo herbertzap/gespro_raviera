@@ -151,7 +151,8 @@
                                         <th>Número</th>
                                         <th>Cliente</th>
                                         <th>Vendedor</th>
-                                        <th>Valor</th>
+                                        <th>Productos</th>
+                                        <th>Valor Total</th>
                                         <th>Fecha</th>
                                     </tr>
                                 </thead>
@@ -162,12 +163,13 @@
                                         <td>{{ $nota['NRO_DOCTO'] }}</td>
                                         <td>{{ $nota['CLIENTE'] }}</td>
                                         <td>{{ $nota['VENDEDOR'] }}</td>
+                                        <td><span class="badge badge-primary">{{ $nota['CANTIDAD_TOTAL'] ?? 0 }}</span></td>
                                         <td>${{ number_format($nota['VALOR_PENDIENTE'] ?? 0, 0) }}</td>
                                         <td>{{ \Carbon\Carbon::parse($nota['FECHA_EMISION'])->format('d/m/Y') }}</td>
                                     </tr>
                                     @empty
                                     <tr>
-                                        <td colspan="6" class="text-center">No hay notas de venta en sistema</td>
+                                        <td colspan="7" class="text-center">No hay notas de venta en sistema</td>
                                     </tr>
                                     @endforelse
                                 </tbody>
