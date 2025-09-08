@@ -3,6 +3,9 @@
 @section('title', 'Dashboard Supervisor')
 
 @section('content')
+@php
+    $pageSlug = 'dashboard';
+@endphp
 <div class="content">
     <div class="container-fluid">
         <!-- Header -->

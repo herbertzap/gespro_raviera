@@ -37,6 +37,7 @@ class DashboardController extends Controller
             $data = $this->getVendedorDashboard($user);
         } else        if ($user->hasRole('Supervisor')) {
             $data = $this->getSupervisorDashboard($user);
+            $data['pageSlug'] = 'dashboard';
             return view('dashboard.supervisor', $data);
         } elseif ($user->hasRole('Compras')) {
             $data = $this->getComprasDashboard($user);
