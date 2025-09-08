@@ -34,11 +34,18 @@ class FacturasPendientesController extends Controller
             'estado' => $request->get('estado', ''),
             'tipo_documento' => $request->get('tipo_documento', ''),
             'cliente' => $request->get('cliente', ''),
+            'vendedor' => $request->get('vendedor', ''),
             'saldo_min' => $request->get('saldo_min', ''),
             'saldo_max' => $request->get('saldo_max', ''),
-            'ordenar_por' => $request->get('ordenar_por', 'DIAS'),
+            'valor_min' => $request->get('valor_min', ''),
+            'valor_max' => $request->get('valor_max', ''),
+            'abonos_min' => $request->get('abonos_min', ''),
+            'abonos_max' => $request->get('abonos_max', ''),
+            'dias_min' => $request->get('dias_min', ''),
+            'dias_max' => $request->get('dias_max', ''),
+            'ordenar_por' => $request->get('ordenar_por', 'NRO_DOCTO'),
             'orden' => $request->get('orden', 'desc'),
-            'por_pagina' => $request->get('por_pagina', 20)
+            'por_pagina' => $request->get('por_pagina', 10)
         ];
 
         // Obtener código de vendedor según el rol
@@ -47,13 +54,13 @@ class FacturasPendientesController extends Controller
             $codigoVendedor = $user->codigo_vendedor;
         }
 
-        // Obtener datos de facturas pendientes
+        // Obtener datos de facturas pendientes con paginación
         $facturasPendientes = $this->cobranzaService->getFacturasPendientes($codigoVendedor, 1000);
         
         // Aplicar filtros
         $facturasFiltradas = $this->aplicarFiltrosFacturas($facturasPendientes, $filtros);
         
-        // Paginar los resultados
+        // Paginar manualmente
         $perPage = $filtros['por_pagina'];
         $currentPage = $request->get('page', 1);
         $offset = ($currentPage - 1) * $perPage;
@@ -63,7 +70,7 @@ class FacturasPendientesController extends Controller
             count($facturasFiltradas),
             $perPage,
             $currentPage,
-            ['path' => request()->url(), 'query' => request()->query()]
+            ['path' => $request->url(), 'query' => $request->query()]
         );
 
         // Obtener resumen
@@ -125,8 +132,12 @@ class FacturasPendientesController extends Controller
             abort(404, 'Factura no encontrada.');
         }
         
+        // Obtener productos de la factura
+        $productosFactura = $this->cobranzaService->getProductosFactura($tipoDocumento, $numeroDocumento);
+        
         return view('facturas-pendientes.ver', [
             'factura' => $facturaDetalle,
+            'productos' => $productosFactura,
             'pageSlug' => 'facturas-pendientes'
         ]);
     }
@@ -234,5 +245,123 @@ class FacturasPendientesController extends Controller
         });
 
         return array_values($facturasPendientes);
+    }
+
+    private function aplicarFiltrosFacturas($facturas, $filtros)
+    {
+        $facturasFiltradas = $facturas;
+
+        // Filtro por búsqueda general
+        if (!empty($filtros['buscar'])) {
+            $buscar = strtolower($filtros['buscar']);
+            $facturasFiltradas = array_filter($facturasFiltradas, function($factura) use ($buscar) {
+                return strpos(strtolower($factura['NRO_DOCTO']), $buscar) !== false ||
+                       strpos(strtolower($factura['CLIENTE']), $buscar) !== false ||
+                       strpos(strtolower($factura['VENDEDOR']), $buscar) !== false;
+            });
+        }
+
+        // Filtro por tipo de documento
+        if (!empty($filtros['tipo_documento'])) {
+            $facturasFiltradas = array_filter($facturasFiltradas, function($factura) use ($filtros) {
+                return $factura['TIPO_DOCTO'] === $filtros['tipo_documento'];
+            });
+        }
+
+        // Filtro por estado
+        if (!empty($filtros['estado'])) {
+            $facturasFiltradas = array_filter($facturasFiltradas, function($factura) use ($filtros) {
+                return $factura['ESTADO'] === $filtros['estado'];
+            });
+        }
+
+        // Filtro por cliente
+        if (!empty($filtros['cliente'])) {
+            $facturasFiltradas = array_filter($facturasFiltradas, function($factura) use ($filtros) {
+                return strpos(strtolower($factura['CLIENTE']), strtolower($filtros['cliente'])) !== false;
+            });
+        }
+
+        // Filtro por vendedor
+        if (!empty($filtros['vendedor'])) {
+            $facturasFiltradas = array_filter($facturasFiltradas, function($factura) use ($filtros) {
+                return strpos(strtolower($factura['VENDEDOR']), strtolower($filtros['vendedor'])) !== false;
+            });
+        }
+
+        // Filtro por saldo mínimo
+        if (!empty($filtros['saldo_min'])) {
+            $facturasFiltradas = array_filter($facturasFiltradas, function($factura) use ($filtros) {
+                return $factura['SALDO'] >= $filtros['saldo_min'];
+            });
+        }
+
+        // Filtro por saldo máximo
+        if (!empty($filtros['saldo_max'])) {
+            $facturasFiltradas = array_filter($facturasFiltradas, function($factura) use ($filtros) {
+                return $factura['SALDO'] <= $filtros['saldo_max'];
+            });
+        }
+
+        // Filtro por valor mínimo
+        if (!empty($filtros['valor_min'])) {
+            $facturasFiltradas = array_filter($facturasFiltradas, function($factura) use ($filtros) {
+                return $factura['VALOR'] >= $filtros['valor_min'];
+            });
+        }
+
+        // Filtro por valor máximo
+        if (!empty($filtros['valor_max'])) {
+            $facturasFiltradas = array_filter($facturasFiltradas, function($factura) use ($filtros) {
+                return $factura['VALOR'] <= $filtros['valor_max'];
+            });
+        }
+
+        // Filtro por abonos mínimo
+        if (!empty($filtros['abonos_min'])) {
+            $facturasFiltradas = array_filter($facturasFiltradas, function($factura) use ($filtros) {
+                return $factura['ABONOS'] >= $filtros['abonos_min'];
+            });
+        }
+
+        // Filtro por abonos máximo
+        if (!empty($filtros['abonos_max'])) {
+            $facturasFiltradas = array_filter($facturasFiltradas, function($factura) use ($filtros) {
+                return $factura['ABONOS'] <= $filtros['abonos_max'];
+            });
+        }
+
+        // Filtro por días mínimo
+        if (!empty($filtros['dias_min'])) {
+            $facturasFiltradas = array_filter($facturasFiltradas, function($factura) use ($filtros) {
+                return $factura['DIAS'] >= $filtros['dias_min'];
+            });
+        }
+
+        // Filtro por días máximo
+        if (!empty($filtros['dias_max'])) {
+            $facturasFiltradas = array_filter($facturasFiltradas, function($factura) use ($filtros) {
+                return $factura['DIAS'] <= $filtros['dias_max'];
+            });
+        }
+
+        // Ordenar
+        $ordenarPor = $filtros['ordenar_por'] ?? 'NRO_DOCTO';
+        $orden = $filtros['orden'] ?? 'desc';
+
+        usort($facturasFiltradas, function($a, $b) use ($ordenarPor, $orden) {
+            $valorA = $a[$ordenarPor] ?? 0;
+            $valorB = $b[$ordenarPor] ?? 0;
+            
+            if (is_numeric($valorA) && is_numeric($valorB)) {
+                $comparacion = $valorA <=> $valorB;
+            } else {
+                $comparacion = strcasecmp($valorA, $valorB);
+            }
+            
+            return $orden === 'desc' ? -$comparacion : $comparacion;
+        });
+
+        return array_values($facturasFiltradas);
     }
 }

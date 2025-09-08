@@ -3991,36 +3991,220 @@ class CobranzaService
             $username = env('SQLSRV_EXTERNAL_USERNAME');
             $password = env('SQLSRV_EXTERNAL_PASSWORD');
             
-            $dsn = "sqlsrv:Server={$host},{$port};Database={$database};Encrypt=no;TrustServerCertificate=yes;ConnectionPooling=0;";
-            $pdo = new PDO($dsn, $username, $password);
-            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            
+            // Consulta mejorada para obtener NVV con detalles usando tsql
             $query = "
                 SELECT TOP {$limit}
-                    dbo.MAEEDO.TIDO AS TIPO_DOCTO,
-                    dbo.MAEEDO.NUDO AS NRO_DOCTO,
-                    dbo.MAEEDO.ENDO AS CODIGO_CLIENTE,
-                    dbo.MAEEN.NOKOEN AS NOMBRE_CLIENTE,
-                    dbo.MAEEDO.FEEMDO AS FECHA_EMISION,
-                    dbo.MAEEDO.VABRDO AS VALOR_DOCUMENTO,
-                    ISNULL(dbo.TABFU.NOKOFU, 'SIN VENDEDOR') AS NOMBRE_VENDEDOR,
-                    dbo.TABFU.KOFU AS CODIGO_VENDEDOR
-                FROM dbo.MAEEDO 
-                LEFT JOIN dbo.MAEEN ON dbo.MAEEDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEEDO.SUENDO = dbo.MAEEN.SUEN
-                LEFT JOIN dbo.TABFU ON dbo.MAEEN.KOFUEN = dbo.TABFU.KOFU
-                WHERE dbo.MAEEDO.TIDO = 'NVV' 
-                AND dbo.MAEEDO.FEEMDO > CONVERT(DATETIME, '2024-01-01 00:00:00', 102)
-                ORDER BY dbo.MAEEDO.FEEMDO DESC
+                    CAST(dbo.MAEDDO.TIDO AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEDDO.NUDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.FEEMLI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.ENDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEEN.NOKOEN AS VARCHAR(100)) + '|' +
+                    CAST(dbo.MAEDDO.KOPRCT AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.CAPRCO1 AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.NOKOPR AS VARCHAR(100)) + '|' +
+                    CAST(dbo.TABFU.NOKOFU AS VARCHAR(50)) + '|' +
+                    CAST(dbo.TABCI.NOKOCI AS VARCHAR(50)) + '|' +
+                    CAST(dbo.TABCM.NOKOCM AS VARCHAR(50)) + '|' +
+                    CAST(CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEDDO.VANELI / dbo.MAEDDO.CAPRCO1 AS VARCHAR(20)) + '|' +
+                    CAST((dbo.MAEDDO.VANELI / dbo.MAEDDO.CAPRCO1) * (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1) AS VARCHAR(20)) + '|' +
+                    CAST(dbo.TABFU.KOFU AS VARCHAR(10)) AS DATOS
+                FROM dbo.MAEDDO 
+                INNER JOIN dbo.MAEEN ON dbo.MAEDDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEDDO.SUENDO = dbo.MAEEN.SUEN 
+                INNER JOIN dbo.TABFU ON dbo.MAEDDO.KOFULIDO = dbo.TABFU.KOFU 
+                INNER JOIN dbo.TABCI ON dbo.MAEEN.PAEN = dbo.TABCI.KOPA AND dbo.MAEEN.CIEN = dbo.TABCI.KOCI 
+                INNER JOIN dbo.TABCM ON dbo.MAEEN.PAEN = dbo.TABCM.KOPA AND dbo.MAEEN.CIEN = dbo.TABCM.KOCI AND dbo.MAEEN.CMEN = dbo.TABCM.KOCM
+                WHERE (dbo.MAEDDO.TIDO = 'NVV') 
+                AND (dbo.MAEDDO.LILG = 'SI') 
+                AND (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1 <> 0) 
+                AND (dbo.MAEDDO.KOPRCT <> 'D') 
+                AND (dbo.MAEDDO.KOPRCT <> 'FLETE')
+                ORDER BY dbo.MAEDDO.NUDO DESC
             ";
             
-            $stmt = $pdo->prepare($query);
-            $stmt->execute();
-            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            // Crear archivo temporal con la consulta
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
             
-            return $results;
+            // Ejecutar consulta usando tsql
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+            
+            // Limpiar archivo temporal
+            unlink($tempFile);
+            
+            if (!$output || str_contains($output, 'error')) {
+                throw new \Exception('Error ejecutando consulta tsql: ' . $output);
+            }
+            
+            // Procesar la salida
+            $lines = explode("\n", $output);
+            $result = [];
+            $inDataSection = false;
+            $headerFound = false;
+            
+            foreach ($lines as $lineNumber => $line) {
+                $line = trim($line);
+                
+                // Saltar líneas vacías o de configuración
+                if (empty($line) || 
+                    strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || 
+                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'Warning:') !== false ||
+                    preg_match('/^\d+>$/', $line)) {
+                    continue;
+                }
+                
+                // Detectar el header de la tabla
+                if (strpos($line, 'DATOS') !== false) {
+                    $headerFound = true;
+                    $inDataSection = true;
+                    continue;
+                }
+                
+                // Procesar líneas de datos
+                if ($inDataSection && $headerFound && strpos($line, '|') !== false) {
+                    $fields = explode('|', $line);
+                    if (count($fields) >= 15) {
+                        $result[] = [
+                            'TIPO_DOCTO' => trim($fields[0]),
+                            'NRO_DOCTO' => trim($fields[1]),
+                            'FECHA_EMISION' => trim($fields[2]),
+                            'CODIGO_CLIENTE' => trim($fields[3]),
+                            'CLIENTE' => trim($fields[4]),
+                            'CODIGO_PRODUCTO' => trim($fields[5]),
+                            'CANTIDAD' => trim($fields[6]),
+                            'NOMBRE_PRODUCTO' => trim($fields[7]),
+                            'VENDEDOR' => trim($fields[8]),
+                            'REGION' => trim($fields[9]),
+                            'COMUNA' => trim($fields[10]),
+                            'DIAS' => trim($fields[11]),
+                            'PRECIO_UNITARIO' => trim($fields[12]),
+                            'VALOR_PENDIENTE' => trim($fields[13]),
+                            'CODIGO_VENDEDOR' => trim($fields[14])
+                        ];
+                    }
+                }
+            }
+            
+            return $result;
             
         } catch (\Exception $e) {
             \Log::error('Error obteniendo notas de venta SQL: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Obtener productos de una factura específica con enlace a NVV
+     */
+    public function getProductosFactura($tipoDoc, $numeroDoc)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            // Consulta para obtener productos de factura con relación a NVV
+            $query = "
+                SELECT 
+                    CAST(dbo.MAEDDO.TIDO AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEDDO.NUDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.FEEMLI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.ENDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEEN.NOKOEN AS VARCHAR(100)) + '|' +
+                    CAST(dbo.MAEDDO.KOPRCT AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.CAPRCO1 AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.NOKOPR AS VARCHAR(100)) + '|' +
+                    CAST(MAEDDO_1.TIDO AS VARCHAR(10)) + '|' +
+                    CAST(MAEDDO_1.NUDO AS VARCHAR(20)) + '|' +
+                    CAST(MAEDDO_1.CAPRCO1 AS VARCHAR(20)) + '|' +
+                    CAST(MAEDDO_2.TIDO AS VARCHAR(10)) + '|' +
+                    CAST(MAEDDO_2.NUDO AS VARCHAR(20)) + '|' +
+                    CAST(MAEDDO_2.CAPRCO1 AS VARCHAR(20)) + '|' +
+                    CAST(MAEDDO_2.CAPRCO1 - MAEDDO_2.CAPRAD1 - MAEDDO_2.CAPREX1 AS VARCHAR(20)) AS DATOS
+                FROM dbo.MAEDDO AS MAEDDO_2 
+                INNER JOIN dbo.MAEDDO AS MAEDDO_1 ON MAEDDO_2.IDMAEDDO = MAEDDO_1.IDRST 
+                FULL OUTER JOIN dbo.MAEDDO 
+                INNER JOIN dbo.MAEEN ON dbo.MAEDDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEDDO.SUENDO = dbo.MAEEN.SUEN ON MAEDDO_1.IDMAEDDO = dbo.MAEDDO.IDRST
+                WHERE (dbo.MAEDDO.TIDO = '{$tipoDoc}') 
+                AND (dbo.MAEDDO.NUDO = '{$numeroDoc}')
+                AND (MAEDDO_2.FEEMLI > '31-12-2023')
+            ";
+            
+            // Crear archivo temporal con la consulta
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            // Ejecutar consulta usando tsql
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+            
+            // Limpiar archivo temporal
+            unlink($tempFile);
+            
+            if (!$output || str_contains($output, 'error')) {
+                throw new \Exception('Error ejecutando consulta tsql: ' . $output);
+            }
+            
+            // Procesar la salida
+            $lines = explode("\n", $output);
+            $result = [];
+            $inDataSection = false;
+            $headerFound = false;
+            
+            foreach ($lines as $lineNumber => $line) {
+                $line = trim($line);
+                
+                // Saltar líneas vacías o de configuración
+                if (empty($line) || 
+                    strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || 
+                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'Warning:') !== false ||
+                    preg_match('/^\d+>$/', $line)) {
+                    continue;
+                }
+                
+                // Detectar el header de la tabla
+                if (strpos($line, 'DATOS') !== false) {
+                    $headerFound = true;
+                    $inDataSection = true;
+                    continue;
+                }
+                
+                // Procesar líneas de datos
+                if ($inDataSection && $headerFound && strpos($line, '|') !== false) {
+                    $fields = explode('|', $line);
+                    if (count($fields) >= 15) {
+                        $result[] = [
+                            'TIPO_DOCTO' => trim($fields[0]),
+                            'NRO_DOCTO' => trim($fields[1]),
+                            'FECHA_EMISION' => trim($fields[2]),
+                            'CODIGO_CLIENTE' => trim($fields[3]),
+                            'CLIENTE' => trim($fields[4]),
+                            'CODIGO_PRODUCTO' => trim($fields[5]),
+                            'CANTIDAD' => trim($fields[6]),
+                            'NOMBRE_PRODUCTO' => trim($fields[7]),
+                            'TIPO_NVV' => trim($fields[8]),
+                            'NUMERO_NVV' => trim($fields[9]),
+                            'CANTIDAD_NVV' => trim($fields[10]),
+                            'TIPO_FCV' => trim($fields[11]),
+                            'NUMERO_FCV' => trim($fields[12]),
+                            'CANTIDAD_FCV' => trim($fields[13]),
+                            'PENDIENTE' => trim($fields[14])
+                        ];
+                    }
+                }
+            }
+            
+            return $result;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo productos de factura: ' . $e->getMessage());
             return [];
         }
     }
