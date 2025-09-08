@@ -74,7 +74,7 @@ class Cotizacion extends Model
 
     public function cliente()
     {
-        return $this->belongsTo(Cliente::class, 'cliente_codigo', 'codigo');
+        return $this->belongsTo(Cliente::class, 'cliente_codigo', 'codigo_cliente');
     }
 
     public function productos()
