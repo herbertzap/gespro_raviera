@@ -162,7 +162,7 @@
                                         <td>{{ $nota['NRO_DOCTO'] }}</td>
                                         <td>{{ $nota['CLIENTE'] }}</td>
                                         <td>{{ $nota['VENDEDOR'] }}</td>
-                                        <td>${{ number_format($nota['VALOR'], 0) }}</td>
+                                        <td>${{ number_format($nota['VALOR_PENDIENTE'] ?? 0, 0) }}</td>
                                         <td>{{ \Carbon\Carbon::parse($nota['FECHA_EMISION'])->format('d/m/Y') }}</td>
                                     </tr>
                                     @empty
