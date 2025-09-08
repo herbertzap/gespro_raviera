@@ -132,20 +132,20 @@ class DashboardController extends Controller
     private function getSupervisorDashboard($user)
     {
         try {
-            // 1. FACTURAS PENDIENTES (cantidad y listado)
-            $facturasPendientes = $this->cobranzaService->getFacturasPendientes('', 50); // Sin filtro de vendedor para ver todas
+            // 1. FACTURAS PENDIENTES (cantidad y listado) - TODAS las facturas del sistema
+            $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 50); // Sin filtro de vendedor para ver todas
             $totalFacturasPendientes = count($facturasPendientes);
 
-            // 2. TOTAL NOTAS DE VENTAS EN SQL (cantidad)
+            // 2. TOTAL NOTAS DE VENTAS EN SQL (cantidad) - TODAS las notas del sistema
             $totalNotasVentaSQL = $this->cobranzaService->getTotalNotasVentaSQL();
 
-            // 3. TOTAL NOTAS DE VENTAS PENDIENTES POR VALIDAR (cantidad)
+            // 3. TOTAL NOTAS DE VENTAS PENDIENTES POR VALIDAR (cantidad) - TODAS las notas pendientes
             $notasPendientesSupervisor = Cotizacion::where('estado_aprobacion', 'pendiente')
                 ->orWhere('estado_aprobacion', 'pendiente_picking')
                 ->orWhere('estado_aprobacion', 'aprobada_supervisor')
                 ->count();
 
-            // 4. NOTAS DE VENTA PENDIENTES (listado completo)
+            // 4. NOTAS DE VENTA PENDIENTES (listado completo) - TODAS las notas pendientes
             $notasPendientes = Cotizacion::where('estado_aprobacion', 'pendiente')
                 ->orWhere('estado_aprobacion', 'pendiente_picking')
                 ->orWhere('estado_aprobacion', 'aprobada_supervisor')
@@ -154,8 +154,14 @@ class DashboardController extends Controller
                 ->take(20)
                 ->get();
 
-            // 5. NOTAS DE VENTA EN SQL (listado)
+            // 5. NOTAS DE VENTA EN SQL (listado) - TODAS las notas del sistema
             $notasVentaSQL = $this->cobranzaService->getNotasVentaSQL(20);
+
+            // 6. CHEQUES EN CARTERA - TODOS los cheques del sistema
+            $chequesEnCartera = $this->cobranzaService->getChequesEnCartera(null); // Sin filtro de vendedor
+
+            // 7. RESUMEN DE FACTURAS PENDIENTES - TODAS las facturas del sistema
+            $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes(null); // Sin filtro de vendedor
 
             // Resumen para las tarjetas principales
             $resumenCobranza = [
@@ -164,7 +170,8 @@ class DashboardController extends Controller
                 'TOTAL_NOTAS_PENDIENTES_VALIDAR' => $notasPendientesSupervisor,
                 'TOTAL_FACTURAS' => $totalFacturasPendientes,
                 'TOTAL_NOTAS_VENTA' => $totalNotasVentaSQL,
-                'CHEQUES_EN_CARTERA' => 0
+                'CHEQUES_EN_CARTERA' => $chequesEnCartera,
+                'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor']
             ];
 
             return [
