@@ -149,14 +149,23 @@ class Cotizacion extends Model
 
     public function scopePendientesCompras($query)
     {
-        return $query->where('estado_aprobacion', 'aprobada_supervisor')
-                    ->where('tiene_problemas_stock', true);
+        return $query->where(function($q) {
+            $q->where('estado_aprobacion', 'aprobada_supervisor')
+              ->orWhere(function($subQ) {
+                  $subQ->where('estado_aprobacion', 'pendiente')
+                       ->where('tiene_problemas_stock', true)
+                       ->where('tiene_problemas_credito', false);
+              });
+        })->where('tiene_problemas_stock', true);
     }
 
     public function scopePendientesPicking($query)
     {
         return $query->whereIn('estado_aprobacion', ['pendiente_picking', 'aprobada_compras'])
-                    ->where('tiene_problemas_stock', true);
+                    ->where(function($q) {
+                        $q->whereNull('aprobado_por_picking')
+                          ->orWhere('aprobado_por_picking', false);
+                    });
     }
 
     public function scopePendientesPickingSinProblemas($query)
@@ -205,18 +214,24 @@ class Cotizacion extends Model
 
     public function puedeAprobarCompras()
     {
-        return $this->estado_aprobacion === 'aprobada_supervisor' && $this->tiene_problemas_stock;
+        return $this->tiene_problemas_stock && (
+            $this->estado_aprobacion === 'aprobada_supervisor' ||
+            $this->estado_aprobacion === 'pendiente'
+        );
     }
 
     public function puedeAprobarPicking()
     {
-        return $this->estado_aprobacion === 'aprobada_compras' && $this->tiene_problemas_stock;
+        return in_array($this->estado_aprobacion, ['pendiente_picking', 'aprobada_compras']);
     }
 
     public function aprobarPorSupervisor($supervisorId, $comentarios = null)
     {
+        // Si hay problemas de stock, va a Compras; si no, va directo a Picking
+        $nuevoEstado = $this->tiene_problemas_stock ? 'aprobada_supervisor' : 'pendiente_picking';
+        
         $this->update([
-            'estado_aprobacion' => 'aprobada_supervisor',
+            'estado_aprobacion' => $nuevoEstado,
             'aprobado_por_supervisor' => $supervisorId,
             'fecha_aprobacion_supervisor' => now(),
             'comentarios_supervisor' => $comentarios
@@ -226,7 +241,7 @@ class Cotizacion extends Model
     public function aprobarPorCompras($comprasId, $comentarios = null)
     {
         $this->update([
-            'estado_aprobacion' => 'aprobada_compras',
+            'estado_aprobacion' => 'pendiente_picking',
             'aprobado_por_compras' => $comprasId,
             'fecha_aprobacion_compras' => now(),
             'comentarios_compras' => $comentarios
@@ -379,29 +394,39 @@ class Cotizacion extends Model
         }
         
         // Determinar estado de aprobación según la nueva lógica
-        if ($problemasCredito) {
-            // Cliente con problemas de crédito → Requiere aprobación del Supervisor
+        if ($problemasCredito && $problemasStock) {
+            // Ambos problemas → Supervisor primero, luego Compras, luego Picking
             $this->update([
                 'estado' => 'enviada',
                 'requiere_aprobacion' => true,
                 'estado_aprobacion' => 'pendiente',
                 'tiene_problemas_credito' => true,
-                'tiene_problemas_stock' => $problemasStock,
-                'detalle_problemas_stock' => $problemasStock ? json_encode($detalleProblemasStock) : null,
+                'tiene_problemas_stock' => true,
+                'detalle_problemas_stock' => json_encode($detalleProblemasStock),
                 'detalle_problemas_credito' => 'Cliente con problemas de crédito o facturas impagas'
             ]);
-        } elseif ($problemasStock) {
-            // Solo problemas de stock → Va directo a Picking para validación
+        } elseif ($problemasCredito) {
+            // Solo problemas de crédito → Supervisor, luego Picking
             $this->update([
                 'estado' => 'enviada',
                 'requiere_aprobacion' => true,
-                'estado_aprobacion' => 'pendiente_picking',
+                'estado_aprobacion' => 'pendiente',
+                'tiene_problemas_credito' => true,
+                'tiene_problemas_stock' => false,
+                'detalle_problemas_credito' => 'Cliente con problemas de crédito o facturas impagas'
+            ]);
+        } elseif ($problemasStock) {
+            // Solo problemas de stock → Compras, luego Picking
+            $this->update([
+                'estado' => 'enviada',
+                'requiere_aprobacion' => true,
+                'estado_aprobacion' => 'pendiente',
                 'tiene_problemas_credito' => false,
                 'tiene_problemas_stock' => true,
                 'detalle_problemas_stock' => json_encode($detalleProblemasStock)
             ]);
         } else {
-            // No hay problemas → Va directo a Picking para validación final
+            // No hay problemas → Directo a Picking (aprobación final)
             $this->update([
                 'estado' => 'enviada',
                 'requiere_aprobacion' => true,

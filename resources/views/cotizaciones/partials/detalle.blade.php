@@ -14,11 +14,11 @@
                     <div class="row">
                         <div class="col-md-3">
                             <strong>RUT/Código:</strong><br>
-                            {{ $cliente->codigo_cliente }}
+                            {{ $cliente->codigo }}
                         </div>
                         <div class="col-md-3">
                             <strong>Nombre/Razón Social:</strong><br>
-                            {{ $cliente->nombre_cliente }}
+                            {{ $cliente->nombre }}
                         </div>
                         <div class="col-md-3">
                             <strong>Estado:</strong><br>
@@ -88,13 +88,13 @@
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header">
-                    <h4 class="card-title">
-                        <i class="tim-icons icon-basket-simple"></i>
-                        Productos ({{ $productosCotizacion->count() }})
-                    </h4>
+                        <h4 class="card-title">
+                            <i class="tim-icons icon-basket-simple"></i>
+                            Productos ({{ count($productosCotizacion) }})
+                        </h4>
                 </div>
                 <div class="card-body">
-                    @if($productosCotizacion->count() > 0)
+                    @if(count($productosCotizacion) > 0)
                     <div class="table-responsive">
                         <table class="table table-striped">
                             <thead>
@@ -110,12 +110,12 @@
                             <tbody>
                                 @foreach($productosCotizacion as $producto)
                                 <tr>
-                                    <td>{{ $producto->codigo_producto }}</td>
-                                    <td>{{ $producto->descripcion }}</td>
-                                    <td>{{ number_format($producto->cantidad, 0, ',', '.') }}</td>
-                                    <td>${{ number_format($producto->precio, 0, ',', '.') }}</td>
-                                    <td>{{ $producto->descuento }}%</td>
-                                    <td>${{ number_format($producto->subtotal, 0, ',', '.') }}</td>
+                                    <td>{{ $producto['codigo'] }}</td>
+                                    <td>{{ $producto['nombre'] }}</td>
+                                    <td>{{ number_format($producto['cantidad'], 0, ',', '.') }}</td>
+                                    <td>${{ number_format($producto['precio'], 0, ',', '.') }}</td>
+                                    <td>0%</td>
+                                    <td>${{ number_format($producto['subtotal'], 0, ',', '.') }}</td>
                                 </tr>
                                 @endforeach
                             </tbody>

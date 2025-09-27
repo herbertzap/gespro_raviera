@@ -18,6 +18,7 @@ class Cliente extends Model
         'direccion',
         'telefono',
         'email',
+        'rut_cliente',
         'codigo_vendedor',
         'region',
         'comuna',

@@ -178,38 +178,8 @@
                                                         <a href="{{ route('aprobaciones.show', $cotizacion->id) }}" 
                                                            class="btn btn-sm btn-info" 
                                                            title="Ver Detalles">
-                                                            <i class="material-icons">visibility</i>
+                                                            <i class="material-icons">visibility</i> Ver
                                                         </a>
-                                                        @if($tipoAprobacion === 'supervisor' && $cotizacion->puedeAprobarSupervisor())
-                                                            <button type="button" 
-                                                                    class="btn btn-sm btn-success" 
-                                                                    onclick="aprobarNota({{ $cotizacion->id }}, 'supervisor')"
-                                                                    title="Aprobar">
-                                                                <i class="material-icons">check</i>
-                                                            </button>
-                                                        @endif
-                                                        @if($tipoAprobacion === 'compras' && $cotizacion->puedeAprobarCompras())
-                                                            <button type="button" 
-                                                                    class="btn btn-sm btn-success" 
-                                                                    onclick="aprobarNota({{ $cotizacion->id }}, 'compras')"
-                                                                    title="Aprobar">
-                                                                <i class="material-icons">check</i>
-                                                            </button>
-                                                        @endif
-                                                        @if($tipoAprobacion === 'picking' && ($cotizacion->puedeAprobarPicking() || $cotizacion->estado_aprobacion === 'pendiente_picking'))
-                                                            <button type="button" 
-                                                                    class="btn btn-sm btn-success" 
-                                                                    onclick="aprobarNota({{ $cotizacion->id }}, 'picking')"
-                                                                    title="Aprobar">
-                                                                <i class="material-icons">check</i>
-                                                            </button>
-                                                        @endif
-                                                        <button type="button" 
-                                                                class="btn btn-sm btn-danger" 
-                                                                onclick="rechazarNota({{ $cotizacion->id }})"
-                                                                title="Rechazar">
-                                                            <i class="material-icons">close</i>
-                                                        </button>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -231,79 +201,6 @@
     </div>
 </div>
 
-<!-- Modal de Aprobación -->
-<div class="modal fade" id="modalAprobacion" tabindex="-1" role="dialog">
-    <div class="modal-dialog" role="document">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="modalAprobacionTitle">Aprobar Nota de Venta</h5>
-                <button type="button" class="close" data-dismiss="modal">
-                    <span>&times;</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <form id="formAprobacion">
-                    <input type="hidden" id="notaId" name="nota_id">
-                    <input type="hidden" id="tipoAprobacion" name="tipo_aprobacion">
-                    
-                    <div class="form-group">
-                        <label for="comentarios">Comentarios (opcional)</label>
-                        <textarea id="comentarios" name="comentarios" class="form-control" rows="3" 
-                                  placeholder="Agregar comentarios sobre la aprobación..."></textarea>
-                    </div>
-                    
-                    <div id="validacionStock" style="display: none;">
-                        <div class="form-group">
-                            <div class="custom-control custom-checkbox">
-                                <input type="checkbox" class="custom-control-input" id="validarStockReal" name="validar_stock_real" value="1" checked>
-                                <label class="custom-control-label" for="validarStockReal">
-                                    Validar stock real antes de aprobar
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-success" onclick="confirmarAprobacion()">
-                    <i class="material-icons">check</i> Aprobar
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Modal de Rechazo -->
-<div class="modal fade" id="modalRechazo" tabindex="-1" role="dialog">
-    <div class="modal-dialog" role="document">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Rechazar Nota de Venta</h5>
-                <button type="button" class="close" data-dismiss="modal">
-                    <span>&times;</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <form id="formRechazo">
-                    <input type="hidden" id="notaIdRechazo" name="nota_id">
-                    
-                    <div class="form-group">
-                        <label for="motivoRechazo">Motivo del Rechazo *</label>
-                        <textarea id="motivoRechazo" name="motivo" class="form-control" rows="3" 
-                                  placeholder="Especificar el motivo del rechazo..." required></textarea>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-danger" onclick="confirmarRechazo()">
-                    <i class="material-icons">close</i> Rechazar
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
 
 @endsection
 
@@ -346,106 +243,6 @@ function aplicarFiltros() {
     });
 }
 
-// Aprobar nota de venta
-function aprobarNota(notaId, tipo) {
-    document.getElementById('notaId').value = notaId;
-    document.getElementById('tipoAprobacion').value = tipo;
-    document.getElementById('modalAprobacionTitle').textContent = `Aprobar Nota de Venta #${notaId}`;
-    
-    // Mostrar validación de stock solo para picking
-    if (tipo === 'picking') {
-        document.getElementById('validacionStock').style.display = 'block';
-    } else {
-        document.getElementById('validacionStock').style.display = 'none';
-    }
-    
-    $('#modalAprobacion').modal('show');
-}
-
-// Confirmar aprobación
-function confirmarAprobacion() {
-    const notaId = document.getElementById('notaId').value;
-    const tipo = document.getElementById('tipoAprobacion').value;
-    const comentarios = document.getElementById('comentarios').value;
-    const validarStock = document.getElementById('validarStockReal').checked;
-    
-    let url = '';
-    let data = {};
-    
-    if (tipo === 'supervisor') {
-        url = `/aprobaciones/${notaId}/supervisor`;
-        data = { comentarios };
-    } else if (tipo === 'compras') {
-        url = `/aprobaciones/${notaId}/compras`;
-        data = { comentarios };
-    } else if (tipo === 'picking') {
-        url = `/aprobaciones/${notaId}/picking`;
-        data = { comentarios, validar_stock_real: validarStock };
-    }
-    
-    fetch(url, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-        },
-        body: JSON.stringify(data)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showNotification('success', 'Nota de venta aprobada exitosamente');
-            $('#modalAprobacion').modal('hide');
-            setTimeout(() => location.reload(), 1500);
-        } else {
-            showNotification('danger', data.error || 'Error al aprobar la nota de venta');
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showNotification('danger', 'Error al procesar la solicitud');
-    });
-}
-
-// Rechazar nota de venta
-function rechazarNota(notaId) {
-    document.getElementById('notaIdRechazo').value = notaId;
-    $('#modalRechazo').modal('show');
-}
-
-// Confirmar rechazo
-function confirmarRechazo() {
-    const notaId = document.getElementById('notaIdRechazo').value;
-    const motivo = document.getElementById('motivoRechazo').value;
-    
-    if (!motivo.trim()) {
-        showNotification('warning', 'Debe especificar un motivo para el rechazo');
-        return;
-    }
-    
-    fetch(`/aprobaciones/${notaId}/rechazar`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-        },
-        body: JSON.stringify({ motivo })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showNotification('success', 'Nota de venta rechazada exitosamente');
-            $('#modalRechazo').modal('hide');
-            setTimeout(() => location.reload(), 1500);
-        } else {
-            showNotification('danger', data.error || 'Error al rechazar la nota de venta');
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showNotification('danger', 'Error al procesar la solicitud');
-    });
-}
 
 // Mostrar notificación
 function showNotification(type, message) {

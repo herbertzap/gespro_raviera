@@ -19,12 +19,12 @@
                                 <a href="{{ route('dashboard') }}" class="btn btn-secondary">
                                     <i class="material-icons">arrow_back</i> Volver
                                 </a>
-                                @if($validacion['puede'])
+                                @if($validacion['puede'] && auth()->user()->hasRole('Vendedor'))
                                     <a href="{{ url('/cotizacion/nueva?cliente=' . $cliente->codigo_cliente . '&nombre=' . urlencode($cliente->nombre_cliente)) }}" 
                                        class="btn btn-primary">
                                         <i class="material-icons">add_shopping_cart</i> Nueva Nota De Venta
                                     </a>
-                                @else
+                                @elseif(!$validacion['puede'])
                                     <button class="btn btn-danger" disabled title="{{ $validacion['motivo'] }}">
                                         <i class="material-icons">block</i> Bloqueado
                                     </button>
@@ -300,12 +300,72 @@
             </div>
         </div>
 
-        <!-- Notas de Venta Pendientes -->
+        <!-- NVV del Sistema -->
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header card-header-info">
+                        <h4 class="card-title">NVV del Sistema</h4>
+                        <p class="card-category">Notas de venta creadas en el sistema</p>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead class="text-info">
+                                    <tr>
+                                        <th>Número</th>
+                                        <th>Fecha Creación</th>
+                                        <th>Vendedor</th>
+                                        <th>Productos</th>
+                                        <th>Valor Total</th>
+                                        <th>Estado</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @forelse($nvvSistema as $nvv)
+                                    <tr>
+                                        <td>
+                                            <strong>{{ $nvv['numero'] }}</strong>
+                                        </td>
+                                        <td>{{ $nvv['fecha_creacion'] }}</td>
+                                        <td>{{ $nvv['vendedor'] }}</td>
+                                        <td>
+                                            <span class="badge badge-primary">{{ $nvv['total_productos'] }} productos</span>
+                                        </td>
+                                        <td>${{ number_format($nvv['valor_total'], 0) }}</td>
+                                        <td>
+                                            @if($nvv['estado'] == 'Ingresada')
+                                                <span class="badge badge-success">{{ $nvv['estado'] }}</span>
+                                            @else
+                                                <span class="badge badge-warning">{{ $nvv['estado'] }}</span>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            <a href="{{ route('aprobaciones.show', $nvv['id']) }}" class="btn btn-sm btn-info">
+                                                <i class="material-icons">visibility</i> Ver
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    @empty
+                                    <tr>
+                                        <td colspan="7" class="text-center">No hay NVV creadas en el sistema</td>
+                                    </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notas de Venta Pendientes (SQL Server) -->
         <div class="row">
             <div class="col-md-12">
                 <div class="card">
                     <div class="card-header card-header-warning">
-                        <h4 class="card-title">Notas de Venta Pendientes</h4>
+                        <h4 class="card-title">Notas de Venta Pendientes (SQL Server)</h4>
                         <p class="card-category">Notas de venta pendientes de facturación</p>
                     </div>
                     <div class="card-body">
@@ -403,11 +463,29 @@
 
             <div class="col-md-3">
                 <div class="card card-stats">
+                    <div class="card-header card-header-info card-header-icon">
+                        <div class="card-icon">
+                            <i class="material-icons">shopping_cart</i>
+                        </div>
+                        <p class="card-category">NVV del Sistema</p>
+                        <h3 class="card-title">{{ count($nvvSistema) }}</h3>
+                    </div>
+                    <div class="card-footer">
+                        <div class="stats">
+                            <i class="material-icons text-info">info</i>
+                            NVV creadas en el sistema
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card card-stats">
                     <div class="card-header card-header-warning card-header-icon">
                         <div class="card-icon">
                             <i class="material-icons">pending_actions</i>
                         </div>
-                        <p class="card-category">Notas de Venta</p>
+                        <p class="card-category">NVV SQL Server</p>
                         <h3 class="card-title">{{ count($notasVenta) }}</h3>
                     </div>
                     <div class="card-footer">
@@ -421,7 +499,7 @@
 
             <div class="col-md-3">
                 <div class="card card-stats">
-                    <div class="card-header card-header-info card-header-icon">
+                    <div class="card-header card-header-success card-header-icon">
                         <div class="card-icon">
                             <i class="material-icons">attach_money</i>
                         </div>
@@ -430,7 +508,7 @@
                     </div>
                     <div class="card-footer">
                         <div class="stats">
-                            <i class="material-icons text-info">trending_up</i>
+                            <i class="material-icons text-success">trending_up</i>
                             Saldo total pendiente
                         </div>
                     </div>
@@ -439,7 +517,7 @@
 
             <div class="col-md-3">
                 <div class="card card-stats">
-                    <div class="card-header card-header-success card-header-icon">
+                    <div class="card-header card-header-primary card-header-icon">
                         <div class="card-icon">
                             <i class="material-icons">shopping_cart</i>
                         </div>
@@ -448,7 +526,7 @@
                     </div>
                     <div class="card-footer">
                         <div class="stats">
-                            <i class="material-icons text-success">trending_up</i>
+                            <i class="material-icons text-primary">trending_up</i>
                             Ventas últimos 3 meses
                         </div>
                     </div>

@@ -1837,7 +1837,7 @@ class CobranzaService
             if ($busqueda && strlen($busqueda) < 4) {
                 throw new \Exception('La búsqueda debe tener al menos 4 caracteres');
             }
-
+            
             $busqueda = strtoupper(trim($busqueda));
             
             // Búsqueda simple y eficiente usando índices
@@ -1892,138 +1892,82 @@ class CobranzaService
     public function buscarProductosSQLServer($busqueda, $limit = 20, $listaPrecios = '01')
     {
         try {
-            $host = env('SQLSRV_EXTERNAL_HOST');
-            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE');
-            $username = env('SQLSRV_EXTERNAL_USERNAME');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD');
-            
-            // Buscar productos en SQL Server
-            $whereClause = "WHERE MAEPR.TIPR != 'D'"; // Excluir productos descontinuados
-            
-            // Filtrar productos con precio mayor a 0 en la lista especificada
-            $whereClause .= " AND (ISNULL(TABPRE.PP01UD, 0) > 0 OR ISNULL(TABPRE.PP02UD, 0) > 0)";
-            
-            if ($busqueda && strlen($busqueda) >= 4) {
-                $busqueda = strtoupper(addslashes($busqueda)); // Convertir a mayúscula y escapar caracteres especiales
-                
-                // Búsqueda más flexible: inicio, medio o final
-                $whereClause .= " AND (
-                    MAEPR.KOPR LIKE '{$busqueda}%' OR 
-                    MAEPR.KOPR LIKE '%{$busqueda}%' OR 
-                    MAEPR.NOKOPR LIKE '{$busqueda}%' OR 
-                    MAEPR.NOKOPR LIKE '%{$busqueda}%' OR
-                    MAEPR.NOKOPR LIKE '% {$busqueda}%'
-                )";
-            } elseif ($busqueda && strlen($busqueda) < 4) {
-                throw new \Exception('La búsqueda debe tener al menos 4 caracteres');
-            }
-            
-            // Normalizar lista de precios para obtener precios públicos
-            $listaPreciosNormalizada = $this->normalizarListaPrecios($listaPrecios);
-            \Log::info('Lista de precios original: ' . $listaPrecios . ', normalizada: ' . $listaPreciosNormalizada);
-            
-            $query = "
-                SELECT TOP {$limit} 
-                    MAEPR.KOPR AS CODIGO_PRODUCTO,
-                    MAEPR.NOKOPR AS NOMBRE_PRODUCTO,
-                    MAEPR.UD01PR AS UNIDAD_MEDIDA,
-                    MAEPR.RLUD AS RELACION_UNIDADES,
-                    MAEPR.DIVISIBLE AS DIVISIBLE_UD1,
-                    MAEPR.DIVISIBLE2 AS DIVISIBLE_UD2,
-                    ISNULL(MAEST.STFI1, 0) AS STOCK_FISICO,
-                    ISNULL(MAEST.STOCNV1, 0) AS STOCK_COMPROMETIDO_SQL,
-                    (ISNULL(MAEST.STFI1, 0) - ISNULL(MAEST.STOCNV1, 0)) AS STOCK_DISPONIBLE,
-                    ISNULL(TABBO.NOKOBO, 'Bodega Principal') AS NOMBRE_BODEGA,
-                    ISNULL(MAEST.KOBO, '01') AS BODEGA_ID,
-                    MAEPR.TIPR AS TIPO_PRODUCTO,
-                    ISNULL(TABPRE.PP01UD, 0) AS PRECIO_UD1,
-                    ISNULL(TABPRE.PP02UD, 0) AS PRECIO_UD2
-                FROM MAEPR 
-                LEFT JOIN MAEST ON MAEPR.KOPR = MAEST.KOPR AND MAEST.KOBO = '01'
-                LEFT JOIN TABBO ON MAEST.KOBO = TABBO.KOBO
-                LEFT JOIN TABPRE ON MAEPR.KOPR = TABPRE.KOPR AND TABPRE.KOLT = '{$listaPreciosNormalizada}'
-                {$whereClause}
-                ORDER BY MAEPR.NOKOPR
-            ";
-            
-            \Log::info('Query productos: ' . $query);
-            
-            // Crear archivo temporal con la consulta en una sola línea
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            $singleLineQuery = str_replace(["\n", "\r"], ' ', $query);
-            file_put_contents($tempFile, $singleLineQuery . "\ngo\nquit");
-            
-            // Ejecutar consulta usando tsql
-            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-            $output = shell_exec($command);
-            
-            // Limpiar archivo temporal
-            unlink($tempFile);
-            
-            \Log::info('Output productos: ' . substr($output, 0, 500) . '...');
-            
-            if (!$output || str_contains($output, 'error')) {
-                throw new \Exception('Error ejecutando consulta tsql: ' . $output);
-            }
-            
-            // Procesar la salida
-            $lines = explode("\n", $output);
-            $productos = [];
-            $inDataSection = false;
-            $headerFound = false;
-            
-            foreach ($lines as $lineNumber => $line) {
-                $line = trim($line);
-                
-                // Saltar líneas vacías o de configuración
-                if (empty($line) || 
-                    strpos($line, 'locale') !== false || 
-                    strpos($line, 'Setting') !== false || 
-                    strpos($line, 'Msg ') !== false || 
-                    strpos($line, 'Warning:') !== false ||
-                    preg_match('/^\d+>$/', $line) || // Líneas como "1>", "2>", etc.
-                    preg_match('/^\d+>\s+\d+>\s+\d+>/', $line)) { // Líneas con múltiples números como "1> 2> 3> 4> 5>..."
-                    continue;
-                }
-                
-                // Detectar el header de la tabla (puede tener números al inicio)
-                if (preg_match('/.*CODIGO_PRODUCTO.*NOMBRE_PRODUCTO/', $line)) {
-                    $headerFound = true;
-                    $inDataSection = true;
-                    \Log::info('Header encontrado en línea ' . $lineNumber . ': ' . $line);
-                    continue;
-                }
-                
-                // Debug: mostrar líneas que contienen CODIGO_PRODUCTO
-                if (strpos($line, 'CODIGO_PRODUCTO') !== false) {
-                    \Log::info('Línea con CODIGO_PRODUCTO encontrada en línea ' . $lineNumber . ': ' . $line);
-                }
-                
-                // Detectar cuando terminamos la sección de datos
-                if (strpos($line, 'rows affected') !== false) {
-                    $inDataSection = false;
-                    \Log::info('Fin de datos en línea ' . $lineNumber);
+            // Usar la tabla local de MySQL en lugar de SQL Server
+            $query = \DB::table('productos')
+                ->where('activo', true)
+                ->where('TIPR', '!=', 'OCU') // Excluir productos ocultos
+                ->where(function($q) use ($busqueda) {
+                    if ($busqueda && strlen($busqueda) >= 4) {
+                        $busquedaUpper = strtoupper($busqueda);
+                        $q->where('KOPR', 'LIKE', "{$busquedaUpper}%")
+                          ->orWhere('KOPR', 'LIKE', "%{$busquedaUpper}%")
+                          ->orWhere('NOKOPR', 'LIKE', "{$busquedaUpper}%")
+                          ->orWhere('NOKOPR', 'LIKE', "%{$busquedaUpper}%")
+                          ->orWhere('NOKOPR', 'LIKE', "% {$busquedaUpper}%");
+                    } elseif ($busqueda && strlen($busqueda) < 4) {
+                        throw new \Exception('La búsqueda debe tener al menos 4 caracteres');
+                    }
+                })
+                ->where(function($q) use ($listaPrecios) {
+                    // Filtrar productos con precio mayor a 0 en la lista especificada
+                    switch ($listaPrecios) {
+                        case '01P':
+                        case '01':
+                            $q->where(function($subQ) {
+                                $subQ->where('precio_01p', '>', 0)
+                                     ->orWhere('precio_01p_ud2', '>', 0);
+                            });
+                            break;
+                        case '02P':
+                        case '02':
+                            $q->where(function($subQ) {
+                                $subQ->where('precio_02p', '>', 0)
+                                     ->orWhere('precio_02p_ud2', '>', 0);
+                            });
+                            break;
+                        case '03P':
+                        case '03':
+                            $q->where(function($subQ) {
+                                $subQ->where('precio_03p', '>', 0)
+                                     ->orWhere('precio_03p_ud2', '>', 0);
+                            });
                     break;
                 }
-                
-                // Si estamos en la sección de datos y la línea no está vacía
-                if ($inDataSection && $headerFound && !empty($line)) {
-                    \Log::info('Procesando línea de datos ' . $lineNumber . ': ' . substr($line, 0, 100) . '...');
-                    
-                    // Procesar cada línea individualmente
-                    $producto = $this->procesarLineaProducto($line, $lineNumber);
-                    
-                    if ($producto) {
-                        $productos[] = $producto;
-                        \Log::info('Producto procesado: ' . $producto['CODIGO_PRODUCTO']);
-                    }
-                }
+                })
+                ->orderBy('NOKOPR')
+                ->limit($limit);
+
+            $productos = $query->get();
+            $listaPreciosNormalizada = $this->normalizarListaPrecios($listaPrecios);
+            
+            \Log::info('Lista de precios original: ' . $listaPrecios . ', normalizada: ' . $listaPreciosNormalizada);
+            \Log::info('Productos encontrados en MySQL: ' . $productos->count());
+            
+            // Convertir los productos a formato compatible con el código existente
+            $resultado = [];
+            foreach ($productos as $producto) {
+                $resultado[] = [
+                    'CODIGO_PRODUCTO' => $producto->KOPR,
+                    'NOMBRE_PRODUCTO' => $producto->NOKOPR,
+                    'UNIDAD_MEDIDA' => $producto->UD01PR ?? 'UN',
+                    'RELACION_UNIDADES' => $producto->RLUD ?? 1.0,
+                    'DIVISIBLE_UD1' => $producto->DIVISIBLE ? 'S' : 'N',
+                    'DIVISIBLE_UD2' => $producto->DIVISIBLE2 ? 'S' : 'N',
+                    'STOCK_FISICO' => $producto->stock_fisico ?? 0,
+                    'STOCK_COMPROMETIDO_SQL' => $producto->stock_comprometido ?? 0,
+                    'STOCK_DISPONIBLE' => $producto->stock_disponible ?? 0,
+                    'NOMBRE_BODEGA' => 'Bodega Principal',
+                    'BODEGA_ID' => '01',
+                    'TIPO_PRODUCTO' => $producto->TIPR ?? '',
+                    'PRECIO_UD1' => $producto->precio_01p ?? 0,
+                    'PRECIO_UD2' => $producto->precio_01p_ud2 ?? 0,
+                    'DESCUENTO_MAXIMO' => $producto->descuento_maximo_01p ?? 0
+                ];
             }
             
-            \Log::info('Total de productos procesados: ' . count($productos));
+            \Log::info('Total de productos encontrados: ' . count($resultado));
             
-            return $productos;
+            return $resultado;
             
         } catch (\Exception $e) {
             \Log::error('Error buscando productos: ' . $e->getMessage());
@@ -2094,40 +2038,43 @@ class CobranzaService
                 \Log::info("  -{$i}: " . ($fields[$totalFields - $i] ?? 'N/A'));
             }
             
-            // Los últimos campos son: BODEGA_ID, TIPO_PRODUCTO, PRECIO_UD1, PRECIO_UD2
-            if ($totalFields >= 4) {
-                $precioUd2 = (float)($fields[$totalFields - 1] ?? 0);
-                $precioUd1 = (float)($fields[$totalFields - 2] ?? 0);
-                $tipoProducto = $fields[$totalFields - 3] ?? '';
-                $bodegaId = $fields[$totalFields - 4] ?? '01';
+            // Los últimos campos son: DESCUENTO_MAXIMO, PRECIO_UD2, PRECIO_UD1, TIPO_PRODUCTO, BODEGA_ID
+            if ($totalFields >= 5) {
+                $descuentoMaximo = (float)($fields[$totalFields - 1] ?? 0);
+                $precioUd2 = (float)($fields[$totalFields - 2] ?? 0);
+                $precioUd1 = (float)($fields[$totalFields - 3] ?? 0);
+                $tipoProducto = $fields[$totalFields - 4] ?? '';
+                $bodegaId = $fields[$totalFields - 5] ?? '01';
+            } else {
+                $descuentoMaximo = 0.0;
             }
             
-            // Los campos de stock están antes de la bodega
-            if ($totalFields >= 8) {
-                $stockDisponible = (float)($fields[$totalFields - 7] ?? 0);
-                $stockComprometidoSql = (float)($fields[$totalFields - 8] ?? 0);
-                $stockFisico = (float)($fields[$totalFields - 9] ?? 0);
+            // Los campos de stock están antes de la bodega (ajustados por el nuevo campo DESCUENTO_MAXIMO)
+            if ($totalFields >= 9) {
+                $stockDisponible = (float)($fields[$totalFields - 8] ?? 0);
+                $stockComprometidoSql = (float)($fields[$totalFields - 9] ?? 0);
+                $stockFisico = (float)($fields[$totalFields - 10] ?? 0);
             }
             
             // Los campos de divisibilidad están antes del stock
-            if ($totalFields >= 10) {
-                $divisibleUd2 = $fields[$totalFields - 10] ?? 'N';
-                $divisibleUd1 = $fields[$totalFields - 11] ?? 'N';
+            if ($totalFields >= 11) {
+                $divisibleUd2 = $fields[$totalFields - 11] ?? 'N';
+                $divisibleUd1 = $fields[$totalFields - 12] ?? 'N';
             }
             
             // El campo de relación está antes de la divisibilidad
-            if ($totalFields >= 12) {
-                $relacionUnidades = (float)($fields[$totalFields - 12] ?? 1.0);
+            if ($totalFields >= 13) {
+                $relacionUnidades = (float)($fields[$totalFields - 13] ?? 1.0);
             }
             
             // La unidad de medida está antes de la relación
-            if ($totalFields >= 13) {
-                $unidadMedida = $fields[$totalFields - 13] ?? 'UN';
+            if ($totalFields >= 14) {
+                $unidadMedida = $fields[$totalFields - 14] ?? 'UN';
             }
             
-            // El nombre del producto está entre el código y la unidad
+            // El nombre del producto está entre el código y la unidad (ajustado por el nuevo campo)
             $nombreStart = 1;
-            $nombreEnd = $totalFields - 14; // Hasta antes de la unidad
+            $nombreEnd = $totalFields - 15; // Hasta antes de la unidad (ajustado)
             if ($nombreEnd >= $nombreStart) {
                 for ($i = $nombreStart; $i <= $nombreEnd; $i++) {
                     $nombreProducto .= ' ' . $fields[$i];
@@ -2166,6 +2113,7 @@ class CobranzaService
                 'TIPO_PRODUCTO' => $tipoProducto,
                 'PRECIO_UD1' => $precioUd1 ?: 0.0,
                 'PRECIO_UD2' => $precioUd2 ?: 0.0,
+                'DESCUENTO_MAXIMO' => $descuentoMaximo ?: 0.0,
                 'CATEGORIA' => '', // Campo no disponible en la base de datos
                 'MARCA' => '' // Campo no disponible en la base de datos
             ];
@@ -2969,27 +2917,27 @@ class CobranzaService
             }
             
             // Extraer campos usando posiciones fijas basadas en la salida de tsql
-            $td = trim(substr($line, 0, 8));
-            $num = trim(substr($line, 8, 12));
-            $emis_fcv = trim(substr($line, 20, 25));
-            $cod_cli = trim(substr($line, 45, 10));
-            $clie = trim(substr($line, 55, 30));
-            $vendedor_nombre = trim(substr($line, 85, 30));
-            $kofu = trim(substr($line, 115, 8));
-            $region = trim(substr($line, 123, 25));
-            $comuna = trim(substr($line, 148, 15));
-            $total_cantidad = (int)trim(substr($line, 163, 8));
-            $total_facturado = (int)trim(substr($line, 171, 8));
-            $total_pendiente = (int)trim(substr($line, 179, 8));
-            $total_valor = (float)trim(substr($line, 187, 10));
-            $total_valor_pendiente = (float)trim(substr($line, 197, 10));
-            $dias = (int)trim(substr($line, 207, 8));
-            $rango = trim(substr($line, 215, 20));
-            $cantidad_productos = (int)trim(substr($line, 235, 8));
-            $estado_facturacion = trim(substr($line, 243, 15));
-            $numero_factura = trim(substr($line, 258, 10));
-            $fecha_facturacion = trim(substr($line, 268, 20));
-            
+                    $td = trim(substr($line, 0, 8));
+                    $num = trim(substr($line, 8, 12));
+                    $emis_fcv = trim(substr($line, 20, 25));
+                    $cod_cli = trim(substr($line, 45, 10));
+                    $clie = trim(substr($line, 55, 30));
+                    $vendedor_nombre = trim(substr($line, 85, 30));
+                    $kofu = trim(substr($line, 115, 8));
+                    $region = trim(substr($line, 123, 25));
+                    $comuna = trim(substr($line, 148, 15));
+                    $total_cantidad = (int)trim(substr($line, 163, 8));
+                    $total_facturado = (int)trim(substr($line, 171, 8));
+                    $total_pendiente = (int)trim(substr($line, 179, 8));
+                    $total_valor = (float)trim(substr($line, 187, 10));
+                    $total_valor_pendiente = (float)trim(substr($line, 197, 10));
+                    $dias = (int)trim(substr($line, 207, 8));
+                    $rango = trim(substr($line, 215, 20));
+                    $cantidad_productos = (int)trim(substr($line, 235, 8));
+                    $estado_facturacion = trim(substr($line, 243, 15));
+                    $numero_factura = trim(substr($line, 258, 10));
+                    $fecha_facturacion = trim(substr($line, 268, 20));
+                    
             // Validar que el tipo de documento sea NVV
             if (empty($td) || $td !== 'NVV') {
                 return null;
@@ -2997,27 +2945,27 @@ class CobranzaService
             
             // Crear objeto de datos de NVV
             $nvvData = [
-                'TD' => $td,
-                'NUM' => $num,
+                            'TD' => $td,
+                            'NUM' => $num,
                 'EMIS_FCV' => $emis_fcv ?: date('Y-m-d'),
-                'COD_CLI' => $cod_cli,
-                'CLIE' => $this->convertToUtf8($clie),
-                'VENDEDOR_NOMBRE' => $this->convertToUtf8($vendedor_nombre),
-                'KOFU' => $kofu,
-                'REGION' => $this->convertToUtf8($region),
-                'COMUNA' => $this->convertToUtf8($comuna),
-                'TOTAL_CANTIDAD' => $total_cantidad,
-                'TOTAL_FACTURADO' => $total_facturado,
-                'TOTAL_PENDIENTE' => $total_pendiente,
-                'TOTAL_VALOR' => $total_valor,
-                'TOTAL_VALOR_PENDIENTE' => $total_valor_pendiente,
-                'DIAS' => $dias,
+                            'COD_CLI' => $cod_cli,
+                            'CLIE' => $this->convertToUtf8($clie),
+                            'VENDEDOR_NOMBRE' => $this->convertToUtf8($vendedor_nombre),
+                            'KOFU' => $kofu,
+                            'REGION' => $this->convertToUtf8($region),
+                            'COMUNA' => $this->convertToUtf8($comuna),
+                            'TOTAL_CANTIDAD' => $total_cantidad,
+                            'TOTAL_FACTURADO' => $total_facturado,
+                            'TOTAL_PENDIENTE' => $total_pendiente,
+                            'TOTAL_VALOR' => $total_valor,
+                            'TOTAL_VALOR_PENDIENTE' => $total_valor_pendiente,
+                            'DIAS' => $dias,
                 'Rango' => $this->convertToUtf8($rango) ?: $this->getRangoDias($dias),
-                'CANTIDAD_PRODUCTOS' => $cantidad_productos,
+                            'CANTIDAD_PRODUCTOS' => $cantidad_productos,
                 'ESTADO_FACTURACION' => $this->convertToUtf8($estado_facturacion) ?: 'PENDIENTE',
-                'NUMERO_FACTURA' => $numero_factura,
-                'FECHA_FACTURACION' => $fecha_facturacion
-            ];
+                            'NUMERO_FACTURA' => $numero_factura,
+                            'FECHA_FACTURACION' => $fecha_facturacion
+                        ];
             
             \Log::info('NVV extraída correctamente: ' . $nvvData['TD'] . '-' . $nvvData['NUM'] . ' - ' . $nvvData['CLIE']);
             
@@ -4135,6 +4083,120 @@ class CobranzaService
         }
     }
 
+
+    /**
+     * Obtener relación FCV con NVV asociada
+     */
+    public function getRelacionFcvNvv($tipoDoc, $numeroDoc)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            // Consulta para obtener relación FCV con NVV (ambos en la misma tabla MAEDDO)
+            $query = "
+                SELECT 
+                    CAST(dbo.MAEDDO.TIDO AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEDDO.NUDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.FEEMLI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.ENDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEEN.NOKOEN AS VARCHAR(100)) + '|' +
+                    CAST(dbo.MAEDDO.KOPRCT AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.CAPRCO1 AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.NOKOPR AS VARCHAR(100)) + '|' +
+                    CAST(MAEDDO_1.TIDO AS VARCHAR(10)) + '|' +
+                    CAST(MAEDDO_1.NUDO AS VARCHAR(20)) + '|' +
+                    CAST(MAEDDO_1.CAPRCO1 AS VARCHAR(20)) + '|' +
+                    CAST(MAEDDO_2.TIDO AS VARCHAR(10)) + '|' +
+                    CAST(MAEDDO_2.NUDO AS VARCHAR(20)) + '|' +
+                    CAST(MAEDDO_2.CAPRCO1 AS VARCHAR(20)) + '|' +
+                    CAST(MAEDDO_2.CAPRCO1 - MAEDDO_2.CAPRAD1 - MAEDDO_2.CAPREX1 AS VARCHAR(20)) AS DATOS
+                FROM dbo.MAEDDO AS MAEDDO_2 
+                INNER JOIN dbo.MAEDDO AS MAEDDO_1 ON MAEDDO_2.IDMAEDDO = MAEDDO_1.IDRST 
+                FULL OUTER JOIN dbo.MAEDDO 
+                INNER JOIN dbo.MAEEN ON dbo.MAEDDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEDDO.SUENDO = dbo.MAEEN.SUEN ON MAEDDO_1.IDMAEDDO = dbo.MAEDDO.IDRST
+                WHERE (dbo.MAEDDO.TIDO = '{$tipoDoc}') 
+                AND (dbo.MAEDDO.NUDO = '{$numeroDoc}')
+                AND (MAEDDO_2.FEEMLI > '31-12-2023')
+            ";
+            
+            // Crear archivo temporal con la consulta
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            // Ejecutar consulta usando tsql
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+            
+            // Limpiar archivo temporal
+            unlink($tempFile);
+            
+            if (!$output || str_contains($output, 'error')) {
+                \Log::warning('Error obteniendo relación FCV-NVV: ' . $output);
+                return [];
+            }
+            
+            // Procesar la salida
+            $lines = explode("\n", $output);
+            $result = [];
+            $inDataSection = false;
+            $headerFound = false;
+            
+            foreach ($lines as $lineNumber => $line) {
+                $line = trim($line);
+                
+                // Saltar líneas vacías o de configuración
+                if (empty($line) || 
+                    strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || 
+                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'Warning:') !== false ||
+                    preg_match('/^\d+>$/', $line)) {
+                    continue;
+                }
+                
+                // Detectar el header de la tabla
+                if (strpos($line, 'DATOS') !== false) {
+                    $headerFound = true;
+                    $inDataSection = true;
+                    continue;
+                }
+                
+                // Procesar líneas de datos
+                if ($inDataSection && $headerFound && strpos($line, '|') !== false) {
+                    $fields = explode('|', $line);
+                    if (count($fields) >= 15) {
+                        $result[] = [
+                            'TIPO_FCV' => trim($fields[0]),
+                            'NUMERO_FCV' => trim($fields[1]),
+                            'FECHA_EMISION_FCV' => trim($fields[2]),
+                            'CODIGO_CLIENTE' => trim($fields[3]),
+                            'CLIENTE' => trim($fields[4]),
+                            'CODIGO_PRODUCTO' => trim($fields[5]),
+                            'CANTIDAD_FCV' => trim($fields[6]),
+                            'NOMBRE_PRODUCTO' => trim($fields[7]),
+                            'TIPO_NVV' => trim($fields[8]),
+                            'NUMERO_NVV' => trim($fields[9]),
+                            'CANTIDAD_NVV' => trim($fields[10]),
+                            'TIPO_FCV_ORIGEN' => trim($fields[11]),
+                            'NUMERO_FCV_ORIGEN' => trim($fields[12]),
+                            'CANTIDAD_FCV_ORIGEN' => trim($fields[13]),
+                            'PENDIENTE' => trim($fields[14])
+                        ];
+                    }
+                }
+            }
+            
+            return $result;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo relación FCV-NVV: ' . $e->getMessage());
+            return [];
+        }
+    }
 
     /**
      * Obtener listado de facturas ingresadas

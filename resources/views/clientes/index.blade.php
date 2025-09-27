@@ -36,21 +36,11 @@
 
                     <!-- Buscador de clientes -->
                     <div class="row mb-3">
-                        <div class="col-md-6">
+                        <div class="col-md-8 mx-auto">
                             <div class="input-group">
                                 <input type="text" id="buscarCliente" class="form-control" placeholder="Buscar cliente por código...">
                                 <div class="input-group-append">
                                     <button class="btn btn-primary" type="button" onclick="buscarCliente()">
-                                        <i class="fas fa-search"></i> Buscar
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="input-group">
-                                <input type="text" id="buscarPorNombre" class="form-control" placeholder="Buscar cliente por nombre...">
-                                <div class="input-group-append">
-                                    <button class="btn btn-secondary" type="button" onclick="buscarPorNombre()">
                                         <i class="fas fa-search"></i> Buscar
                                     </button>
                                 </div>
@@ -108,9 +98,9 @@
                                         @endif
                                     </td>
                                     <td>
-                                        <button class="btn btn-sm btn-primary" onclick="seleccionarCliente('{{ $cliente->codigo_cliente }}', '{{ $cliente->nombre_cliente }}')">
-                                            <i class="fas fa-check"></i> Seleccionar
-                                        </button>
+                                        <a href="{{ route('clientes.show', $cliente->codigo_cliente) }}" class="btn btn-sm btn-info">
+                                            <i class="fas fa-eye"></i> Ver Cliente
+                                        </a>
                                     </td>
                                 </tr>
                                 @empty
@@ -185,34 +175,6 @@ function buscarCliente() {
     });
 }
 
-function buscarPorNombre() {
-    const nombre = document.getElementById('buscarPorNombre').value.trim();
-    if (nombre.length < 3) {
-        alert('Por favor ingresa al menos 3 caracteres');
-        return;
-    }
-
-    fetch('/clientes/buscar-por-nombre', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-        },
-        body: JSON.stringify({ nombre: nombre })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            mostrarResultadosMultiples(data.clientes);
-        } else {
-            alert('Error: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Error al buscar clientes');
-    });
-}
 
 function mostrarResultadoCliente(cliente) {
     const contenido = `
@@ -245,9 +207,9 @@ function mostrarResultadoCliente(cliente) {
                 </div>
                 ${!cliente.puede_vender ? `<div class="alert alert-warning"><strong>Motivo:</strong> ${cliente.motivo_rechazo}</div>` : ''}
                 <div class="text-center">
-                    <button class="btn btn-primary" onclick="seleccionarCliente('${cliente.codigo}', '${cliente.nombre}')">
-                        <i class="fas fa-check"></i> Seleccionar Cliente
-                    </button>
+                    <a href="/clientes/${cliente.codigo}" class="btn btn-info">
+                        <i class="fas fa-eye"></i> Ver Cliente
+                    </a>
                 </div>
             </div>
         </div>
@@ -257,41 +219,6 @@ function mostrarResultadoCliente(cliente) {
     document.getElementById('resultadosBusqueda').style.display = 'block';
 }
 
-function mostrarResultadosMultiples(clientes) {
-    if (clientes.length === 0) {
-        document.getElementById('contenidoResultados').innerHTML = '<div class="alert alert-info">No se encontraron clientes</div>';
-        document.getElementById('resultadosBusqueda').style.display = 'block';
-        return;
-    }
-
-    let contenido = '<div class="table-responsive"><table class="table table-striped">';
-    contenido += '<thead><tr><th>Código</th><th>Nombre</th><th>Teléfono</th><th>Estado</th><th>Acción</th></tr></thead><tbody>';
-    
-    clientes.forEach(cliente => {
-        contenido += `
-            <tr>
-                <td>${cliente.codigo}</td>
-                <td>${cliente.nombre}</td>
-                <td>${cliente.telefono || 'N/A'}</td>
-                <td>
-                    <span class="badge badge-${cliente.bloqueado ? 'danger' : 'success'}">
-                        ${cliente.bloqueado ? 'Bloqueado' : 'Activo'}
-                    </span>
-                </td>
-                <td>
-                    <button class="btn btn-sm btn-primary" onclick="seleccionarCliente('${cliente.codigo}', '${cliente.nombre}')">
-                        <i class="fas fa-check"></i> Seleccionar
-                    </button>
-                </td>
-            </tr>
-        `;
-    });
-    
-    contenido += '</tbody></table></div>';
-    
-    document.getElementById('contenidoResultados').innerHTML = contenido;
-    document.getElementById('resultadosBusqueda').style.display = 'block';
-}
 
 function sincronizarClientes() {
     if (!confirm('¿Deseas sincronizar los clientes desde SQL Server? Esto puede tomar unos momentos.')) {

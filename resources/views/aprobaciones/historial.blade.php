@@ -88,20 +88,23 @@
                             <div class="timeline">
                                 @foreach($historial as $index => $registro)
                                 <div class="timeline-item">
-                                    <div class="timeline-marker bg-{{ $this->getEstadoColor($registro->estado_nuevo) }}"></div>
+                                    <div class="timeline-marker bg-{{ getEstadoColor($registro->estado_nuevo) }}"></div>
                                     <div class="timeline-content">
                                         <div class="card">
                                             <div class="card-header">
                                                 <div class="row align-items-center">
                                                     <div class="col-8">
                                                         <h6 class="card-title">
-                                                            <i class="material-icons">{{ $this->getEstadoIcono($registro->estado_nuevo) }}</i>
-                                                            {{ $this->getEstadoDescripcion($registro->estado_nuevo) }}
+                                                            <i class="material-icons">{{ getEstadoIcono($registro->estado_nuevo) }}</i>
+                                                            {{ getEstadoDescripcion($registro->estado_nuevo) }}
+                                                            @if(isset($registro->tipo_accion))
+                                                                <small class="text-muted">- {{ getTipoAccionDescripcion($registro->tipo_accion) }}</small>
+                                                            @endif
                                                         </h6>
                                                     </div>
                                                     <div class="col-4 text-right">
                                                         <small class="text-muted">
-                                                            {{ \Carbon\Carbon::parse($registro->fecha_cambio)->format('d/m/Y H:i:s') }}
+                                                            {{ \Carbon\Carbon::parse($registro->fecha_accion)->format('d/m/Y H:i:s') }}
                                                         </small>
                                                     </div>
                                                 </div>
@@ -111,13 +114,13 @@
                                                     <div class="col-md-6">
                                                         <p><strong>Usuario:</strong> {{ $registro->usuario_nombre ?? 'Sistema' }}</p>
                                                         <p><strong>Estado Anterior:</strong> 
-                                                            <span class="badge badge-{{ $this->getEstadoColor($registro->estado_anterior) }}">
-                                                                {{ $this->getEstadoDescripcion($registro->estado_anterior) }}
+                                                            <span class="badge badge-{{ getEstadoColor($registro->estado_anterior) }}">
+                                                                {{ getEstadoDescripcion($registro->estado_anterior) }}
                                                             </span>
                                                         </p>
                                                         <p><strong>Estado Nuevo:</strong> 
-                                                            <span class="badge badge-{{ $this->getEstadoColor($registro->estado_nuevo) }}">
-                                                                {{ $this->getEstadoDescripcion($registro->estado_nuevo) }}
+                                                            <span class="badge badge-{{ getEstadoColor($registro->estado_nuevo) }}">
+                                                                {{ getEstadoDescripcion($registro->estado_nuevo) }}
                                                             </span>
                                                         </p>
                                                     </div>
@@ -134,30 +137,94 @@
                                                     </div>
                                                 </div>
                                                 
-                                                @if($registro->detalles_cambio)
+                                                @if($registro->detalles_adicionales)
                                                 <div class="row mt-3">
                                                     <div class="col-12">
-                                                        <h6>Detalles del Cambio:</h6>
-                                                        <div class="table-responsive">
-                                                            <table class="table table-sm">
-                                                                <thead>
-                                                                    <tr>
-                                                                        <th>Campo</th>
-                                                                        <th>Valor Anterior</th>
-                                                                        <th>Valor Nuevo</th>
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody>
-                                                                    @foreach(json_decode($registro->detalles_cambio, true) as $campo => $valores)
-                                                                    <tr>
-                                                                        <td><strong>{{ $campo }}</strong></td>
-                                                                        <td>{{ $valores['anterior'] ?? 'N/A' }}</td>
-                                                                        <td>{{ $valores['nuevo'] ?? 'N/A' }}</td>
-                                                                    </tr>
-                                                                    @endforeach
-                                                                </tbody>
-                                                            </table>
-                                                        </div>
+                                                        <h6>Detalles Adicionales:</h6>
+                                                        @php
+                                                            $detalles = is_string($registro->detalles_adicionales) 
+                                                                ? json_decode($registro->detalles_adicionales, true) 
+                                                                : $registro->detalles_adicionales;
+                                                        @endphp
+                                                        
+                                                        @if(isset($detalles['tipo_modificacion']) && $detalles['tipo_modificacion'] === 'productos')
+                                                            <!-- Modificaciones de Productos -->
+                                                            <div class="alert alert-info">
+                                                                <h6><i class="material-icons">shopping_basket</i> Modificaciones de Productos</h6>
+                                                                
+                                                                @if(!empty($detalles['productos_agregados']))
+                                                                <div class="mb-2">
+                                                                    <strong class="text-success">Productos Agregados:</strong>
+                                                                    <ul class="mb-0">
+                                                                        @foreach($detalles['productos_agregados'] as $producto)
+                                                                        <li>{{ $producto['nombre'] ?? $producto['codigo'] }} (Cantidad: {{ $producto['cantidad'] ?? 'N/A' }})</li>
+                                                                        @endforeach
+                                                                    </ul>
+                                                                </div>
+                                                                @endif
+                                                                
+                                                                @if(!empty($detalles['productos_eliminados']))
+                                                                <div class="mb-2">
+                                                                    <strong class="text-danger">Productos Eliminados:</strong>
+                                                                    <ul class="mb-0">
+                                                                        @foreach($detalles['productos_eliminados'] as $producto)
+                                                                        <li>{{ $producto['nombre'] ?? $producto['codigo'] }} (Cantidad: {{ $producto['cantidad'] ?? 'N/A' }})</li>
+                                                                        @endforeach
+                                                                    </ul>
+                                                                </div>
+                                                                @endif
+                                                                
+                                                                @if(!empty($detalles['productos_modificados']))
+                                                                <div class="mb-2">
+                                                                    <strong class="text-warning">Productos Modificados:</strong>
+                                                                    <ul class="mb-0">
+                                                                        @foreach($detalles['productos_modificados'] as $producto)
+                                                                        <li>
+                                                                            {{ $producto['nombre'] ?? $producto['codigo'] }}
+                                                                            @if(isset($producto['cantidad_anterior']) && isset($producto['cantidad_nueva']))
+                                                                                (Cantidad: {{ $producto['cantidad_anterior'] }} → {{ $producto['cantidad_nueva'] }})
+                                                                            @endif
+                                                                        </li>
+                                                                        @endforeach
+                                                                    </ul>
+                                                                </div>
+                                                                @endif
+                                                            </div>
+                                                        @elseif(isset($detalles['total']) || isset($detalles['productos_count']))
+                                                            <!-- Información de Creación -->
+                                                            <div class="alert alert-info">
+                                                                <h6><i class="material-icons">info</i> Información de Creación</h6>
+                                                                @if(isset($detalles['total']))
+                                                                <p><strong>Total Inicial:</strong> ${{ number_format($detalles['total'], 0) }}</p>
+                                                                @endif
+                                                                @if(isset($detalles['productos_count']))
+                                                                <p><strong>Productos Iniciales:</strong> {{ $detalles['productos_count'] }}</p>
+                                                                @endif
+                                                                @if(isset($detalles['cliente']))
+                                                                <p><strong>Cliente:</strong> {{ $detalles['cliente'] }}</p>
+                                                                @endif
+                                                            </div>
+                                                        @else
+                                                            <!-- Detalles Generales -->
+                                                            <div class="table-responsive">
+                                                                <table class="table table-sm">
+                                                                    <thead>
+                                                                        <tr>
+                                                                            <th>Campo</th>
+                                                                            <th>Valor</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        @foreach($detalles as $campo => $valor)
+                                                                        <tr>
+                                                                            <td><strong>{{ ucfirst(str_replace('_', ' ', $campo)) }}</strong></td>
+                                                                            <td>{{ is_array($valor) ? json_encode($valor) : $valor }}</td>
+                                                                        </tr>
+                                                                        @endforeach
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        @endif
                                                     </div>
                                                 </div>
                                                 @endif
@@ -230,34 +297,52 @@
 @php
     function getEstadoColor($estado) {
         switch($estado) {
+            case 'creada': return 'info';
             case 'pendiente': return 'warning';
             case 'aprobada': return 'success';
             case 'rechazada': return 'danger';
             case 'en_proceso': return 'info';
             case 'completada': return 'primary';
+            case 'modificada': return 'secondary';
             default: return 'secondary';
         }
     }
 
     function getEstadoIcono($estado) {
         switch($estado) {
+            case 'creada': return 'add_circle';
             case 'pendiente': return 'schedule';
             case 'aprobada': return 'check_circle';
             case 'rechazada': return 'cancel';
             case 'en_proceso': return 'play_circle';
             case 'completada': return 'done_all';
+            case 'modificada': return 'edit';
             default: return 'help';
         }
     }
 
     function getEstadoDescripcion($estado) {
         switch($estado) {
+            case 'creada': return 'NVV Creada';
             case 'pendiente': return 'Pendiente';
             case 'aprobada': return 'Aprobada';
             case 'rechazada': return 'Rechazada';
             case 'en_proceso': return 'En Proceso';
             case 'completada': return 'Completada';
+            case 'modificada': return 'Modificada';
             default: return ucfirst($estado);
+        }
+    }
+
+    function getTipoAccionDescripcion($tipoAccion) {
+        switch($tipoAccion) {
+            case 'creacion': return 'Creación de NVV';
+            case 'aprobacion': return 'Aprobación';
+            case 'rechazo': return 'Rechazo';
+            case 'modificacion_productos': return 'Modificación de Productos';
+            case 'separar_productos_multiples': return 'Separación de Productos';
+            case 'creada_por_separacion_stock': return 'NVV Creada por Separación';
+            default: return ucfirst(str_replace('_', ' ', $tipoAccion));
         }
     }
 @endphp

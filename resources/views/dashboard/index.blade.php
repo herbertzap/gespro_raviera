@@ -114,6 +114,24 @@
                     </div>
                 </div>
 
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-danger card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">warning</i>
+                            </div>
+                            <p class="card-category">Cheques Protestados</p>
+                            <h3 class="card-title">${{ number_format($resumenCobranza['CHEQUES_PROTESTADOS'] ?? 0, 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-danger">block</i>
+                                <a href="{{ route('cobranza.index', ['cheques_protestados' => 'si']) }}">Ver clientes</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 @if(in_array($tipoUsuario, ['Super Admin', 'Supervisor', 'Compras', 'Picking']))
                     <!-- NVV Pendientes -->
                     <div class="col-lg-3 col-md-6 col-sm-6">

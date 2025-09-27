@@ -31,7 +31,7 @@ class ClienteController extends Controller
             $clientes = Cliente::getClientesActivosPorVendedor($user->codigo_vendedor);
         }
         
-        return view('clientes.index', compact('clientes'));
+        return view('clientes.index', compact('clientes'))->with('pageSlug', 'clientes');
     }
 
     public function buscar(Request $request)
@@ -44,7 +44,9 @@ class ClienteController extends Controller
         $user = auth()->user();
 
         // PRIMERO: Buscar en base de datos local
-        $cliente = Cliente::buscarPorCodigo($codigoCliente, $user->codigo_vendedor);
+        // Si es Supervisor, puede buscar cualquier cliente; si es Vendedor, solo los suyos
+        $codigoVendedor = ($user->hasRole('Supervisor') || $user->hasRole('Super Admin')) ? null : $user->codigo_vendedor;
+        $cliente = Cliente::buscarPorCodigo($codigoCliente, $codigoVendedor);
         
         if ($cliente) {
             // Obtener información completa (sincroniza si es necesario)
@@ -86,8 +88,8 @@ class ClienteController extends Controller
             ]);
         }
 
-        // Verificar que el cliente pertenece al vendedor
-        if ($clienteExterno['CODIGO_VENDEDOR'] !== $user->codigo_vendedor) {
+        // Verificar que el cliente pertenece al vendedor (solo para vendedores, no para supervisores)
+        if (!$user->hasRole('Supervisor') && !$user->hasRole('Super Admin') && $clienteExterno['CODIGO_VENDEDOR'] !== $user->codigo_vendedor) {
             return response()->json([
                 'success' => false,
                 'message' => 'Este cliente no está asignado a usted'
@@ -146,7 +148,9 @@ class ClienteController extends Controller
         $user = auth()->user();
 
         // Buscar en base de datos local
-        $clientes = Cliente::buscarPorNombre($nombre, $user->codigo_vendedor);
+        // Si es Supervisor, puede buscar cualquier cliente; si es Vendedor, solo los suyos
+        $codigoVendedor = ($user->hasRole('Supervisor') || $user->hasRole('Super Admin')) ? null : $user->codigo_vendedor;
+        $clientes = Cliente::buscarPorNombre($nombre, $codigoVendedor);
 
         return response()->json([
             'success' => true,
@@ -168,7 +172,7 @@ class ClienteController extends Controller
     {
         $user = auth()->user();
         
-        if (!$user->hasRole('Vendedor')) {
+        if (!$user->hasRole('Vendedor') && !$user->hasRole('Supervisor') && !$user->hasRole('Super Admin')) {
             return response()->json([
                 'success' => false,
                 'message' => 'Acceso no autorizado'
@@ -176,8 +180,13 @@ class ClienteController extends Controller
         }
 
         try {
-            // Usar el método de sincronización directa
-            $resultado = \App\Console\Commands\SincronizarClientesSimple::sincronizarVendedorDirecto($user->codigo_vendedor);
+            // Si es Supervisor, sincronizar todos los clientes
+            if ($user->hasRole('Supervisor') || $user->hasRole('Super Admin')) {
+                $resultado = \App\Console\Commands\SincronizarClientesSimple::sincronizarTodosLosClientes();
+            } else {
+                // Si es Vendedor, solo sus clientes
+                $resultado = \App\Console\Commands\SincronizarClientesSimple::sincronizarVendedorDirecto($user->codigo_vendedor);
+            }
             
             if ($resultado['success']) {
                 return response()->json([
@@ -294,8 +303,33 @@ class ClienteController extends Controller
         // Obtener facturas pendientes
         $facturasPendientes = $this->cobranzaService->getFacturasPendientesCliente($codigo);
 
-        // Obtener notas de venta del cliente
+        // Obtener notas de venta del cliente (SQL Server)
         $notasVenta = $this->cobranzaService->getNotasVentaCliente($codigo);
+
+        // Obtener NVV creadas en el sistema (MySQL)
+        $nvvSistema = \App\Models\Cotizacion::where('cliente_codigo', $codigo)
+            ->with(['productos', 'user'])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function($cotizacion) {
+                return [
+                    'id' => $cotizacion->id,
+                    'numero' => $cotizacion->numero_cotizacion,
+                    'fecha_creacion' => $cotizacion->created_at->format('d/m/Y H:i'),
+                    'vendedor' => $cotizacion->user->name ?? 'N/A',
+                    'estado_aprobacion' => $cotizacion->estado_aprobacion,
+                    'tiene_problemas_credito' => $cotizacion->tiene_problemas_credito,
+                    'tiene_problemas_stock' => $cotizacion->tiene_problemas_stock,
+                    'aprobado_por_supervisor' => $cotizacion->aprobado_por_supervisor,
+                    'aprobado_por_compras' => $cotizacion->aprobado_por_compras,
+                    'aprobado_por_picking' => $cotizacion->aprobado_por_picking,
+                    'total_productos' => $cotizacion->productos->count(),
+                    'valor_total' => $cotizacion->productos->sum(function($p) {
+                        return $p->cantidad * $p->precio_unitario;
+                    }),
+                    'estado' => $this->determinarEstadoNVV($cotizacion)
+                ];
+            });
 
         // Obtener crédito de compras (ventas de los últimos 3 meses)
         $creditoCompras = $this->cobranzaService->getCreditoComprasCliente($codigo);
@@ -310,9 +344,34 @@ class ClienteController extends Controller
             'cliente',
             'facturasPendientes',
             'notasVenta',
+            'nvvSistema',
             'creditoCompras',
             'creditoCliente',
             'validacion'
         ))->with('pageSlug', 'cliente');
+    }
+
+    /**
+     * Determinar el estado de una NVV del sistema
+     */
+    private function determinarEstadoNVV($cotizacion)
+    {
+        if ($cotizacion->aprobado_por_picking) {
+            return 'Ingresada';
+        } elseif ($cotizacion->aprobado_por_compras) {
+            return 'Pendiente Picking';
+        } elseif ($cotizacion->aprobado_por_supervisor) {
+            if ($cotizacion->tiene_problemas_stock) {
+                return 'Pendiente Compras';
+            } else {
+                return 'Pendiente Picking';
+            }
+        } else {
+            if ($cotizacion->tiene_problemas_credito || $cotizacion->tiene_problemas_stock) {
+                return 'Pendiente Supervisor';
+            } else {
+                return 'Pendiente Supervisor';
+            }
+        }
     }
 }

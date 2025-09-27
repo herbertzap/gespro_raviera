@@ -46,6 +46,7 @@ class SincronizarProductosDiario extends Command
                 FROM dbo.MAEPR 
                 WHERE MAEPR.KOPR != '' 
                 AND MAEPR.KOPR IS NOT NULL
+                AND MAEPR.ATPR != 'OCU'
                 ORDER BY MAEPR.NOKOPR
             ";
             

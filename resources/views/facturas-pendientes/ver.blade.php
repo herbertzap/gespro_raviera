@@ -190,6 +190,71 @@
                         </div>
                         @endif
 
+                        <!-- Relación FCV con NVV -->
+                        @if(isset($relacionFcvNvv) && count($relacionFcvNvv) > 0)
+                        <div class="row mt-4">
+                            <div class="col-md-12">
+                                <h5>Notas de Venta Asociadas ({{ count($relacionFcvNvv) }} productos)</h5>
+                                <div class="table-responsive">
+                                    <table class="table table-striped">
+                                        <thead class="thead">
+                                            <tr>
+                                                <th>Producto</th>
+                                                <th>Cant. FCV</th>
+                                                <th>NVV Asociada</th>
+                                                <th>Cant. NVV</th>
+                                                <th>Pendiente</th>
+                                                <th>Acción</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach($relacionFcvNvv as $relacion)
+                                            <tr>
+                                                <td>
+                                                    <strong>{{ $relacion['CODIGO_PRODUCTO'] }}</strong><br>
+                                                    <small>{{ $relacion['NOMBRE_PRODUCTO'] }}</small>
+                                                </td>
+                                                <td>{{ number_format($relacion['CANTIDAD_FCV'], 0, ',', '.') }}</td>
+                                                <td>
+                                                    @if(!empty($relacion['NUMERO_NVV']))
+                                                        <span class="badge badge-info">{{ $relacion['TIPO_NVV'] }}-{{ $relacion['NUMERO_NVV'] }}</span>
+                                                    @else
+                                                        <span class="badge badge-warning">Sin NVV</span>
+                                                    @endif
+                                                </td>
+                                                <td>{{ number_format($relacion['CANTIDAD_NVV'], 0, ',', '.') }}</td>
+                                                <td>
+                                                    @if($relacion['PENDIENTE'] > 0)
+                                                        <span class="badge badge-danger">{{ number_format($relacion['PENDIENTE'], 0, ',', '.') }}</span>
+                                                    @else
+                                                        <span class="badge badge-success">0</span>
+                                                    @endif
+                                                </td>
+                                                <td>
+                                                    @if(!empty($relacion['NUMERO_NVV']))
+                                                        <a href="#" class="btn btn-sm btn-primary" title="Ver NVV {{ $relacion['NUMERO_NVV'] }}">
+                                                            <i class="material-icons">visibility</i>
+                                                        </a>
+                                                    @endif
+                                                </td>
+                                            </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        @else
+                        <div class="row mt-4">
+                            <div class="col-md-12">
+                                <div class="alert alert-info">
+                                    <i class="material-icons">info</i>
+                                    No se encontraron notas de venta asociadas a esta factura.
+                                </div>
+                            </div>
+                        </div>
+                        @endif
+
                         <!-- Botones de Acción -->
                         <div class="row mt-4">
                             <div class="col-md-12 text-center">

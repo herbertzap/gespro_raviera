@@ -17,6 +17,7 @@ class CotizacionProducto extends Model
         'nombre_producto',
         'precio_unitario',
         'cantidad',
+        'cantidad_separar',
         'subtotal',
         'stock_disponible',
         'stock_suficiente'
@@ -24,6 +25,7 @@ class CotizacionProducto extends Model
 
     protected $casts = [
         'cantidad' => 'integer',
+        'cantidad_separar' => 'decimal:2',
         'precio_unitario' => 'decimal:2',
         'subtotal' => 'decimal:2',
         'stock_disponible' => 'integer',

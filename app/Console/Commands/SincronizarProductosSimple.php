@@ -36,6 +36,7 @@ class SincronizarProductosSimple extends Command
                 WHERE MAEPR.KOPR IS NOT NULL
                 AND LEN(MAEPR.KOPR) > 0
                 AND MAEPR.TIPR != 'D'
+                AND MAEPR.ATPR != 'OCU'
                 ORDER BY MAEPR.NOKOPR
             ";
             

@@ -398,22 +398,11 @@ $('#btnConfirmarGenerar').click(function() {
         success: function(response) {
             if (response.success) {
                 // Mostrar mensaje de éxito
-                Swal.fire({
-                    icon: 'success',
-                    title: '¡Éxito!',
-                    text: response.message,
-                    confirmButtonText: 'OK'
-                }).then(() => {
-                    // Recargar la página para mostrar los cambios
-                    location.reload();
-                });
+                alert('¡Éxito! ' + response.message);
+                // Recargar la página para mostrar los cambios
+                location.reload();
             } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: response.message,
-                    confirmButtonText: 'OK'
-                });
+                alert('Error: ' + response.message);
             }
         },
         error: function(xhr) {
@@ -422,12 +411,7 @@ $('#btnConfirmarGenerar').click(function() {
                 message = xhr.responseJSON.message;
             }
             
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: message,
-                confirmButtonText: 'OK'
-            });
+            alert('Error: ' + message);
         },
         complete: function() {
             btn.prop('disabled', false).html(originalText);
@@ -447,6 +431,9 @@ $('#btnConfirmarEliminar').click(function() {
         Eliminando...
     `);
     
+    console.log('Iniciando eliminación de cotización ID:', cotizacionIdEliminar);
+    console.log('Token CSRF:', $('meta[name="csrf-token"]').attr('content'));
+    
     $.ajax({
         url: `/cotizacion/${cotizacionIdEliminar}`,
         method: 'DELETE',
@@ -454,38 +441,27 @@ $('#btnConfirmarEliminar').click(function() {
             'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
         },
         success: function(response) {
+            console.log('Respuesta exitosa:', response);
             if (response.success) {
-                Swal.fire({
-                    icon: 'success',
-                    title: '¡Éxito!',
-                    text: response.message,
-                    confirmButtonText: 'OK'
-                }).then(() => {
-                    location.reload();
-                });
+                alert('¡Éxito! ' + response.message);
+                location.reload();
             } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: response.message,
-                    confirmButtonText: 'OK'
-                });
+                alert('Error: ' + response.message);
             }
         },
-        error: function(xhr) {
+        error: function(xhr, status, error) {
+            console.error('Error en petición:', {xhr, status, error});
             let message = 'Error al eliminar cotización';
             if (xhr.responseJSON && xhr.responseJSON.message) {
                 message = xhr.responseJSON.message;
+            } else if (xhr.responseText) {
+                message = 'Error del servidor: ' + xhr.status;
             }
             
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: message,
-                confirmButtonText: 'OK'
-            });
+            alert('Error: ' + message);
         },
         complete: function() {
+            console.log('Petición completada');
             btn.prop('disabled', false).html(originalText);
             $('#modalEliminar').modal('hide');
         }

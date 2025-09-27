@@ -24,6 +24,11 @@ class User extends Authenticatable
         'email',
         'password',
         'codigo_vendedor',
+        'rut',
+        'email_alternativo',
+        'es_vendedor',
+        'primer_login',
+        'fecha_ultimo_cambio_password'
     ];
 
     /**
@@ -44,5 +49,65 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+        'es_vendedor' => 'boolean',
+        'primer_login' => 'boolean',
+        'fecha_ultimo_cambio_password' => 'datetime'
     ];
+
+    /**
+     * Relación con vendedor
+     */
+    public function vendedor()
+    {
+        return $this->hasOne(Vendedor::class, 'user_id');
+    }
+
+    /**
+     * Obtener el rol principal del usuario
+     */
+    public function getRolPrincipalAttribute()
+    {
+        $roles = $this->roles;
+        
+        // Prioridad de roles
+        $prioridad = ['administrativo', 'supervisor', 'compras', 'finanzas', 'vendedor'];
+        
+        foreach ($prioridad as $rol) {
+            if ($roles->where('name', $rol)->isNotEmpty()) {
+                return $rol;
+            }
+        }
+        
+        return $roles->first()?->name ?? 'vendedor';
+    }
+
+    /**
+     * Verificar si es vendedor
+     */
+    public function isVendedor()
+    {
+        return $this->es_vendedor || $this->hasRole('vendedor');
+    }
+
+    /**
+     * Obtener opciones de login (email, email alternativo, RUT)
+     */
+    public function getOpcionesLoginAttribute()
+    {
+        $opciones = [];
+        
+        if ($this->email) {
+            $opciones[] = $this->email;
+        }
+        
+        if ($this->email_alternativo) {
+            $opciones[] = $this->email_alternativo;
+        }
+        
+        if ($this->rut) {
+            $opciones[] = $this->rut;
+        }
+        
+        return $opciones;
+    }
 }

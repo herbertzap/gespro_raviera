@@ -135,76 +135,49 @@ class StockComprometidoService
      */
     public function obtenerStockDisponibleReal($productoCodigo, $bodegaCodigo = '01')
     {
-        // Obtener stock físico desde SQL Server
-        $stockFisicoSQL = $this->obtenerStockDisponible($productoCodigo, $bodegaCodigo);
+        // Obtener stock físico desde tabla productos local (ya sincronizada)
+        $producto = DB::table('productos')->where('KOPR', $productoCodigo)->first();
         
-        // Obtener stock comprometido local
+        if (!$producto) {
+            Log::warning("Producto {$productoCodigo} no encontrado en tabla local");
+            return 0;
+        }
+        
+        $stockFisicoLocal = (float)$producto->stock_fisico;
+        $stockComprometidoSQL = (float)$producto->stock_comprometido;
+        
+        // Obtener stock comprometido local adicional (por cotizaciones)
         $stockComprometidoLocal = StockComprometido::calcularStockComprometido($productoCodigo, $bodegaCodigo);
         
-        // Stock disponible real = Stock físico SQL - Stock comprometido local
-        $stockDisponibleReal = $stockFisicoSQL - $stockComprometidoLocal;
+        // Stock disponible real = Stock físico local - Stock comprometido SQL - Stock comprometido local
+        $stockDisponibleReal = $stockFisicoLocal - $stockComprometidoSQL - $stockComprometidoLocal;
         
-        Log::info("Stock real para producto {$productoCodigo}: Físico SQL={$stockFisicoSQL}, Comprometido Local={$stockComprometidoLocal}, Disponible Real={$stockDisponibleReal}");
+        Log::info("Stock real para producto {$productoCodigo}: Físico Local={$stockFisicoLocal}, Comprometido SQL={$stockComprometidoSQL}, Comprometido Local={$stockComprometidoLocal}, Disponible Real={$stockDisponibleReal}");
         
         return max(0, $stockDisponibleReal); // No puede ser negativo
     }
 
     /**
-     * Obtener stock disponible desde SQL Server (método privado)
+     * Obtener stock disponible desde tabla productos local (método privado)
      */
     private function obtenerStockDisponible($productoCodigo, $bodegaCodigo = '01')
     {
         try {
-            $host = env('SQLSRV_EXTERNAL_HOST');
-            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE');
-            $username = env('SQLSRV_EXTERNAL_USERNAME');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            // Obtener stock desde tabla productos local (ya sincronizada)
+            $producto = DB::table('productos')->where('KOPR', $productoCodigo)->first();
             
-            // Consulta para obtener stock disponible
-            $query = "
-                SELECT TOP 1 
-                    ISNULL(STFI1, 0) AS stock_fisico,
-                    ISNULL(STOCNV1, 0) AS stock_comprometido,
-                    (ISNULL(STFI1, 0) - ISNULL(STOCNV1, 0)) AS stock_disponible
-                FROM MAEST
-                WHERE KOPR = '{$productoCodigo}' 
-                AND KOBO = '{$bodegaCodigo}'
-            ";
-            
-            // Crear archivo temporal con la consulta
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $query . "\ngo\nquit");
-            
-            // Ejecutar consulta usando tsql
-            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-            $output = shell_exec($command);
-            
-            // Limpiar archivo temporal
-            unlink($tempFile);
-            
-            if (!$output || str_contains($output, 'error')) {
-                throw new \Exception('Error ejecutando consulta tsql: ' . $output);
+            if (!$producto) {
+                Log::warning("Producto {$productoCodigo} no encontrado en tabla local");
+                return 0;
             }
             
-            // Parsear resultado
-            $lines = explode("\n", $output);
-            foreach ($lines as $line) {
-                $line = trim($line);
-                // Buscar línea con datos numéricos (stock_fisico, stock_comprometido, stock_disponible)
-                if (preg_match('/^\s*(\d+)\s+(\d+)\s+(\d+)\s*$/', $line, $matches)) {
-                    $stockFisico = (float)$matches[1];
-                    $stockComprometido = (float)$matches[2];
-                    $stockDisponible = (float)$matches[3];
-                    
-                    Log::info("Stock para producto {$productoCodigo}: Físico={$stockFisico}, Comprometido SQL={$stockComprometido}, Disponible SQL={$stockDisponible}");
-                    
-                    return $stockFisico; // Devolvemos el stock físico, no el disponible
-                }
-            }
+            $stockFisico = (float)$producto->stock_fisico;
+            $stockComprometido = (float)$producto->stock_comprometido;
+            $stockDisponible = (float)$producto->stock_disponible;
             
-            Log::warning("No se encontraron datos de stock para producto {$productoCodigo}");
-            return 0;
+            Log::info("Stock para producto {$productoCodigo}: Físico={$stockFisico}, Comprometido SQL={$stockComprometido}, Disponible SQL={$stockDisponible}");
+            
+            return $stockFisico; // Devolvemos el stock físico
             
         } catch (\Exception $e) {
             Log::error('Error obteniendo stock disponible: ' . $e->getMessage());

@@ -135,9 +135,13 @@ class FacturasPendientesController extends Controller
         // Obtener productos de la factura
         $productosFactura = $this->cobranzaService->getProductosFactura($tipoDocumento, $numeroDocumento);
         
+        // Obtener relación FCV con NVV asociada
+        $relacionFcvNvv = $this->cobranzaService->getRelacionFcvNvv($tipoDocumento, $numeroDocumento);
+        
         return view('facturas-pendientes.ver', [
             'factura' => $facturaDetalle,
             'productos' => $productosFactura,
+            'relacionFcvNvv' => $relacionFcvNvv,
             'pageSlug' => 'facturas-pendientes'
         ]);
     }

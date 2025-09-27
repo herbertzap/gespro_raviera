@@ -73,6 +73,18 @@
                                 </div>
                             </div>
                             
+                            <!-- Filtro de cheques protestados -->
+                            <div class="col-md-2 mb-3">
+                                <div class="form-group">
+                                    <label for="cheques_protestados">Cheques Protestados:</label>
+                                    <select class="form-control" id="cheques_protestados" name="cheques_protestados">
+                                        <option value="">Todos</option>
+                                        <option value="si" {{ ($filtros['cheques_protestados'] ?? '') == 'si' ? 'selected' : '' }}>Con cheques protestados</option>
+                                        <option value="no" {{ ($filtros['cheques_protestados'] ?? '') == 'no' ? 'selected' : '' }}>Sin cheques protestados</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
                             <!-- Botones -->
                             <div class="col-md-12">
                                 <button type="submit" class="btn btn-primary">
@@ -104,6 +116,11 @@
                             @endif
                             @if(!empty($filtros['facturas_max']))
                                 <span class="badge badge-warning">Facturas ≤ {{ $filtros['facturas_max'] }}</span>
+                            @endif
+                            @if(!empty($filtros['cheques_protestados']))
+                                <span class="badge badge-danger">
+                                    Cheques Protestados: {{ $filtros['cheques_protestados'] == 'si' ? 'Sí' : 'No' }}
+                                </span>
                             @endif
                         </div>
                     @endif
@@ -158,6 +175,10 @@
                                         </a>
                                     </th>
                                     <th>
+                                        <i class="material-icons text-danger">warning</i>
+                                        Cheques Protestados
+                                    </th>
+                                    <th>
                                         <a href="{{ request()->fullUrlWithQuery(['ordenar_por' => 'BLOQUEADO', 'orden' => request('ordenar_por') == 'BLOQUEADO' && request('orden') == 'asc' ? 'desc' : 'asc']) }}" 
                                            class="text-decoration-none text-primary">
                                             Estado
@@ -209,6 +230,19 @@
                                         <span class="badge badge-{{ $cliente['SALDO_TOTAL'] > 500000 ? 'danger' : ($cliente['SALDO_TOTAL'] > 100000 ? 'warning' : 'success') }}">
                                             ${{ number_format($cliente['SALDO_TOTAL'] ?? 0, 0) }}
                                         </span>
+                                    </td>
+                                    <td>
+                                        @if(isset($cliente['cheques_protestados']) && $cliente['cheques_protestados']['tiene_cheques_protestados'])
+                                            <span class="badge badge-danger" title="Valor total: ${{ number_format($cliente['cheques_protestados']['valor_total'], 0) }}">
+                                                <i class="material-icons" style="font-size: 12px;">warning</i>
+                                                {{ $cliente['cheques_protestados']['cantidad'] }} cheque(s)
+                                            </span>
+                                        @else
+                                            <span class="badge badge-success">
+                                                <i class="material-icons" style="font-size: 12px;">check_circle</i>
+                                                Sin protestos
+                                            </span>
+                                        @endif
                                     </td>
                                     <td>
                                         @if(isset($cliente['BLOQUEADO']) && $cliente['BLOQUEADO'] == 1)

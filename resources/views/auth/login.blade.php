@@ -47,13 +47,13 @@
                     <div class="input-group">
                         <div class="input-group-prepend">
                             <div class="input-group-text">
-                                <i class="material-icons">email</i>
+                                <i class="material-icons">person</i>
                             </div>
                         </div>
-                        <input type="email" name="email" class="form-control{{ $errors->has('email') ? ' is-invalid' : '' }}" 
-                               placeholder="Correo Electrónico" value="{{ old('email') }}" required>
+                        <input type="text" name="login" class="form-control{{ $errors->has('login') ? ' is-invalid' : '' }}" 
+                               placeholder="Email o RUT" value="{{ old('login') }}" required>
                     </div>
-                    @include('alerts.feedback', ['field' => 'email'])
+                    @include('alerts.feedback', ['field' => 'login'])
                 </div>
 
                 <div class="form-group">
@@ -222,11 +222,18 @@
     padding: 15px;
     font-size: 16px;
     background: #fff;
+    color: #333;
 }
 
 .form-control:focus {
     box-shadow: none;
     background: #fff;
+    color: #333;
+}
+
+.form-control::placeholder {
+    color: #999;
+    opacity: 1;
 }
 
 .btn-login {

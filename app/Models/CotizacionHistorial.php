@@ -96,10 +96,36 @@ class CotizacionHistorial extends Model
      */
     public static function obtenerHistorialCompleto(int $cotizacionId): \Illuminate\Database\Eloquent\Collection
     {
-        return self::where('cotizacion_id', $cotizacionId)
+        $cotizacion = Cotizacion::find($cotizacionId);
+        $historial = self::where('cotizacion_id', $cotizacionId)
             ->with('usuario')
             ->orderBy('fecha_accion', 'asc')
             ->get();
+
+        // Agregar registro de creación al inicio del historial
+        if ($cotizacion) {
+            $registroCreacion = new self([
+                'cotizacion_id' => $cotizacionId,
+                'estado_anterior' => null,
+                'estado_nuevo' => 'creada',
+                'tipo_accion' => 'creacion',
+                'usuario_id' => $cotizacion->user_id,
+                'usuario_nombre' => $cotizacion->user->name ?? 'Sistema',
+                'rol_usuario' => 'Vendedor',
+                'comentarios' => 'Nota de Venta creada',
+                'detalles_adicionales' => [
+                    'total' => $cotizacion->total,
+                    'productos_count' => $cotizacion->productos->count(),
+                    'cliente' => $cotizacion->cliente_nombre
+                ],
+                'fecha_accion' => $cotizacion->fecha_creacion ?? $cotizacion->created_at,
+                'tiempo_transcurrido_segundos' => null
+            ]);
+            
+            $historial->prepend($registroCreacion);
+        }
+
+        return $historial;
     }
 
     /**
@@ -204,5 +230,58 @@ class CotizacionHistorial extends Model
 
         $tiempoTranscurrido = now()->diffInHours($primerRegistro->fecha_accion);
         return $tiempoTranscurrido <= $horasLimite;
+    }
+
+    /**
+     * Registrar modificación de productos en una cotización
+     */
+    public static function registrarModificacionProductos(
+        int $cotizacionId,
+        array $productosAgregados = [],
+        array $productosEliminados = [],
+        array $productosModificados = [],
+        ?string $comentarios = null
+    ): self {
+        $user = auth()->user();
+        $detalles = [
+            'tipo_modificacion' => 'productos',
+            'productos_agregados' => $productosAgregados,
+            'productos_eliminados' => $productosEliminados,
+            'productos_modificados' => $productosModificados,
+            'total_cambios' => count($productosAgregados) + count($productosEliminados) + count($productosModificados)
+        ];
+
+        $comentarioCompleto = $comentarios ?: self::generarComentarioModificacion($detalles);
+
+        return self::crearRegistro(
+            $cotizacionId,
+            'modificada',
+            'modificacion_productos',
+            null,
+            $comentarioCompleto,
+            $detalles
+        );
+    }
+
+    /**
+     * Generar comentario automático para modificaciones de productos
+     */
+    private static function generarComentarioModificacion(array $detalles): string
+    {
+        $cambios = [];
+        
+        if (!empty($detalles['productos_agregados'])) {
+            $cambios[] = count($detalles['productos_agregados']) . ' producto(s) agregado(s)';
+        }
+        
+        if (!empty($detalles['productos_eliminados'])) {
+            $cambios[] = count($detalles['productos_eliminados']) . ' producto(s) eliminado(s)';
+        }
+        
+        if (!empty($detalles['productos_modificados'])) {
+            $cambios[] = count($detalles['productos_modificados']) . ' producto(s) modificado(s)';
+        }
+
+        return 'Modificación de productos: ' . implode(', ', $cambios);
     }
 }

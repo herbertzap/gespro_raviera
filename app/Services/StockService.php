@@ -34,7 +34,7 @@ class StockService
                 LEFT JOIN MAEST ON MAEPR.KOPR = MAEST.KOPR AND MAEST.KOBO = '01'
                 LEFT JOIN TABBO ON MAEST.KOBO = TABBO.KOBO
                 LEFT JOIN TABPRE ON MAEPR.KOPR = TABPRE.KOPR AND TABPRE.KOLT = '01'
-                WHERE MAEPR.ATPR = 'SI' AND MAEPR.KOPR LIKE '000001%'
+                WHERE MAEPR.ATPR = 'SI' AND MAEPR.ATPR != 'OCU' AND MAEPR.KOPR LIKE '000001%'
                 ORDER BY MAEPR.KOPR
             ";
             

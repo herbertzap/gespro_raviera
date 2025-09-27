@@ -60,6 +60,11 @@
                 </div>
                 <div class="card-body">
                     <!-- Formulario para agregar comentario -->
+                    <div class="alert alert-info">
+                        <i class="tim-icons icon-info"></i>
+                        <strong>Funcionalidad en desarrollo:</strong> Los comentarios estarán disponibles próximamente.
+                    </div>
+                    <!-- TODO: Implementar funcionalidad de comentarios
                     <form id="comentarioForm">
                         @csrf
                         <input type="hidden" name="cotizacion_id" value="{{ $cotizacion->id }}">
@@ -73,6 +78,7 @@
                             Enviar Comentario
                         </button>
                     </form>
+                    -->
 
                     <!-- Lista de comentarios existentes -->
                     <div class="mt-4">
@@ -86,12 +92,14 @@
                             @endif
                             
                             <!-- Aquí se cargarían los comentarios del historial -->
-                            @foreach($historial->where('comentarios', '!=', null) as $registro)
-                            <div class="alert alert-light">
-                                <strong>{{ $registro->usuario_nombre ?? 'Sistema' }}:</strong> {{ $registro->comentarios }}
-                                <small class="text-muted d-block">{{ $registro->fecha_accion->diffForHumans() }}</small>
-                            </div>
-                            @endforeach
+                            @if(isset($historial) && $historial)
+                                @foreach($historial->where('comentarios', '!=', null) as $registro)
+                                <div class="alert alert-light">
+                                    <strong>{{ $registro->usuario_nombre ?? 'Sistema' }}:</strong> {{ $registro->comentarios }}
+                                    <small class="text-muted d-block">{{ $registro->fecha_accion->diffForHumans() }}</small>
+                                </div>
+                                @endforeach
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -162,7 +170,7 @@ document.getElementById('comentarioForm').addEventListener('submit', function(e)
     
     const formData = new FormData(this);
     
-    fetch('{{ route("cotizacion.comentario") }}', {
+    fetch('#', { // TODO: Implementar ruta para comentarios
         method: 'POST',
         body: formData,
         headers: {

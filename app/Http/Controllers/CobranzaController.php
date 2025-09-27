@@ -28,7 +28,8 @@ class CobranzaController extends Controller
             'saldo_min' => request()->get('saldo_min', ''),
             'saldo_max' => request()->get('saldo_max', ''),
             'facturas_min' => request()->get('facturas_min', ''),
-            'facturas_max' => request()->get('facturas_max', '')
+            'facturas_max' => request()->get('facturas_max', ''),
+            'cheques_protestados' => request()->get('cheques_protestados', '')
         ];
         
         // Obtener clientes asignados al vendedor
@@ -100,6 +101,26 @@ class CobranzaController extends Controller
             });
         }
         
+        // Filtrar por cheques protestados
+        if (!empty($filtros['cheques_protestados'])) {
+            $clientes = array_filter($clientes, function($cliente) use ($filtros) {
+                $tieneChequesProtestados = $this->verificarChequesProtestados($cliente['CODIGO_CLIENTE']);
+                
+                if ($filtros['cheques_protestados'] === 'si') {
+                    return $tieneChequesProtestados['tiene_cheques_protestados'];
+                } elseif ($filtros['cheques_protestados'] === 'no') {
+                    return !$tieneChequesProtestados['tiene_cheques_protestados'];
+                }
+                
+                return true;
+            });
+        }
+        
+        // Agregar información de cheques protestados a cada cliente
+        foreach ($clientes as &$cliente) {
+            $cliente['cheques_protestados'] = $this->verificarChequesProtestados($cliente['CODIGO_CLIENTE']);
+        }
+        
         // Ordenar los resultados
         $ordenarPor = $filtros['ordenar_por'];
         $orden = $filtros['orden'];
@@ -120,5 +141,41 @@ class CobranzaController extends Controller
         });
         
         return array_values($clientes);
+    }
+    
+    private function verificarChequesProtestados($codigoCliente)
+    {
+        try {
+            $cheques = \DB::table('cheques_protestados')
+                ->where('codigo_cliente', $codigoCliente)
+                ->get();
+            
+            if ($cheques->isEmpty()) {
+                return [
+                    'tiene_cheques_protestados' => false,
+                    'cantidad' => 0,
+                    'valor_total' => 0,
+                    'cheques' => []
+                ];
+            }
+            
+            $valorTotal = $cheques->sum('valor');
+            
+            return [
+                'tiene_cheques_protestados' => true,
+                'cantidad' => $cheques->count(),
+                'valor_total' => $valorTotal,
+                'cheques' => $cheques->toArray()
+            ];
+            
+        } catch (\Exception $e) {
+            \Log::error('Error verificando cheques protestados en cobranza: ' . $e->getMessage());
+            return [
+                'tiene_cheques_protestados' => false,
+                'cantidad' => 0,
+                'valor_total' => 0,
+                'cheques' => []
+            ];
+        }
     }
 }

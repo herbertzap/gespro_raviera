@@ -58,6 +58,44 @@
                         </div>
                     </div>
 
+                    <!-- Información de Cheques Protestados -->
+                    @if($cliente && !$puedeGenerarNotaVenta)
+                    <div class="row mb-4">
+                        <div class="col-md-12">
+                            <div class="card card-header-danger">
+                                <div class="card-header">
+                                    <h4 class="card-title">
+                                        <i class="material-icons">warning</i>
+                                        Información de Crédito - Cheques Protestados
+                                    </h4>
+                                </div>
+                                <div class="card-body">
+                                    <div class="alert alert-danger" role="alert">
+                                        <h5 class="alert-heading">
+                                            <i class="material-icons">block</i>
+                                            Cliente con Cheques Protestados
+                                        </h5>
+                                        <p class="mb-0">
+                                            <strong>Este cliente tiene cheques protestados y no puede generar Notas de Venta.</strong>
+                                        </p>
+                                        <hr>
+                                        <p class="mb-0">
+                                            <strong>Motivo:</strong> {{ $motivoRechazo ?? 'Cliente con cheques protestados' }}
+                                        </p>
+                                    </div>
+                                    
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <button type="button" class="btn btn-info btn-sm" onclick="mostrarDetalleChequesProtestados()">
+                                                <i class="material-icons">info</i> Ver Detalle de Cheques Protestados
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    @endif
 
                     @endif
 
@@ -110,6 +148,10 @@
 
                                     <!-- Tabla de Productos de la Cotización -->
                                     <div class="table-responsive">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <h6 class="mb-0">Productos en Cotización</h6>
+                                            <span class="badge badge-info" id="contadorProductos">0/24 productos</span>
+                                        </div>
                                         <table class="table" id="tablaProductos">
                                             <thead class="text-primary">
                                                 <tr>
@@ -117,6 +159,7 @@
                                                     <th>Producto</th>
                                                     <th>Cantidad</th>
                                                     <th>Precio Unit.</th>
+                                                    <th>Descuento (%)</th>
                                                     <th>Subtotal</th>
                                                     <th>Stock</th>
                                                     <th>Acciones</th>
@@ -294,8 +337,14 @@ function mostrarResultadosProductosAjax(productos) {
         return;
     }
 
-    let contenido = '<div class="table-responsive"><table class="table table-striped table-hover">';
-    contenido += '<thead class="thead"><tr><th>Código</th><th>Producto</th><th>Stock</th><th>Precio</th><th>Acción</th></tr></thead><tbody>';
+    let contenido = '<div class="table-responsive">';
+    contenido += '<div class="mb-3">';
+    contenido += '<button class="btn btn-success btn-sm" onclick="agregarProductosSeleccionados()" id="btnAgregarSeleccionados" disabled>';
+    contenido += '<i class="material-icons">add_shopping_cart</i> Agregar Seleccionados (<span id="contadorSeleccionados">0</span>)';
+    contenido += '</button>';
+    contenido += '</div>';
+    contenido += '<table class="table table-striped table-hover">';
+    contenido += '<thead class="thead"><tr><th><input type="checkbox" id="selectAllProductos" onchange="toggleAllProductos()"></th><th>Código</th><th>Producto</th><th>Stock</th><th>Precio</th><th>Acción</th></tr></thead><tbody>';
     
     productos.forEach(producto => {
         // Usar información de stock mejorada
@@ -303,8 +352,21 @@ function mostrarResultadosProductosAjax(productos) {
         const stockClass = producto.CLASE_STOCK || (stockReal > 0 ? 'text-success' : 'text-danger');
         const stockText = producto.ESTADO_STOCK || (stockReal > 0 ? 'Disponible' : 'Sin stock');
         
+        // Verificar si el producto se puede agregar (precio válido)
+        const precioValido = producto.PRECIO_VALIDO !== undefined ? producto.PRECIO_VALIDO : (producto.PRECIO_UD1 > 0);
+        const motivoBloqueo = producto.MOTIVO_BLOQUEO || (precioValido ? null : 'Precio no disponible');
+        
+        // Determinar clases y estilos según el estado del producto
+        const rowClass = !precioValido ? 'table-secondary' : '';
+        const checkboxDisabled = !precioValido ? 'disabled' : '';
+        const buttonClass = precioValido ? 'btn-primary' : 'btn-secondary';
+        const buttonDisabled = !precioValido ? 'disabled' : '';
+        const buttonText = precioValido ? 'Agregar' : 'Sin precio';
+        const buttonIcon = precioValido ? 'add_shopping_cart' : 'block';
+        
         contenido += `
-            <tr>
+            <tr class="${rowClass}">
+                <td><input type="checkbox" class="producto-checkbox" value="${producto.CODIGO_PRODUCTO}" onchange="actualizarContadorSeleccionados()" ${checkboxDisabled}></td>
                 <td><strong>${producto.CODIGO_PRODUCTO || ''}</strong></td>
                 <td>${producto.NOMBRE_PRODUCTO || ''}</td>
                 <td class="${stockClass}">
@@ -313,10 +375,13 @@ function mostrarResultadosProductosAjax(productos) {
                     ${producto.STOCK_COMPROMETIDO > 0 ? `<br><small class="text-muted">Comprometido: ${producto.STOCK_COMPROMETIDO}</small>` : ''}
                     ${stockReal <= 0 ? '<br><small class="text-warning"><i class="material-icons">info</i> Sin stock - Nota pendiente</small>' : ''}
                 </td>
-                <td><strong>$${Math.round(producto.PRECIO_UD1 || 0).toLocaleString()}</strong></td>
                 <td>
-                    <button class="btn btn-sm btn-primary" onclick="agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', '${producto.NOMBRE_PRODUCTO.replace(/'/g, "\\'")}', ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}')">
-                        <i class="material-icons">add_shopping_cart</i> Agregar
+                    <strong class="${!precioValido ? 'text-muted' : ''}" data-precio="${producto.PRECIO_UD1 || 0}">$${Math.round(producto.PRECIO_UD1 || 0).toLocaleString()}</strong>
+                    ${!precioValido ? '<br><small class="text-danger"><i class="material-icons">warning</i> Precio no disponible</small>' : ''}
+                </td>
+                <td>
+                    <button class="btn btn-sm ${buttonClass}" onclick="${precioValido ? `agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', '${producto.NOMBRE_PRODUCTO.replace(/'/g, "\\'")}', ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}', ${producto.DESCUENTO_MAXIMO || 0})` : 'alert(\'Este producto no tiene precio disponible\')'}" ${buttonDisabled} title="${motivoBloqueo || ''}">
+                        <i class="material-icons">${buttonIcon}</i> ${buttonText}
                     </button>
                 </td>
             </tr>
@@ -429,8 +494,8 @@ function mostrarResultadosProductos(productos) {
 }
 
 // Función para agregar producto a la cotización desde PHP
-function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad) {
-    console.log('Agregando producto desde PHP:', { codigo, nombre, precio, stock, unidad });
+function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuentoMaximo = 0) {
+    console.log('Agregando producto desde PHP:', { codigo, nombre, precio, stock, unidad, descuentoMaximo });
     
     // Verificar si el producto ya está en la cotización
     const productoExistente = productosCotizacion.find(p => p.codigo === codigo);
@@ -439,8 +504,14 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad) {
         // Incrementar cantidad según la unidad
         const incremento = obtenerIncrementoPorUnidad(unidad);
         productoExistente.cantidad += incremento;
-        productoExistente.subtotal = productoExistente.cantidad * productoExistente.precio;
+        actualizarSubtotal(productosCotizacion.indexOf(productoExistente));
     } else {
+        // Validar límite máximo de productos diferentes (24)
+        if (productosCotizacion.length >= 24) {
+            alert('No se pueden agregar más de 24 productos diferentes a la cotización.\n\nProductos actuales: ' + productosCotizacion.length + '/24');
+            return;
+        }
+        
         // Agregar nuevo producto con cantidad inicial según unidad
         const cantidadInicial = obtenerIncrementoPorUnidad(unidad);
         productosCotizacion.push({
@@ -448,6 +519,8 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad) {
             nombre: nombre,
             cantidad: cantidadInicial,
             precio: parseFloat(precio),
+            descuento: 0,
+            descuentoMaximo: parseFloat(descuentoMaximo) || 0,
             subtotal: parseFloat(precio) * cantidadInicial,
             stock: parseFloat(stock),
             unidad: unidad
@@ -462,7 +535,8 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad) {
     
     // Mostrar mensaje de confirmación con información de stock
     const stockInfo = parseFloat(stock) <= 0 ? ' (Sin stock - Nota pendiente)' : '';
-    alert('Producto agregado: ' + nombre + ' (Cantidad: ' + obtenerIncrementoPorUnidad(unidad) + ' ' + unidad + ')' + stockInfo);
+    const productosInfo = productosCotizacion.length > 1 ? `\n\nProductos en cotización: ${productosCotizacion.length}/24` : '';
+    alert('Producto agregado: ' + nombre + ' (Cantidad: ' + obtenerIncrementoPorUnidad(unidad) + ' ' + unidad + ')' + stockInfo + productosInfo);
 }
 
 // Función para obtener el incremento de cantidad según la unidad
@@ -480,6 +554,24 @@ function agregarProducto(codigo, nombre, precio, stock, unidad) {
 function actualizarTablaProductos() {
     const tbody = document.getElementById('productosCotizacion');
     tbody.innerHTML = '';
+    
+    // Actualizar contador de productos
+    const contador = document.getElementById('contadorProductos');
+    if (contador) {
+        const cantidad = productosCotizacion.length;
+        const maximo = 24;
+        contador.textContent = `${cantidad}/${maximo} productos`;
+        
+        // Cambiar color según el límite
+        contador.className = 'badge';
+        if (cantidad >= maximo) {
+            contador.classList.add('badge-danger');
+        } else if (cantidad >= maximo * 0.8) {
+            contador.classList.add('badge-warning');
+        } else {
+            contador.classList.add('badge-info');
+        }
+    }
     
     productosCotizacion.forEach((producto, index) => {
         let stockClass, stockText;
@@ -508,6 +600,12 @@ function actualizarTablaProductos() {
                     <small class="text-muted">${producto.unidad}</small>
                 </td>
                 <td>$${Math.round(producto.precio).toLocaleString()}</td>
+                <td>
+                    <input type="number" class="form-control descuento-input" value="${producto.descuento || 0}" 
+                           min="0" max="${producto.descuentoMaximo || 0}" step="0.01"
+                           onchange="actualizarDescuento(${index}, this.value)" style="width: 80px;">
+                    <small class="text-muted">Máx: ${producto.descuentoMaximo || 0}%</small>
+                </td>
                 <td>$${Math.round(producto.subtotal).toLocaleString()}</td>
                 <td class="${stockClass}">
                     ${stockText}
@@ -535,10 +633,44 @@ function actualizarCantidad(index, nuevaCantidad) {
     const cantidad = parseFloat(nuevaCantidad);
     if (cantidad > 0) {
         productosCotizacion[index].cantidad = cantidad;
-        productosCotizacion[index].subtotal = cantidad * productosCotizacion[index].precio;
+        actualizarSubtotal(index);
         actualizarTablaProductos();
         calcularTotales();
     }
+}
+
+// Función para actualizar descuento
+function actualizarDescuento(index, nuevoDescuento) {
+    const descuento = parseFloat(nuevoDescuento) || 0;
+    const descuentoMaximo = productosCotizacion[index].descuentoMaximo || 0;
+    
+    if (descuento > descuentoMaximo) {
+        alert(`El descuento no puede exceder el máximo permitido: ${descuentoMaximo}%`);
+        // Restaurar el valor anterior
+        productosCotizacion[index].descuento = productosCotizacion[index].descuento || 0;
+        actualizarTablaProductos();
+        return;
+    }
+    
+    if (descuento < 0) {
+        alert('El descuento no puede ser negativo');
+        productosCotizacion[index].descuento = 0;
+        actualizarTablaProductos();
+        return;
+    }
+    
+    productosCotizacion[index].descuento = descuento;
+    actualizarSubtotal(index);
+    actualizarTablaProductos();
+    calcularTotales();
+}
+
+// Función para actualizar subtotal considerando descuento
+function actualizarSubtotal(index) {
+    const producto = productosCotizacion[index];
+    const precioBase = producto.precio * producto.cantidad;
+    const descuento = (producto.descuento || 0) / 100;
+    producto.subtotal = precioBase * (1 - descuento);
 }
 
 // Función para eliminar producto
@@ -546,6 +678,123 @@ function eliminarProducto(index) {
     productosCotizacion.splice(index, 1);
     actualizarTablaProductos();
     calcularTotales();
+}
+
+// Funciones para selección múltiple de productos
+function toggleAllProductos() {
+    const selectAll = document.getElementById('selectAllProductos');
+    const checkboxes = document.querySelectorAll('.producto-checkbox');
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll.checked;
+    });
+    
+    actualizarContadorSeleccionados();
+}
+
+function actualizarContadorSeleccionados() {
+    const checkboxes = document.querySelectorAll('.producto-checkbox:checked');
+    const contador = document.getElementById('contadorSeleccionados');
+    const btnAgregar = document.getElementById('btnAgregarSeleccionados');
+    
+    if (contador) {
+        contador.textContent = checkboxes.length;
+    }
+    
+    if (btnAgregar) {
+        btnAgregar.disabled = checkboxes.length === 0;
+        btnAgregar.textContent = `Agregar Seleccionados (${checkboxes.length})`;
+    }
+}
+
+function agregarProductosSeleccionados() {
+    const checkboxes = document.querySelectorAll('.producto-checkbox:checked');
+    
+    if (checkboxes.length === 0) {
+        alert('Selecciona al menos un producto para agregar');
+        return;
+    }
+    
+    // Obtener datos de los productos seleccionados
+    const productosSeleccionados = [];
+    const productosSinPrecio = [];
+    
+    checkboxes.forEach(checkbox => {
+        const row = checkbox.closest('tr');
+        const codigo = row.cells[1].textContent.trim();
+        const nombre = row.cells[2].textContent.trim();
+        // Obtener el precio desde el atributo data-precio para evitar problemas de parsing
+        const precioElement = row.cells[4].querySelector('[data-precio]');
+        const precio = precioElement ? parseFloat(precioElement.getAttribute('data-precio')) : 0;
+        console.log('Precio desde data-precio:', precio);
+        const stockText = row.cells[3].textContent;
+        const stock = parseFloat(stockText.split(' ')[0]) || 0;
+        const unidad = stockText.includes('UN') ? 'UN' : 'UN';
+        
+        // Verificar si el producto tiene precio válido
+        const precioValido = precio > 0;
+        
+        // Obtener descuento máximo desde el botón (necesitamos extraerlo de los datos del producto)
+        const descuentoMaximo = 0; // Por ahora 0, se puede mejorar extrayendo de los datos
+        
+        if (precioValido) {
+            productosSeleccionados.push({
+                codigo: codigo,
+                nombre: nombre,
+                precio: precio,
+                stock: stock,
+                unidad: unidad,
+                descuentoMaximo: descuentoMaximo
+            });
+        } else {
+            productosSinPrecio.push(nombre);
+        }
+    });
+    
+    // Mostrar advertencia si hay productos sin precio
+    if (productosSinPrecio.length > 0) {
+        alert(`Los siguientes productos no se pueden agregar porque no tienen precio disponible:\n\n${productosSinPrecio.join('\n')}\n\nSolo se agregarán los productos con precio válido.`);
+    }
+    
+    // Validar límite de productos antes de agregar
+    const productosNuevos = productosSeleccionados.filter(p => !productosCotizacion.find(existente => existente.codigo === p.codigo));
+    const totalProductos = productosCotizacion.length + productosNuevos.length;
+    
+    if (totalProductos > 24) {
+        const productosActuales = productosCotizacion.length;
+        const productosDisponibles = 24 - productosActuales;
+        alert(`No se pueden agregar todos los productos seleccionados.\n\nProductos actuales: ${productosActuales}/24\nProductos seleccionados: ${productosNuevos.length}\nProductos disponibles: ${productosDisponibles}\n\nSolo se agregarán los primeros ${productosDisponibles} productos.`);
+        
+        // Limitar a los productos disponibles
+        productosSeleccionados.splice(productosDisponibles);
+    }
+    
+    // Agregar cada producto válido a la cotización
+    let productosAgregados = 0;
+    productosSeleccionados.forEach(producto => {
+        const productoExistente = productosCotizacion.find(p => p.codigo === producto.codigo);
+        if (!productoExistente && productosCotizacion.length < 24) {
+            agregarProductoDesdePHP(producto.codigo, producto.nombre, producto.precio, producto.stock, producto.unidad, producto.descuentoMaximo);
+            productosAgregados++;
+        }
+    });
+    
+    // Limpiar selección
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    document.getElementById('selectAllProductos').checked = false;
+    actualizarContadorSeleccionados();
+    
+    // Mostrar resumen
+    let mensaje = `${productosAgregados} productos agregados a la cotización`;
+    if (productosSinPrecio.length > 0) {
+        mensaje += `\n\n${productosSinPrecio.length} productos omitidos (sin precio)`;
+    }
+    if (totalProductos > 24) {
+        mensaje += `\n\nAlgunos productos no se agregaron (límite de 24 productos)`;
+    }
+    alert(mensaje);
 }
 
 // Función para calcular totales
@@ -690,6 +939,54 @@ document.addEventListener('DOMContentLoaded', function() {
     
     console.log('✅ Configuración completada');
 });
+
+// Función para mostrar detalle de cheques protestados
+function mostrarDetalleChequesProtestados() {
+    if (!clienteData || !clienteData.codigo) {
+        alert('No hay información de cliente disponible');
+        return;
+    }
+    
+    // Hacer petición para obtener cheques protestados
+    fetch('/cotizacion/cheques-protestados', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        },
+        body: JSON.stringify({
+            codigo_cliente: clienteData.codigo
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.data.tiene_cheques_protestados) {
+            let mensaje = `CHEQUES PROTESTADOS - ${clienteData.nombre}\n\n`;
+            mensaje += `Total de cheques: ${data.data.cantidad}\n`;
+            mensaje += `Valor total: $${data.data.valor_total.toLocaleString()}\n\n`;
+            mensaje += `DETALLE:\n`;
+            mensaje += `${'='.repeat(50)}\n`;
+            
+            data.data.cheques.forEach((cheque, index) => {
+                mensaje += `${index + 1}. Cheque ${cheque.numero_documento}\n`;
+                mensaje += `   Cliente: ${cheque.nombre_cliente}\n`;
+                mensaje += `   Valor: $${parseFloat(cheque.valor).toLocaleString()}\n`;
+                mensaje += `   Fecha Vencimiento: ${cheque.fecha_vencimiento || 'N/A'}\n`;
+                mensaje += `   Fecha Emisión: ${cheque.fecha_emision || 'N/A'}\n`;
+                mensaje += `   Sucursal: ${cheque.nombre_sucursal}\n`;
+                mensaje += `${'='.repeat(50)}\n`;
+            });
+            
+            alert(mensaje);
+        } else {
+            alert('No se encontraron cheques protestados para este cliente');
+        }
+    })
+    .catch(error => {
+        console.error('Error obteniendo cheques protestados:', error);
+        alert('Error al obtener información de cheques protestados');
+    });
+}
 
 console.log('🔍 Script cargado completamente');
 </script> 

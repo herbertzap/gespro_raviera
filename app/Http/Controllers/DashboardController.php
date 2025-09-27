@@ -35,16 +35,21 @@ class DashboardController extends Controller
             $data = $this->getSuperAdminDashboard($user);
         } elseif ($user->hasRole('Vendedor')) {
             $data = $this->getVendedorDashboard($user);
-        } else        if ($user->hasRole('Supervisor')) {
+        } elseif ($user->hasRole('Supervisor')) {
             $data = $this->getSupervisorDashboard($user);
             $data['pageSlug'] = 'dashboard';
             return view('dashboard.supervisor', $data);
         } elseif ($user->hasRole('Compras')) {
             $data = $this->getComprasDashboard($user);
-        } elseif ($user->hasRole('Picking')) {
-            $data = $this->getPickingDashboard($user);
-        } elseif ($user->hasRole('Bodega')) {
-            $data = $this->getBodegaDashboard($user);
+            $data['pageSlug'] = 'dashboard';
+            return view('dashboard.compras', $data);
+        } elseif ($user->hasRole('Finanzas')) {
+            $data = $this->getSupervisorDashboard($user);
+            $data['pageSlug'] = 'dashboard';
+            return view('dashboard.finanzas', $data);
+        } else {
+            // Rol por defecto
+            $data = $this->getVendedorDashboard($user);
         }
 
         // Agregar pageSlug para el sidebar
@@ -107,13 +112,17 @@ class DashboardController extends Controller
 
         // Obtener cheques en cartera
         $chequesEnCartera = $this->cobranzaService->getChequesEnCartera($user->codigo_vendedor);
+        
+        // Obtener cheques protestados
+        $chequesProtestados = $this->getChequesProtestadosVendedor($user->codigo_vendedor);
 
         // Calcular resumen de cobranza con datos reales
         $resumenCobranza = [
             'TOTAL_FACTURAS' => $resumenFacturasPendientes['total_facturas'],
             'TOTAL_NOTAS_VENTA' => $totalNotasVenta,
             'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor'],
-            'CHEQUES_EN_CARTERA' => $chequesEnCartera
+            'CHEQUES_EN_CARTERA' => $chequesEnCartera,
+            'CHEQUES_PROTESTADOS' => $chequesProtestados['valor_total']
         ];
 
         return [
@@ -206,19 +215,31 @@ class DashboardController extends Controller
     private function getComprasDashboard($user)
     {
         try {
-            // Productos con bajo stock (limitado para evitar timeout)
-            $productosBajoStock = $this->getProductosBajoStockOptimizado();
+            // Obtener TODAS las facturas pendientes del sistema (sin filtro de vendedor)
+            $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 10);
+            $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes(null);
 
-            // Resumen básico de compras
-            $resumenCompras = $this->getResumenComprasOptimizado();
+            // Obtener TODAS las NVV del sistema (sin filtro de vendedor)
+            $nvvSistema = $this->cobranzaService->getNotasVentaSQL(10);
+            $totalNvvSistema = $this->cobranzaService->getTotalNotasVentaSQL();
 
-            // Notas de venta pendientes de aprobación por Compras
+            // Obtener NVV pendientes de aprobación por Compras
             $nvvPendientes = $this->getNvvPendientesCompras();
 
+            // Productos con bajo stock
+            $productosBajoStock = $this->getProductosBajoStockMySQL();
+
+            // Resumen básico de compras desde MySQL
+            $resumenCompras = $this->getResumenComprasMySQL();
+
             return [
+                'facturasPendientes' => $facturasPendientes,
+                'resumenFacturasPendientes' => $resumenFacturasPendientes,
+                'nvvSistema' => $nvvSistema,
+                'totalNvvSistema' => $totalNvvSistema,
+                'nvvPendientes' => $nvvPendientes,
                 'productosBajoStock' => $productosBajoStock,
                 'resumenCompras' => $resumenCompras,
-                'nvvPendientes' => $nvvPendientes,
                 'tipoUsuario' => 'Compras'
             ];
         } catch (\Exception $e) {
@@ -226,13 +247,20 @@ class DashboardController extends Controller
             
             // Retornar datos básicos en caso de error
             return [
+                'facturasPendientes' => [],
+                'resumenFacturasPendientes' => [
+                    'total_facturas' => 0,
+                    'por_estado' => []
+                ],
+                'nvvSistema' => [],
+                'totalNvvSistema' => 0,
+                'nvvPendientes' => [],
                 'productosBajoStock' => [],
                 'resumenCompras' => [
                     'total_compras_mes' => 0,
                     'productos_bajo_stock' => 0,
                     'compras_pendientes' => 0
                 ],
-                'nvvPendientes' => [],
                 'tipoUsuario' => 'Compras',
                 'error' => 'Error al cargar datos del dashboard'
             ];
@@ -306,42 +334,93 @@ class DashboardController extends Controller
 
     private function getSuperAdminDashboard($user)
     {
-        // Resumen general de todo el sistema
-        $totalUsuarios = User::count();
-        $usuariosPorRol = [];
-        
-        $roles = ['Super Admin', 'Vendedor', 'Supervisor', 'Compras', 'Bodega'];
-        foreach ($roles as $rol) {
-            $usuariosPorRol[$rol] = User::role($rol)->count();
+        try {
+            // 1. FACTURAS PENDIENTES (cantidad y listado) - Solo 10 más recientes
+            $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 10); // Sin filtro de vendedor, limitado a 10
+            $totalFacturasPendientes = count($facturasPendientes);
+
+            // 2. TOTAL NOTAS DE VENTAS EN SQL (cantidad) - TODAS las notas del sistema
+            $totalNotasVentaSQL = $this->cobranzaService->getTotalNotasVentaSQL();
+
+            // 3. TOTAL NOTAS DE VENTAS PENDIENTES POR VALIDAR (cantidad) - TODAS las notas pendientes
+            $notasPendientesSupervisor = Cotizacion::where('estado_aprobacion', 'pendiente')
+                ->orWhere('estado_aprobacion', 'pendiente_picking')
+                ->orWhere('estado_aprobacion', 'aprobada_supervisor')
+                ->count();
+
+            // 4. NOTAS DE VENTA PENDIENTES (listado limitado) - Solo 10 más recientes
+            $notasPendientes = Cotizacion::where('estado_aprobacion', 'pendiente')
+                ->orWhere('estado_aprobacion', 'pendiente_picking')
+                ->orWhere('estado_aprobacion', 'aprobada_supervisor')
+                ->with(['user', 'cliente'])
+                ->latest()
+                ->take(10)
+                ->get();
+
+            // 5. NOTAS DE VENTA EN SQL (listado limitado) - Solo 10 más recientes
+            $notasVentaSQL = $this->cobranzaService->getNotasVentaSQL(10);
+
+            // 6. CHEQUES EN CARTERA - TODOS los cheques del sistema
+            $chequesEnCartera = $this->cobranzaService->getChequesEnCartera(null); // Sin filtro de vendedor
+
+            // 7. RESUMEN DE FACTURAS PENDIENTES - TODAS las facturas del sistema
+            $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes(null); // Sin filtro de vendedor
+
+            // 8. INFORMACIÓN DE USUARIOS
+            $totalUsuarios = User::count();
+            $usuariosPorRol = [];
+            
+            $roles = ['Super Admin', 'Vendedor', 'Supervisor', 'Compras', 'Picking'];
+            foreach ($roles as $rol) {
+                try {
+                    $usuariosPorRol[$rol] = User::role($rol)->count();
+                } catch (\Exception $e) {
+                    $usuariosPorRol[$rol] = 0;
+                }
+            }
+
+            // Resumen para las tarjetas principales
+            $resumenCobranza = [
+                'TOTAL_FACTURAS_PENDIENTES' => $totalFacturasPendientes,
+                'TOTAL_NOTAS_VENTA_SQL' => $totalNotasVentaSQL,
+                'TOTAL_NOTAS_PENDIENTES_VALIDAR' => $notasPendientesSupervisor,
+                'TOTAL_FACTURAS' => $totalFacturasPendientes,
+                'TOTAL_NOTAS_VENTA' => $totalNotasVentaSQL,
+                'CHEQUES_EN_CARTERA' => $chequesEnCartera,
+                'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor']
+            ];
+
+            return [
+                'notasPendientes' => $notasPendientes,
+                'notasVentaSQL' => $notasVentaSQL,
+                'facturasPendientes' => $facturasPendientes, // Agregado para la tabla
+                'resumenCobranza' => $resumenCobranza,
+                'totalUsuarios' => $totalUsuarios,
+                'usuariosPorRol' => $usuariosPorRol,
+                'tipoUsuario' => 'Super Admin'
+            ];
+
+        } catch (\Exception $e) {
+            Log::error("Error en getSuperAdminDashboard: " . $e->getMessage());
+            
+            // Fallback con datos básicos
+            return [
+                'notasPendientes' => collect(),
+                'notasVentaSQL' => [],
+                'facturasPendientes' => [],
+                'resumenCobranza' => [
+                    'TOTAL_FACTURAS_PENDIENTES' => 0,
+                    'TOTAL_NOTAS_VENTA_SQL' => 0,
+                    'TOTAL_NOTAS_PENDIENTES_VALIDAR' => 0,
+                    'TOTAL_FACTURAS' => 0,
+                    'TOTAL_NOTAS_VENTA' => 0,
+                    'CHEQUES_EN_CARTERA' => 0
+                ],
+                'totalUsuarios' => 0,
+                'usuariosPorRol' => [],
+                'tipoUsuario' => 'Super Admin'
+            ];
         }
-
-        // Obtener total de notas de venta
-        $totalNotasVenta = Cotizacion::count();
-
-        // Obtener cheques en cartera
-        $chequesEnCartera = $this->cobranzaService->getChequesEnCartera();
-
-        // Resumen general de cobranza
-        $resumenCobranza = $this->cobranzaService->getResumenCobranza();
-        
-        // Agregar los nuevos campos al resumen
-        $resumenCobranza['TOTAL_NOTAS_VENTA'] = $totalNotasVenta;
-        $resumenCobranza['CHEQUES_EN_CARTERA'] = $chequesEnCartera;
-
-        // Notas de venta pendientes de aprobación
-        $notasPendientes = NotaVenta::where('estado', 'por_aprobar')
-            ->with('user')
-            ->latest()
-            ->take(10)
-            ->get();
-
-        return [
-            'totalUsuarios' => $totalUsuarios,
-            'usuariosPorRol' => $usuariosPorRol,
-            'resumenCobranza' => $resumenCobranza,
-            'notasPendientes' => $notasPendientes,
-            'tipoUsuario' => 'Super Admin'
-        ];
     }
 
     private function getBodegaDashboard($user)
@@ -678,63 +757,64 @@ class DashboardController extends Controller
     }
 
     /**
-     * Métodos optimizados para el dashboard de Compras
+     * Métodos optimizados para el dashboard de Compras usando solo MySQL
      */
-    private function getProductosBajoStockOptimizado()
+    private function getProductosBajoStockMySQL()
     {
         try {
-            // Consulta optimizada con límite y timeout
-            $productos = \DB::connection('sqlsrv')
-                ->table('PRODUCTOS')
+            // Consulta desde MySQL (tabla productos local)
+            // Usar stock <= 5 como criterio de "bajo stock" ya que no hay columna stock_minimo
+            $productos = \DB::table('productos')
                 ->select([
-                    'CODIGO_PRODUCTO',
-                    'NOMBRE_PRODUCTO',
-                    'STOCK_ACTUAL',
-                    'STOCK_MINIMO',
-                    'PRECIO_COMPRA'
+                    'NOKOPR as codigo',
+                    'NOKOPR as nombre',
+                    'stock_fisico as stock_actual',
+                    'stock_comprometido',
+                    'stock_disponible',
+                    'precio_01p as precio_compra'
                 ])
-                ->where('STOCK_ACTUAL', '<=', \DB::raw('STOCK_MINIMO'))
-                ->where('ACTIVO', 1)
-                ->orderBy('STOCK_ACTUAL', 'asc')
-                ->limit(10) // Limitar a 10 productos para evitar timeout
+                ->where('activo', true)
+                ->where('stock_fisico', '<=', 5) // Stock bajo si es <= 5
+                ->orderBy('stock_fisico', 'asc')
+                ->limit(10)
                 ->get();
 
             return $productos->map(function($producto) {
                 return [
-                    'codigo' => $producto->CODIGO_PRODUCTO,
-                    'nombre' => $producto->NOMBRE_PRODUCTO,
-                    'stock_actual' => $producto->STOCK_ACTUAL,
-                    'stock_minimo' => $producto->STOCK_MINIMO,
-                    'precio_compra' => $producto->PRECIO_COMPRA,
-                    'diferencia' => $producto->STOCK_MINIMO - $producto->STOCK_ACTUAL
+                    'codigo' => $producto->codigo,
+                    'nombre' => $producto->nombre,
+                    'stock_actual' => $producto->stock_actual,
+                    'stock_comprometido' => $producto->stock_comprometido,
+                    'stock_disponible' => $producto->stock_disponible,
+                    'precio_compra' => $producto->precio_compra,
+                    'diferencia' => 5 - $producto->stock_actual // Diferencia con stock mínimo de 5
                 ];
-            });
+            })->toArray();
         } catch (\Exception $e) {
-            \Log::error("Error al obtener productos bajo stock: " . $e->getMessage());
+            \Log::error("Error al obtener productos bajo stock desde MySQL: " . $e->getMessage());
             return [];
         }
     }
 
-    private function getResumenComprasOptimizado()
+    private function getResumenComprasMySQL()
     {
         try {
             $mesActual = date('Y-m');
             
-            // Consultas optimizadas con límites
-            $totalComprasMes = \DB::connection('sqlsrv')
-                ->table('COMPRAS')
-                ->where('FECHA_COMPRA', 'like', $mesActual . '%')
+            // Consultas desde MySQL (tabla productos local)
+            // Usar stock <= 5 como criterio de "bajo stock"
+            $productosBajoStock = \DB::table('productos')
+                ->where('activo', true)
+                ->where('stock_fisico', '<=', 5)
                 ->count();
 
-            $productosBajoStock = \DB::connection('sqlsrv')
-                ->table('PRODUCTOS')
-                ->where('STOCK_ACTUAL', '<=', \DB::raw('STOCK_MINIMO'))
-                ->where('ACTIVO', 1)
+            // Obtener cotizaciones pendientes como "compras pendientes"
+            $comprasPendientes = \App\Models\Cotizacion::where('estado_aprobacion', 'aprobada_supervisor')
+                ->whereNull('aprobado_por_compras')
                 ->count();
 
-            $comprasPendientes = \DB::connection('sqlsrv')
-                ->table('COMPRAS')
-                ->where('ESTADO', 'PENDIENTE')
+            // Obtener total de cotizaciones del mes
+            $totalComprasMes = \App\Models\Cotizacion::where('created_at', 'like', $mesActual . '%')
                 ->count();
 
             return [
@@ -744,7 +824,7 @@ class DashboardController extends Controller
                 'mes_actual' => $mesActual
             ];
         } catch (\Exception $e) {
-            \Log::error("Error al obtener resumen de compras: " . $e->getMessage());
+            \Log::error("Error al obtener resumen de compras desde MySQL: " . $e->getMessage());
             return [
                 'total_compras_mes' => 0,
                 'productos_bajo_stock' => 0,
@@ -761,31 +841,59 @@ class DashboardController extends Controller
     {
         try {
             // Obtener cotizaciones pendientes de aprobación por Compras
+            // Usar las columnas correctas de la tabla cotizaciones
             $cotizaciones = \App\Models\Cotizacion::with(['user', 'productos'])
-                ->where('estado_aprobacion', 'pendiente')
-                ->where('aprobacion_supervisor', true)
-                ->where('aprobacion_compras', false)
-                ->orderBy('fecha_creacion', 'desc')
+                ->where('estado_aprobacion', 'aprobada_supervisor') // Ya aprobada por supervisor
+                ->whereNull('aprobado_por_compras') // Pendiente de aprobación por compras
+                ->orderBy('created_at', 'desc')
                 ->limit(10) // Limitar para evitar timeout
                 ->get();
 
             return $cotizaciones->map(function($cotizacion) {
                 return [
                     'id' => $cotizacion->id,
+                    'numero' => $cotizacion->numero_cotizacion ?? 'N/A',
                     'cliente_codigo' => $cotizacion->cliente_codigo,
                     'cliente_nombre' => $cotizacion->cliente_nombre,
                     'total' => $cotizacion->total,
-                    'fecha_creacion' => $cotizacion->fecha_creacion,
+                    'fecha_creacion' => $cotizacion->created_at->format('d/m/Y H:i'),
                     'vendedor' => $cotizacion->user->name ?? 'N/A',
                     'productos_count' => $cotizacion->productos->count(),
                     'tiene_problemas_stock' => $cotizacion->tiene_problemas_stock ?? false,
                     'tiene_problemas_credito' => $cotizacion->tiene_problemas_credito ?? false,
-                    'url' => route('aprobaciones.show', $cotizacion->id)
+                    'estado' => $cotizacion->estado_aprobacion,
+                    'url' => route('cotizaciones.show', $cotizacion->id)
                 ];
-            });
+            })->toArray();
         } catch (\Exception $e) {
             \Log::error("Error al obtener NVV pendientes de Compras: " . $e->getMessage());
             return [];
+        }
+    }
+    
+    private function getChequesProtestadosVendedor($codigoVendedor)
+    {
+        try {
+            $cheques = \DB::table('cheques_protestados')
+                ->where('codigo_vendedor', $codigoVendedor)
+                ->get();
+            
+            $valorTotal = $cheques->sum('valor');
+            $cantidad = $cheques->count();
+            
+            return [
+                'cantidad' => $cantidad,
+                'valor_total' => $valorTotal,
+                'cheques' => $cheques->toArray()
+            ];
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo cheques protestados para vendedor: ' . $e->getMessage());
+            return [
+                'cantidad' => 0,
+                'valor_total' => 0,
+                'cheques' => []
+            ];
         }
     }
 }

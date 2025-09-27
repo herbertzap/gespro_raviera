@@ -20,12 +20,19 @@ Route::get('/', function () {
 });
 
 // Dashboard
-Route::get('/dashboard', [App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard')->middleware(['auth', 'sincronizar.clientes']);
+Route::get('/dashboard', [App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard')->middleware(['auth']);
 
 // Rutas de Cobranza
 Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/cobranza', [App\Http\Controllers\CobranzaController::class, 'index'])->name('cobranza.index');
     Route::get('/cobranza/export', [App\Http\Controllers\CobranzaController::class, 'export'])->name('cobranza.export');
+});
+
+// Rutas de búsqueda de productos (sin middleware de sincronización para mejor rendimiento)
+Route::middleware(['auth'])->group(function () {
+    Route::get('/cotizacion/buscar-productos', [App\Http\Controllers\CotizacionController::class, 'buscarProductos'])->name('cotizacion.buscar-productos');
+    Route::get('/cotizacion/obtener-precios', [App\Http\Controllers\CotizacionController::class, 'obtenerPrecios'])->name('cotizacion.obtener-precios');
+    Route::post('/cotizacion/cheques-protestados', [App\Http\Controllers\CotizacionController::class, 'obtenerChequesProtestados'])->name('cotizacion.cheques-protestados');
 });
 
 // Rutas de Cotizaciones
@@ -36,8 +43,6 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/cotizacion/ver/{id}', [App\Http\Controllers\CotizacionController::class, 'ver'])->name('cotizacion.ver');
     Route::get('/cotizacion/historial/{id}', [App\Http\Controllers\CotizacionController::class, 'historial'])->name('cotizacion.historial');
     Route::delete('/cotizacion/{id}', [App\Http\Controllers\CotizacionController::class, 'eliminar'])->name('cotizacion.eliminar');
-    Route::get('/cotizacion/buscar-productos', [App\Http\Controllers\CotizacionController::class, 'buscarProductos'])->name('cotizacion.buscar-productos');
-    Route::get('/cotizacion/obtener-precios', [App\Http\Controllers\CotizacionController::class, 'obtenerPrecios'])->name('cotizacion.obtener-precios');
     Route::post('/cotizacion/guardar', [App\Http\Controllers\CotizacionController::class, 'guardar'])->name('cotizacion.guardar');
     Route::put('/cotizacion/actualizar/{id}', [App\Http\Controllers\CotizacionController::class, 'actualizar'])->name('cotizacion.actualizar');
     Route::post('/cotizacion/generar-nota-venta/{id}', [App\Http\Controllers\CotizacionController::class, 'generarNotaVenta'])->name('cotizacion.generar-nota-venta');
@@ -47,11 +52,20 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/cotizacion/resumen-stock-comprometido', [App\Http\Controllers\CotizacionController::class, 'resumenStockComprometido'])->name('cotizacion.resumen-stock-comprometido');
 });
 
+// Rutas de Productos (Compras)
+Route::middleware(['auth'])->group(function () {
+    Route::get('/productos', [App\Http\Controllers\ProductoController::class, 'index'])->name('productos.index');
+    Route::get('/api/productos/buscar', [App\Http\Controllers\ProductoController::class, 'buscar'])->name('productos.buscar');
+    Route::post('/api/productos/crear-nvv', [App\Http\Controllers\ProductoController::class, 'crearNVVDesdeProductos'])->name('productos.crear-nvv');
+    Route::post('/api/productos/modificar-cantidades', [App\Http\Controllers\ProductoController::class, 'modificarCantidades'])->name('productos.modificar-cantidades');
+});
+
 // Rutas de Aprobaciones
 Route::middleware(['auth'])->group(function () {
     Route::get('/aprobaciones', [App\Http\Controllers\AprobacionController::class, 'index'])->name('aprobaciones.index');
     Route::get('/aprobaciones/{id}', [App\Http\Controllers\AprobacionController::class, 'show'])->name('aprobaciones.show');
     Route::get('/aprobaciones/{id}/historial', [App\Http\Controllers\AprobacionController::class, 'historial'])->name('aprobaciones.historial');
+    Route::get('/aprobaciones/{id}/imprimir', [App\Http\Controllers\AprobacionController::class, 'imprimir'])->name('aprobaciones.imprimir');
     
     // Aprobaciones por rol
     Route::post('/aprobaciones/{id}/supervisor', [App\Http\Controllers\AprobacionController::class, 'aprobarSupervisor'])->name('aprobaciones.supervisor');
@@ -62,6 +76,10 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/aprobaciones/{id}/rechazar', [App\Http\Controllers\AprobacionController::class, 'rechazar'])->name('aprobaciones.rechazar');
     Route::post('/aprobaciones/{id}/separar-stock', [App\Http\Controllers\AprobacionController::class, 'separarProductosStock'])->name('aprobaciones.separar-stock');
     Route::post('/aprobaciones/{id}/separar-por-stock', [App\Http\Controllers\AprobacionController::class, 'separarPorStock'])->name('aprobaciones.separar-por-stock');
+    Route::post('/aprobaciones/{id}/guardar-separar', [App\Http\Controllers\AprobacionController::class, 'guardarSeparar'])->name('aprobaciones.guardar-separar');
+    Route::post('/aprobaciones/{id}/separar-producto-individual', [App\Http\Controllers\AprobacionController::class, 'separarProductoIndividual'])->name('aprobaciones.separar-producto-individual');
+    Route::post('/aprobaciones/{id}/separar-productos', [App\Http\Controllers\AprobacionController::class, 'separarProductos'])->name('aprobaciones.separar-productos');
+    Route::post('/aprobaciones/{id}/modificar-cantidades', [App\Http\Controllers\AprobacionController::class, 'modificarCantidadesProductos'])->name('aprobaciones.modificar-cantidades');
 });
 
 // Ruta de prueba para historial
@@ -111,8 +129,8 @@ Route::get('/facturas-pendientes/ver/{tipoDocumento}/{numeroDocumento}', [App\Ht
 // Rutas de Clientes
 Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/clientes', [App\Http\Controllers\ClienteController::class, 'index'])->name('clientes.index');
+    Route::get('/clientes/{codigo}', [App\Http\Controllers\ClienteController::class, 'show'])->name('clientes.show');
     Route::post('/clientes/buscar', [App\Http\Controllers\ClienteController::class, 'buscar'])->name('clientes.buscar');
-    Route::post('/clientes/buscar-por-nombre', [App\Http\Controllers\ClienteController::class, 'buscarPorNombre'])->name('clientes.buscar-por-nombre');
     Route::post('/clientes/sincronizar', [App\Http\Controllers\ClienteController::class, 'sincronizar'])->name('clientes.sincronizar');
     Route::get('/clientes/estadisticas', [App\Http\Controllers\ClienteController::class, 'estadisticas'])->name('clientes.estadisticas');
 });
@@ -147,7 +165,7 @@ Route::get('/cliente/{codigo}', [App\Http\Controllers\ClienteController::class, 
 Auth::routes();
 
 // Página de inicio después del login
-Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home')->middleware(['auth', 'sincronizar.clientes']);
+Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home')->middleware(['auth']);
 
 // Rutas protegidas
 Route::middleware(['auth', 'handle.errors'])->group(function () {
@@ -244,3 +262,28 @@ Route::middleware(['auth', 'handle.errors'])->group(function () {
     });
 
 });
+
+// Rutas de Administración de Usuarios
+Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
+    // Gestión de usuarios
+    Route::get('/users', [App\Http\Controllers\Admin\UserManagementController::class, 'index'])->name('users.index');
+    Route::get('/users/create-from-vendedor', [App\Http\Controllers\Admin\UserManagementController::class, 'vendedoresDisponibles'])->name('users.create-from-vendedor');
+    Route::post('/users/create-from-vendedor', [App\Http\Controllers\Admin\UserManagementController::class, 'createFromVendedor'])->name('users.store-from-vendedor');
+    Route::get('/users/{user}/edit', [App\Http\Controllers\Admin\UserManagementController::class, 'edit'])->name('users.edit');
+    Route::put('/users/{user}', [App\Http\Controllers\Admin\UserManagementController::class, 'update'])->name('users.update');
+    Route::post('/users/{user}/change-password', [App\Http\Controllers\Admin\UserManagementController::class, 'changePassword'])->name('users.change-password');
+    Route::delete('/users/{user}', [App\Http\Controllers\Admin\UserManagementController::class, 'destroy'])->name('users.destroy');
+    
+    // Sincronización de vendedores
+    Route::post('/vendedores/sincronizar', function() {
+        try {
+            \Artisan::call('vendedores:sincronizar');
+            return response()->json(['success' => true, 'message' => 'Vendedores sincronizados exitosamente']);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+    })->name('vendedores.sincronizar');
+});
+
+// Webhook para despliegue automático desde GitHub
+Route::post('/webhook/github', [App\Http\Controllers\WebhookController::class, 'github'])->name('webhook.github');

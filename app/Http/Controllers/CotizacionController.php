@@ -117,6 +117,18 @@ class CotizacionController extends Controller
                         $motivoRechazo = 'Cliente con alertas de cobranza pendientes';
                     }
                     
+                    // Verificar cheques protestados
+                    $chequesProtestados = $this->verificarChequesProtestados($clienteCodigo);
+                    if ($chequesProtestados['tiene_cheques_protestados']) {
+                        $puedeGenerarNotaVenta = false;
+                        $motivoRechazo = 'Cliente con cheques protestados - No puede generar NVV';
+                        $alertas[] = [
+                            'tipo' => 'error',
+                            'mensaje' => 'Cliente tiene ' . $chequesProtestados['cantidad'] . ' cheque(s) protestado(s)',
+                            'detalle' => 'Valor total: $' . number_format($chequesProtestados['valor_total'], 0, ',', '.')
+                        ];
+                    }
+                    
                     // Verificar que el cliente tenga lista de precios asignada
                     if (empty($cliente->lista_precios_codigo) || $cliente->lista_precios_codigo === '00' || $cliente->lista_precios_codigo === '0') {
                         // Asignar lista de precios por defecto (01P)
@@ -346,9 +358,57 @@ class CotizacionController extends Controller
                 $listaPrecios = '01P';
             }
             
-            // Usar CobranzaService para buscar productos con la lista de precios del cliente
-            $cobranzaService = new \App\Services\CobranzaService();
-            $productos = $cobranzaService->buscarProductosSQLServer($busqueda, 15, $listaPrecios); // Reducir a 15 resultados para mayor velocidad
+            // Buscar productos en tabla local MySQL (consulta optimizada)
+            $productos = DB::table('productos')
+                ->where('NOKOPR', 'LIKE', "{$busqueda}%")
+                ->where('activo', true)
+                ->limit(15)
+                ->get()
+                ->map(function($producto) use ($listaPrecios) {
+                    // Mapear precios según la lista
+                    $precio = 0;
+                    $precioUd2 = 0;
+                    $descuentoMaximo = 0;
+                    
+                    if ($listaPrecios === '01P' || $listaPrecios === '01') {
+                        $precio = $producto->precio_01p;
+                        $precioUd2 = $producto->precio_01p_ud2;
+                        $descuentoMaximo = $producto->descuento_maximo_01p;
+                    } elseif ($listaPrecios === '02P' || $listaPrecios === '02') {
+                        $precio = $producto->precio_02p;
+                        $precioUd2 = $producto->precio_02p_ud2;
+                        $descuentoMaximo = $producto->descuento_maximo_02p;
+                    } elseif ($listaPrecios === '03P' || $listaPrecios === '03') {
+                        $precio = $producto->precio_03p;
+                        $precioUd2 = $producto->precio_03p_ud2;
+                        $descuentoMaximo = $producto->descuento_maximo_03p;
+                    } else {
+                        // Por defecto usar 01P
+                        $precio = $producto->precio_01p;
+                        $precioUd2 = $producto->precio_01p_ud2;
+                        $descuentoMaximo = $producto->descuento_maximo_01p;
+                    }
+                    
+                    // Determinar si el producto se puede agregar (precio > 0)
+                    $precioValido = ($precio > 0);
+                    
+                    return [
+                        'CODIGO_PRODUCTO' => $producto->KOPR,
+                        'NOMBRE_PRODUCTO' => $producto->NOKOPR,
+                        'UNIDAD_MEDIDA' => $producto->UD01PR,
+                        'PRECIO_UD1' => $precio,
+                        'PRECIO_UD2' => $precioUd2,
+                        'DESCUENTO_MAXIMO' => $descuentoMaximo,
+                        'STOCK_DISPONIBLE' => $producto->stock_disponible ?? 0,
+                        'STOCK_FISICO' => $producto->stock_fisico ?? 0,
+                        'STOCK_COMPROMETIDO' => $producto->stock_comprometido ?? 0,
+                        'CANTIDAD_MINIMA' => 1,
+                        'LISTA_PRECIOS' => $listaPrecios,
+                        'PRECIO_VALIDO' => $precioValido, // Nuevo campo para indicar si se puede agregar
+                        'MOTIVO_BLOQUEO' => $precioValido ? null : 'Precio no disponible'
+                    ];
+                })
+                ->toArray();
             
             if (empty($productos)) {
                 return response()->json([
@@ -357,25 +417,17 @@ class CotizacionController extends Controller
                 ]);
             }
             
-            // Optimizar información de stock (solo para productos con stock bajo o sin stock)
+            // Optimizar información de stock (simplificado para mejor rendimiento)
             foreach ($productos as &$producto) {
                 $stockOriginal = $producto['STOCK_DISPONIBLE'] ?? 0;
                 
-                // Solo calcular stock comprometido si el stock original es bajo
-                if ($stockOriginal <= 10) {
-                    $stockComprometidoService = new \App\Services\StockComprometidoService();
-                    $stockDisponibleReal = $stockComprometidoService->obtenerStockDisponibleReal($producto['CODIGO_PRODUCTO']);
-                    $producto['STOCK_DISPONIBLE_REAL'] = $stockDisponibleReal;
-                    $producto['STOCK_COMPROMETIDO'] = StockComprometido::calcularStockComprometido($producto['CODIGO_PRODUCTO']);
-                } else {
-                    $producto['STOCK_DISPONIBLE_REAL'] = $stockOriginal;
-                    $producto['STOCK_COMPROMETIDO'] = 0;
-                }
-                
+                // Usar stock original directamente (ya viene de la tabla productos)
+                $producto['STOCK_DISPONIBLE_REAL'] = $stockOriginal;
+                $producto['STOCK_COMPROMETIDO'] = $producto['STOCK_COMPROMETIDO'] ?? 0;
                 $producto['STOCK_DISPONIBLE_ORIGINAL'] = $stockOriginal;
                 
                 // Determinar estado del stock
-                $stockReal = $producto['STOCK_DISPONIBLE_REAL'];
+                $stockReal = $stockOriginal;
                 $producto['TIENE_STOCK'] = $stockReal > 0;
                 $producto['STOCK_INSUFICIENTE'] = $stockReal < ($producto['CANTIDAD_MINIMA'] ?? 1);
                 
@@ -578,138 +630,93 @@ class CotizacionController extends Controller
         $codigoCliente = $request->get('cliente');
         
         try {
-            // Obtener lista de precios del cliente
-            $listaPreciosCliente = '01'; // Por defecto
+            // Obtener lista de precios del cliente desde MySQL (tabla clientes local)
+            $listaPreciosCliente = '01P'; // Por defecto
             if ($codigoCliente) {
-                // Consultar directamente la tabla MAEEN para obtener la lista de precios
-                $queryCliente = "SELECT LVEN as lista_precios FROM MAEEN WHERE KOEN = '{$codigoCliente}'";
-                $tempFileCliente = tempnam(sys_get_temp_dir(), 'sql_cliente_');
-                file_put_contents($tempFileCliente, $queryCliente . "\ngo\nquit");
-                
-                $commandCliente = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFileCliente} 2>&1";
-                $resultCliente = shell_exec($commandCliente);
-                unlink($tempFileCliente);
-                
-                if ($resultCliente && !str_contains($resultCliente, 'error')) {
-                    $lines = explode("\n", $resultCliente);
-                    foreach ($lines as $line) {
-                        $line = trim($line);
-                        if (!empty($line) && 
-                            !str_contains($line, 'Setting') && 
-                            !str_contains($line, 'locale') && 
-                            !str_contains($line, '1>') && 
-                            !str_contains($line, '2>') && 
-                            !str_contains($line, 'Msg') && 
-                            !str_contains($line, 'Warning') && 
-                            !str_contains($line, 'lista_precios') &&
-                            !str_contains($line, 'using default charset') &&
-                            !str_contains($line, 'codigo') &&
-                            !str_contains($line, 'nombre') &&
-                            preg_match('/^[A-Z0-9]+$/', $line)) {
-                            $listaPreciosCliente = trim($line);
-                            break;
-                        }
+                $cliente = DB::table('clientes')->where('KOEN', $codigoCliente)->first();
+                if ($cliente && $cliente->LVEN) {
+                    $listaPreciosCliente = $cliente->LVEN;
+                    // Mapear formato si es necesario
+                    if (strpos($listaPreciosCliente, 'TABPP') === 0) {
+                        $listaPreciosCliente = substr($listaPreciosCliente, 5) . 'P';
                     }
-                }
-                
-                \Log::info('Lista de precios del cliente ' . $codigoCliente . ': ' . $listaPreciosCliente);
-                
-                // Mapear lista de precios de formato TABPP01P a 01P
-                if (strpos($listaPreciosCliente, 'TABPP') === 0) {
-                    $listaPreciosCliente = substr($listaPreciosCliente, 5); // Remover 'TABPP' del inicio
-                    \Log::info('Lista de precios mapeada a: ' . $listaPreciosCliente);
                 }
             }
             
-            // Usar la vista de precios con la lista del cliente
-            $query = "
-                SELECT 
-                    lista_precio,
-                    precio_ud1,
-                    precio_ud2,
-                    margen_ud1,
-                    margen_ud2,
-                    relacion_unidades
-                FROM vw_precios_productos 
-                WHERE codigo_producto = '{$codigoProducto}'
-                AND lista_precio = '{$listaPreciosCliente}'
-                ORDER BY lista_precio ASC
-            ";
+            \Log::info('Lista de precios del cliente ' . $codigoCliente . ': ' . $listaPreciosCliente);
             
-            \Log::info('Query ejecutada: ' . $query);
+            // Consultar precios desde tabla productos local (MySQL)
+            $producto = DB::table('productos')->where('KOPR', $codigoProducto)->first();
             
-            // Usar tsql con parsing mejorado (solución más práctica)
-            try {
-                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $query . "\ngo\nquit");
-                
-                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                $result = shell_exec($command);
-                
-                unlink($tempFile);
-                
-                if (!$result || str_contains($result, 'error')) {
-                    throw new \Exception('Error ejecutando consulta tsql: ' . $result);
-                }
-                
-                // Parsing mejorado: buscar líneas que contengan datos de precios
-                $lines = explode("\n", $result);
-                $precios = [];
-                
-                foreach ($lines as $lineNumber => $line) {
-                    $line = trim($line);
-                    
-                    // Buscar líneas que contengan datos de precios (patrón: lista_precio precio_ud1 precio_ud2...)
-                    if (preg_match('/^(\w+)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)$/', $line, $matches)) {
-                        $precio = (object) [
-                            'lista_precio' => $matches[1],
-                            'precio_ud1' => (float)$matches[2],
-                            'precio_ud2' => (float)$matches[3],
-                            'margen_ud1' => (float)$matches[4],
-                            'margen_ud2' => (float)$matches[5],
-                            'relacion_unidades' => (float)$matches[6]
-                        ];
-                        $precios[] = $precio;
-                        \Log::info('Precio encontrado: Lista ' . $precio->lista_precio . ' - $' . $precio->precio_ud1);
-                    }
-                }
-                
-                \Log::info('Precios obtenidos usando tsql con parsing mejorado: ' . count($precios));
-                
-            } catch (\Exception $e) {
-                \Log::error('Error usando tsql con parsing mejorado: ' . $e->getMessage());
-                throw new \Exception('Error consultando precios: ' . $e->getMessage());
+            if (!$producto) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Producto no encontrado'
+                ]);
             }
             
-            \Log::info('Total de precios procesados: ' . count($precios));
+            $precios = [];
             
-            // Si no hay precios, obtener información del producto
-            if (empty($precios)) {
-                $queryProducto = "SELECT TOP 1 KOPR as codigo, NOKOPR as nombre, UD01PR as unidad FROM MAEPR WHERE KOPR = '{$codigoProducto}'";
-                $resultProducto = shell_exec("tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " -Q \"{$queryProducto}\" 2>&1");
+            // Mapear precios según la lista del cliente
+            if ($listaPreciosCliente === '01P' || $listaPreciosCliente === '01') {
+                $precios[] = (object) [
+                    'lista_precio' => '01P',
+                    'precio_ud1' => (float)$producto->precio_01p,
+                    'precio_ud2' => (float)$producto->precio_01p_ud2,
+                    'margen_ud1' => 0, // No disponible en tabla local
+                    'margen_ud2' => 0, // No disponible en tabla local
+                    'relacion_unidades' => 1.0,
+                    'descuento_maximo' => (float)$producto->descuento_maximo_01p
+                ];
+            } elseif ($listaPreciosCliente === '02P' || $listaPreciosCliente === '02') {
+                $precios[] = (object) [
+                    'lista_precio' => '02P',
+                    'precio_ud1' => (float)$producto->precio_02p,
+                    'precio_ud2' => (float)$producto->precio_02p_ud2,
+                    'margen_ud1' => 0,
+                    'margen_ud2' => 0,
+                    'relacion_unidades' => 1.0,
+                    'descuento_maximo' => (float)$producto->descuento_maximo_02p
+                ];
+            } elseif ($listaPreciosCliente === '03P' || $listaPreciosCliente === '03') {
+                $precios[] = (object) [
+                    'lista_precio' => '03P',
+                    'precio_ud1' => (float)$producto->precio_03p,
+                    'precio_ud2' => (float)$producto->precio_03p_ud2,
+                    'margen_ud1' => 0,
+                    'margen_ud2' => 0,
+                    'relacion_unidades' => 1.0,
+                    'descuento_maximo' => (float)$producto->descuento_maximo_03p
+                ];
+            } else {
+                // Si no coincide con ninguna lista conocida, usar 01P por defecto
+                $precios[] = (object) [
+                    'lista_precio' => '01P',
+                    'precio_ud1' => (float)$producto->precio_01p,
+                    'precio_ud2' => (float)$producto->precio_01p_ud2,
+                    'margen_ud1' => 0,
+                    'margen_ud2' => 0,
+                    'relacion_unidades' => 1.0,
+                    'descuento_maximo' => (float)$producto->descuento_maximo_01p
+                ];
+            }
+            
+            \Log::info('Precios obtenidos desde MySQL: ' . count($precios));
+            
+            // Si no hay precios válidos, devolver información del producto
+            if (empty($precios) || ($precios[0]->precio_ud1 == 0 && $precios[0]->precio_ud2 == 0)) {
+                $productoInfo = (object) [
+                    'codigo' => $producto->KOPR,
+                    'nombre' => $producto->NOKOPR,
+                    'unidad' => $producto->UD01PR
+                ];
                 
-                if ($resultProducto && !str_contains($resultProducto, 'error')) {
-                    // Parsear información del producto
-                    $lines = explode("\n", $resultProducto);
-                    foreach ($lines as $line) {
-                        if (preg_match('/^\s*([^\s]+)\s+([^\t]+)\s+([^\t]*)/', trim($line), $matches)) {
-                            if ($matches[1] === $codigoProducto) {
-                                $producto = (object) [
-                                    'codigo' => $matches[1],
-                                    'nombre' => trim($matches[2]),
-                                    'unidad' => trim($matches[3])
-                                ];
-                                
-                                return response()->json([
-                                    'success' => true,
-                                    'data' => [],
-                                    'producto' => $producto,
-                                    'message' => 'Producto encontrado pero sin precios configurados'
-                                ]);
-                            }
-                        }
-                    }
-                }
+                return response()->json([
+                    'success' => true,
+                    'data' => [],
+                    'producto' => $productoInfo,
+                    'message' => 'Producto encontrado pero sin precios configurados'
+                ]);
             }
             
             return response()->json([
@@ -976,11 +983,13 @@ class CotizacionController extends Controller
             \Log::info("🔍 Validaciones automáticas: " . json_encode($validacionesAutomaticas));
             \Log::info("🔍 Validación stock: " . json_encode($validacionStock));
             
-            // 6. Determinar estado de la cotización basado en validaciones automáticas
-            \Log::info('🔍 DETERMINANDO ESTADO DE LA COTIZACIÓN BASADO EN VALIDACIONES AUTOMÁTICAS');
+            // 6. Determinar estado de la cotización basado en validaciones automáticas                                                                     
+            \Log::info('🔍 DETERMINANDO ESTADO DE LA COTIZACIÓN BASADO EN VALIDACIONES AUTOMÁTICAS');                                                       
             
             $requiereAutorizacion = false;
             $motivosAutorizacion = [];
+            $tieneProblemasCredito = $validacionesAutomaticas['requiere_autorizacion'];
+            $tieneProblemasStock = $validacionStock['requiere_autorizacion'];
             
             // Verificar validaciones automáticas
             if ($validacionesAutomaticas['requiere_autorizacion']) {
@@ -994,19 +1003,35 @@ class CotizacionController extends Controller
             }
             
             if (!empty($productosSinStock)) {
-                // Hay productos sin stock suficiente, crear nota de venta pendiente
-                $estadoFinal = 'pendiente_stock';
+                // Hay productos sin stock suficiente, crear nota de venta pendiente                                                                        
+                $estadoFinal = 'enviada';
+                
+                // Determinar estado de aprobación basado en los problemas detectados
+                if ($tieneProblemasCredito && $tieneProblemasStock) {
+                    $estadoAprobacion = 'pendiente'; // Requiere supervisor primero
+                } elseif ($tieneProblemasCredito) {
+                    $estadoAprobacion = 'pendiente'; // Requiere supervisor
+                } elseif ($tieneProblemasStock) {
+                    $estadoAprobacion = 'pendiente'; // Requiere supervisor (por stock)
+                } else {
+                    $estadoAprobacion = 'pendiente_picking'; // Solo requiere picking
+                }
+                
                 $cotizacion->update([
                     'estado' => $estadoFinal,
+                    'estado_aprobacion' => $estadoAprobacion,
                     'requiere_aprobacion' => true,
-                    'observaciones' => $cotizacion->observaciones . "\n\n⚠️ PRODUCTOS SIN STOCK SUFICIENTE:\n" . 
+                    'tiene_problemas_credito' => $tieneProblemasCredito,
+                    'tiene_problemas_stock' => $tieneProblemasStock,
+                    'observaciones' => $cotizacion->observaciones . "\n\n⚠️ PRODUCTOS SIN STOCK SUFICIENTE:\n" .                                            
                         collect($productosSinStock)->map(function($p) {
-                            return "- {$p['codigo']} ({$p['nombre']}): Disponible {$p['stock_disponible']}, Solicitado {$p['cantidad_solicitada']}";
+                            return "- {$p['codigo']} ({$p['nombre']}): Disponible {$p['stock_disponible']}, Solicitado {$p['cantidad_solicitada']}";       
                         })->join("\n") . 
                         "\n\n🔍 VALIDACIONES AUTOMÁTICAS:\n" .
-                        "- Crédito: " . ($validacionesAutomaticas['validaciones']['credito']['valido'] ? 'Válido' : 'Requiere autorización') . "\n" .
-                        "- Facturas: " . ($validacionesAutomaticas['validaciones']['retraso']['valido'] ? 'Válido' : 'Requiere autorización') . "\n" .
-                        "- Stock: " . ($validacionStock['valido'] ? 'Válido' : 'Requiere autorización')
+                        "- Crédito: " . ($validacionesAutomaticas['validaciones']['credito']['valido'] ? 'Válido' : 'Requiere autorización') . "\n" .      
+                        "- Facturas: " . ($validacionesAutomaticas['validaciones']['retraso']['valido'] ? 'Válido' : 'Requiere autorización') . "\n" .     
+                        "- Stock: " . ($validacionStock['valido'] ? 'Válido' : 'Requiere autorización') . "\n" .
+                        "- Estado de aprobación: {$estadoAprobacion}"                                                    
                 ]);
                 
                 // Crear nota de venta pendiente
@@ -1096,21 +1121,36 @@ class CotizacionController extends Controller
                         \Log::warning("⚠️ Error generando nota de venta automática: {$resultadoNotaVenta['message']}");
                     }
                 } else {
-                    \Log::warning("⚠️ CLIENTE CON RESTRICCIONES - GUARDANDO LOCALMENTE PARA APROBACIÓN");
+                    \Log::warning("⚠️ CLIENTE CON RESTRICCIONES - GUARDANDO LOCALMENTE PARA APROBACIÓN");                                                        
                     
-                    // Cliente tiene restricciones, guardar localmente para aprobación
+                    // Cliente tiene restricciones, guardar localmente para aprobación                                                                          
                     $estadoFinal = 'enviada';
                     $motivosTexto = implode(', ', $motivosAutorizacion);
                     
+                    // Determinar estado de aprobación basado en los problemas detectados
+                    if ($tieneProblemasCredito && $tieneProblemasStock) {
+                        $estadoAprobacion = 'pendiente'; // Requiere supervisor primero (crédito), luego compras (stock)
+                    } elseif ($tieneProblemasCredito) {
+                        $estadoAprobacion = 'pendiente'; // Requiere supervisor (crédito)
+                    } elseif ($tieneProblemasStock) {
+                        $estadoAprobacion = 'pendiente'; // Requiere supervisor primero, luego compras (stock)
+                    } else {
+                        $estadoAprobacion = 'pendiente_picking'; // Solo requiere picking
+                    }
+                    
                     $cotizacion->update([
                         'estado' => $estadoFinal,
+                        'estado_aprobacion' => $estadoAprobacion,
                         'requiere_aprobacion' => true,
-                        'observaciones' => $cotizacion->observaciones . "\n\n⚠️ CLIENTE CON RESTRICCIONES - REQUIERE APROBACIÓN\nMotivos: {$motivosTexto}\n\n🔍 VALIDACIONES AUTOMÁTICAS:\n" .
-                            "- Crédito: " . ($validacionesAutomaticas['validaciones']['credito']['valido'] ? 'Válido' : 'Requiere autorización') . "\n" .
-                            "- Facturas: " . ($validacionesAutomaticas['validaciones']['retraso']['valido'] ? 'Válido' : 'Requiere autorización') . "\n" .
-                            "- Stock: " . ($validacionStock['valido'] ? 'Válido' : 'Requiere autorización')
+                        'tiene_problemas_credito' => $tieneProblemasCredito,
+                        'tiene_problemas_stock' => $tieneProblemasStock,
+                        'observaciones' => $cotizacion->observaciones . "\n\n⚠️ CLIENTE CON RESTRICCIONES - REQUIERE APROBACIÓN\nMotivos: {$motivosTexto}\n\n🔍 VALIDACIONES AUTOMÁTICAS:\n" .                                                   
+                            "- Crédito: " . ($validacionesAutomaticas['validaciones']['credito']['valido'] ? 'Válido' : 'Requiere autorización') . "\n" .       
+                            "- Facturas: " . ($validacionesAutomaticas['validaciones']['retraso']['valido'] ? 'Válido' : 'Requiere autorización') . "\n" .      
+                            "- Stock: " . ($validacionStock['valido'] ? 'Válido' : 'Requiere autorización') . "\n" .
+                            "- Estado de aprobación: {$estadoAprobacion}"                                                     
                     ]);
-                    \Log::warning("⚠️ Cotización guardada localmente por restricciones del cliente - Motivos: {$motivosTexto}");
+                    \Log::warning("⚠️ Cotización guardada localmente por restricciones del cliente - Motivos: {$motivosTexto} - Estado: {$estadoAprobacion}");                                 
                 }
             }
             
@@ -1126,7 +1166,10 @@ class CotizacionController extends Controller
                 'message' => 'Cotización guardada exitosamente',
                 'cotizacion_id' => $cotizacion->id,
                 'estado' => $estadoFinal,
+                'estado_aprobacion' => $cotizacion->estado_aprobacion ?? 'pendiente_picking',
                 'requiere_aprobacion' => $cotizacion->requiere_aprobacion,
+                'tiene_problemas_credito' => $cotizacion->tiene_problemas_credito ?? false,
+                'tiene_problemas_stock' => $cotizacion->tiene_problemas_stock ?? false,
                 'total' => $total,
                 'productos_con_stock' => count($productosConStockComprometido),
                 'productos_sin_stock' => count($productosSinStock),
@@ -1140,14 +1183,16 @@ class CotizacionController extends Controller
             ];
             
             if ($estadoFinal === 'procesada') {
-                $response['message'] .= ' - Procesada automáticamente en SQL Server';
+                $response['message'] .= ' - Procesada automáticamente en SQL Server';                                                                           
             } elseif ($estadoFinal === 'pendiente_stock') {
                 $response['message'] .= ' - Pendiente por stock insuficiente';
             } elseif ($estadoFinal === 'enviada' && $requiereAutorizacion) {
                 $motivosTexto = implode(', ', $motivosAutorizacion);
-                $response['message'] .= " - Pendiente por restricciones: {$motivosTexto}";
+                $estadoAprobacion = $cotizacion->estado_aprobacion ?? 'pendiente_picking';
+                $response['message'] .= " - Pendiente por restricciones: {$motivosTexto} (Estado: {$estadoAprobacion})";                                                                      
             } else {
-                $response['message'] .= ' - Pendiente de aprobación';
+                $estadoAprobacion = $cotizacion->estado_aprobacion ?? 'pendiente_picking';
+                $response['message'] .= " - Pendiente de aprobación (Estado: {$estadoAprobacion})";
             }
             
             \Log::info('🎉 RESPUESTA FINAL:', $response);
@@ -2637,11 +2682,23 @@ class CotizacionController extends Controller
     public function eliminar($id)
     {
         try {
+            \Log::info('Intentando eliminar cotización ID: ' . $id);
+            \Log::info('Usuario autenticado: ' . auth()->id() . ' - ' . auth()->user()->name);
+            
             $cotizacion = \App\Models\Cotizacion::findOrFail($id);
+            \Log::info('Cotización encontrada: ' . $cotizacion->id . ' - Estado: ' . $cotizacion->estado);
             
             // Verificar que el usuario pueda eliminar esta cotización
-            if (!auth()->user()->hasPermissionTo('delete_quotations') && 
-                auth()->id() !== $cotizacion->vendedor_id) {
+            $hasPermission = auth()->user()->hasPermissionTo('delete_quotations');
+            $hasRole = auth()->user()->hasRole('Super Admin');
+            $isOwner = auth()->id() === $cotizacion->user_id; // El vendedor puede eliminar sus propias cotizaciones
+            \Log::info('Tiene permiso delete_quotations: ' . ($hasPermission ? 'SÍ' : 'NO'));
+            \Log::info('Tiene rol Super Admin: ' . ($hasRole ? 'SÍ' : 'NO'));
+            \Log::info('Es propietario de la cotización: ' . ($isOwner ? 'SÍ' : 'NO'));
+            \Log::info('Usuario actual: ' . auth()->id() . ', Creador: ' . $cotizacion->user_id);
+            
+            if (!$hasPermission && !$hasRole && !$isOwner) {
+                \Log::warning('Usuario sin permisos para eliminar cotización');
                 return response()->json([
                     'success' => false,
                     'message' => 'No tienes permisos para eliminar esta cotización'
@@ -2656,8 +2713,34 @@ class CotizacionController extends Controller
                 ], 403);
             }
             
+            // Verificar que la cotización no haya sido validada por supervisor, compras o picking
+            $validadaPorSupervisor = !is_null($cotizacion->aprobado_por_supervisor);
+            $validadaPorCompras = !is_null($cotizacion->aprobado_por_compras);
+            $validadaPorPicking = !is_null($cotizacion->aprobado_por_picking);
+            
+            \Log::info('Validaciones de aprobación:');
+            \Log::info('- Validada por supervisor: ' . ($validadaPorSupervisor ? 'SÍ' : 'NO'));
+            \Log::info('- Validada por compras: ' . ($validadaPorCompras ? 'SÍ' : 'NO'));
+            \Log::info('- Validada por picking: ' . ($validadaPorPicking ? 'SÍ' : 'NO'));
+            
+            if ($validadaPorSupervisor || $validadaPorCompras || $validadaPorPicking) {
+                $motivos = [];
+                if ($validadaPorSupervisor) $motivos[] = 'supervisor';
+                if ($validadaPorCompras) $motivos[] = 'compras';
+                if ($validadaPorPicking) $motivos[] = 'picking';
+                
+                \Log::warning('Intento de eliminar cotización ya validada por: ' . implode(', ', $motivos));
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se puede eliminar una cotización que ya ha sido validada por: ' . implode(', ', $motivos)
+                ], 403);
+            }
+            
             // Eliminar cotización
+            \Log::info('Eliminando cotización...');
             $cotizacion->delete();
+            \Log::info('Cotización eliminada exitosamente');
             
             return response()->json([
                 'success' => true,
@@ -2699,5 +2782,62 @@ class CotizacionController extends Controller
         $resumenTiempos = \App\Services\HistorialCotizacionService::obtenerResumenTiempos($cotizacion);
 
         return view('cotizaciones.historial-simple', compact('cotizacion', 'historial', 'resumenTiempos'))->with('pageSlug', 'cotizaciones');
+    }
+    
+    /**
+     * Verificar si el cliente tiene cheques protestados
+     */
+    private function verificarChequesProtestados($codigoCliente)
+    {
+        try {
+            $cheques = DB::table('cheques_protestados')
+                ->where('codigo_cliente', $codigoCliente)
+                ->get();
+            
+            if ($cheques->isEmpty()) {
+                return [
+                    'tiene_cheques_protestados' => false,
+                    'cantidad' => 0,
+                    'valor_total' => 0,
+                    'cheques' => []
+                ];
+            }
+            
+            $valorTotal = $cheques->sum('valor');
+            
+            return [
+                'tiene_cheques_protestados' => true,
+                'cantidad' => $cheques->count(),
+                'valor_total' => $valorTotal,
+                'cheques' => $cheques->toArray()
+            ];
+            
+        } catch (\Exception $e) {
+            \Log::error('Error verificando cheques protestados: ' . $e->getMessage());
+            return [
+                'tiene_cheques_protestados' => false,
+                'cantidad' => 0,
+                'valor_total' => 0,
+                'cheques' => []
+            ];
+        }
+    }
+    
+    /**
+     * Obtener información de cheques protestados de un cliente
+     */
+    public function obtenerChequesProtestados(Request $request)
+    {
+        $request->validate([
+            'codigo_cliente' => 'required|string'
+        ]);
+        
+        $codigoCliente = $request->codigo_cliente;
+        $chequesProtestados = $this->verificarChequesProtestados($codigoCliente);
+        
+        return response()->json([
+            'success' => true,
+            'data' => $chequesProtestados
+        ]);
     }
 } 

@@ -38,7 +38,7 @@
                 </a>
                 <div class="collapse" id="Ventas">
                     <ul class="nav pl-4">
-                        @can('view_clients')
+                        @can('ver_clientes')
                         <li @if ($pageSlug == 'buscar-clientes') class="active " @endif>
                             <a href="{{ route('cobranza.index') }}">
                                 <i class="tim-icons icon-single-02"></i>
@@ -68,8 +68,28 @@
             </li>
             @endif
 
+            <!-- Compras - Productos -->
+            @if(auth()->user()->hasRole('Compras'))
+            <li @if ($pageSlug == 'productos') class="active " @endif>
+                <a href="{{ route('productos.index') }}">
+                    <i class="tim-icons icon-bag-16"></i>
+                    <p>{{ __('Productos') }}</p>
+                </a>
+            </li>
+            @endif
+
+            <!-- Picking - Gestión de Stock -->
+            @if(auth()->user()->hasRole('Picking'))
+            <li @if ($pageSlug == 'stock') class="active " @endif>
+                <a href="{{ route('productos.index') }}">
+                    <i class="tim-icons icon-delivery-fast"></i>
+                    <p>{{ __('Gestión Stock') }}</p>
+                </a>
+            </li>
+            @endif
+
             <!-- Informes -->
-            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Supervisor'))
+            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Picking'))
             <li>
                 <a data-toggle="collapse" href="#Informes" aria-expanded="false">
                     <i class="tim-icons icon-chart-bar-32"></i>
@@ -90,12 +110,14 @@
                                 <p>{{ __('Estado de Facturas') }}</p>
                             </a>
                         </li>
+                        @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin'))
                         <li @if ($pageSlug == 'cotizaciones') class="active " @endif>
                             <a href="{{ route('cotizaciones.index') }}">
                                 <i class="tim-icons icon-notes"></i>
                                 <p>{{ __('Notas de Ventas Generadas') }}</p>
                             </a>
                         </li>
+                        @endif
                     </ul>
                 </div>
             </li>
@@ -106,11 +128,37 @@
             <li @if ($pageSlug == 'aprobaciones') class="active " @endif>
                 <a href="{{ route('aprobaciones.index') }}">
                     <i class="tim-icons icon-check-2"></i>
-                    <p>{{ __('Aprobaciones') }}</p>
+                    <p>{{ __('Aprobaciones NVV') }}</p>
                 </a>
             </li>
             @endif
 
+            <!-- Gestión de Usuarios - Solo Super Admin -->
+            @if(auth()->user()->hasRole('Super Admin'))
+            <li>
+                <a data-toggle="collapse" href="#GestionUsuarios" aria-expanded="false">
+                    <i class="tim-icons icon-single-02"></i>
+                    <span class="nav-link-text">{{ __('Gestión de Usuarios') }}</span>
+                    <b class="caret mt-1"></b>
+                </a>
+                <div class="collapse" id="GestionUsuarios">
+                    <ul class="nav pl-4">
+                        <li @if ($pageSlug == 'admin-users') class="active " @endif>
+                            <a href="{{ route('admin.users.index') }}">
+                                <i class="tim-icons icon-bullet-list-67"></i>
+                                <p>{{ __('Lista de Usuarios') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'admin-users-create') class="active " @endif>
+                            <a href="{{ route('admin.users.create-from-vendedor') }}">
+                                <i class="tim-icons icon-simple-add"></i>
+                                <p>{{ __('Crear Usuario') }}</p>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </li>
+            @endif
 
             @can('gestionar usuarios')
             <li>

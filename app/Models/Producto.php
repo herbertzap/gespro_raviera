@@ -29,6 +29,76 @@ class Producto extends Model
         'DIVISIBLE2',
         'FECRPR',
         'estado',
-        'ultima_sincronizacion'
+        'ultima_sincronizacion',
+        // Precios
+        'precio_01p',
+        'precio_01p_ud2',
+        'descuento_maximo_01p',
+        'precio_02p',
+        'precio_02p_ud2',
+        'descuento_maximo_02p',
+        'precio_03p',
+        'precio_03p_ud2',
+        'descuento_maximo_03p',
+        // Stock
+        'stock_fisico',
+        'stock_comprometido',
+        'stock_disponible',
+        'activo'
     ];
+
+    protected $casts = [
+        'precio_01p' => 'decimal:2',
+        'precio_01p_ud2' => 'decimal:2',
+        'descuento_maximo_01p' => 'decimal:2',
+        'precio_02p' => 'decimal:2',
+        'precio_02p_ud2' => 'decimal:2',
+        'descuento_maximo_02p' => 'decimal:2',
+        'precio_03p' => 'decimal:2',
+        'precio_03p_ud2' => 'decimal:2',
+        'descuento_maximo_03p' => 'decimal:2',
+        'stock_fisico' => 'decimal:2',
+        'stock_comprometido' => 'decimal:2',
+        'stock_disponible' => 'decimal:2',
+        'DIVISIBLE' => 'boolean',
+        'DIVISIBLE2' => 'boolean',
+        'activo' => 'boolean',
+        'estado' => 'integer'
+    ];
+
+    // Scope para productos activos
+    public function scopeActivos($query)
+    {
+        return $query->where('activo', true);
+    }
+
+    // Método para obtener precio según lista
+    public function getPrecio($listaPrecios = '01P')
+    {
+        switch ($listaPrecios) {
+            case '01P':
+                return $this->precio_01p;
+            case '02P':
+                return $this->precio_02p;
+            case '03P':
+                return $this->precio_03p;
+            default:
+                return $this->precio_01p;
+        }
+    }
+
+    // Método para obtener descuento máximo según lista
+    public function getDescuentoMaximo($listaPrecios = '01P')
+    {
+        switch ($listaPrecios) {
+            case '01P':
+                return $this->descuento_maximo_01p;
+            case '02P':
+                return $this->descuento_maximo_02p;
+            case '03P':
+                return $this->descuento_maximo_03p;
+            default:
+                return $this->descuento_maximo_01p;
+        }
+    }
 }

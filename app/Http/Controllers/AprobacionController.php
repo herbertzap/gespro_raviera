@@ -78,11 +78,13 @@ class AprobacionController extends Controller
         $user = Auth::user();
 
         if (!$user->hasRole('Supervisor')) {
-            return response()->json(['error' => 'No tienes permisos para aprobar como supervisor'], 403);
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'No tienes permisos para aprobar como supervisor');
         }
 
         if (!$cotizacion->puedeAprobarSupervisor()) {
-            return response()->json(['error' => 'La nota de venta no puede ser aprobada por supervisor'], 400);
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'La nota de venta no puede ser aprobada por supervisor');
         }
 
         try {
@@ -93,14 +95,12 @@ class AprobacionController extends Controller
             
             Log::info("Nota de venta {$cotizacion->id} aprobada por supervisor {$user->id}");
             
-            return response()->json([
-                'success' => true,
-                'message' => 'Nota de venta aprobada por supervisor',
-                'estado_aprobacion' => $cotizacion->estado_aprobacion
-            ]);
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('success', 'Nota de venta aprobada por supervisor correctamente');
         } catch (\Exception $e) {
             Log::error("Error aprobando nota de venta por supervisor: " . $e->getMessage());
-            return response()->json(['error' => 'Error al aprobar la nota de venta'], 500);
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'Error al aprobar la nota de venta');
         }
     }
 
@@ -117,26 +117,29 @@ class AprobacionController extends Controller
         $user = Auth::user();
 
         if (!$user->hasRole('Compras')) {
-            return response()->json(['error' => 'No tienes permisos para aprobar como compras'], 403);
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'No tienes permisos para aprobar como compras');
         }
 
         if (!$cotizacion->puedeAprobarCompras()) {
-            return response()->json(['error' => 'La nota de venta no puede ser aprobada por compras'], 400);
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'La nota de venta no puede ser aprobada por compras');
         }
 
         try {
             $cotizacion->aprobarPorCompras($user->id, $request->comentarios);
             
+            // Registrar en el historial
+            \App\Services\HistorialCotizacionService::registrarAprobacionCompras($cotizacion, $request->comentarios);
+            
             Log::info("Nota de venta {$cotizacion->id} aprobada por compras {$user->id}");
             
-            return response()->json([
-                'success' => true,
-                'message' => 'Nota de venta aprobada por compras',
-                'estado_aprobacion' => $cotizacion->estado_aprobacion
-            ]);
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('success', 'Nota de venta aprobada por compras correctamente');
         } catch (\Exception $e) {
             Log::error("Error aprobando nota de venta por compras: " . $e->getMessage());
-            return response()->json(['error' => 'Error al aprobar la nota de venta'], 500);
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'Error al aprobar la nota de venta');
         }
     }
 
@@ -224,6 +227,7 @@ class AprobacionController extends Controller
             return response()->json(['error' => 'Error al rechazar la nota de venta'], 500);
         }
     }
+
 
     /**
      * Separar productos problemáticos en una nueva nota de venta
@@ -610,4 +614,472 @@ class AprobacionController extends Controller
             default: return 'help';
         }
     }
+
+    /**
+     * Separar productos múltiples con problemas de stock en una nueva NVV
+     */
+    public function separarProductos(Request $request, $id)
+    {
+        $request->validate([
+            'productos_ids' => 'required|array|min:1',
+            'productos_ids.*' => 'integer|exists:cotizacion_productos,id',
+            'motivo' => 'required|string|max:500'
+        ]);
+
+        $cotizacion = Cotizacion::with(['productos', 'user'])->findOrFail($id);
+        $user = Auth::user();
+
+        // Verificar permisos - solo Compras puede separar productos
+        if (!$user->hasRole('Compras')) {
+            return response()->json(['error' => 'No tienes permisos para realizar esta acción'], 403);
+        }
+
+        try {
+            // Obtener los productos seleccionados
+            $productosSeleccionados = $cotizacion->productos()->whereIn('id', $request->productos_ids)->get();
+            
+            if ($productosSeleccionados->isEmpty()) {
+                return response()->json(['error' => 'No se encontraron productos válidos'], 400);
+            }
+
+            // Para el perfil Compras, permitir separar cualquier producto
+            // (puede modificar cantidades después de la separación)
+            if (!$user->hasRole('Compras')) {
+                // Solo para otros roles, verificar problemas de stock
+                $productosSinProblemas = $productosSeleccionados->filter(function($producto) {
+                    return $producto->stock_disponible >= $producto->cantidad;
+                });
+
+                if ($productosSinProblemas->isNotEmpty()) {
+                    $productos = $productosSinProblemas->pluck('nombre_producto')->implode(', ');
+                    return response()->json(['error' => "Los siguientes productos no tienen problemas de stock: {$productos}"], 400);
+                }
+            }
+
+            // Crear la nueva NVV duplicada con los productos seleccionados
+            $nuevaCotizacion = $this->crearNvvDuplicadaMultiple($cotizacion, $productosSeleccionados, $request->motivo);
+            
+            // Eliminar los productos seleccionados de la NVV original
+            $cotizacion->productos()->whereIn('id', $request->productos_ids)->delete();
+            
+            // Actualizar totales de la NVV original (que mantiene los productos no seleccionados)
+            $this->actualizarTotalesCotizacion($cotizacion);
+            
+            // Registrar en el historial
+            $this->registrarSeparacionProductos($cotizacion, $nuevaCotizacion, $productosSeleccionados, $request->motivo, $user);
+            
+            // Enviar notificación al vendedor
+            $this->enviarNotificacionSeparacionMultiple($cotizacion, $nuevaCotizacion, $productosSeleccionados, $user);
+            
+            Log::info("Productos múltiples separados por stock", [
+                'cotizacion_original' => $cotizacion->id,
+                'cotizacion_nueva' => $nuevaCotizacion->id,
+                'productos_count' => $productosSeleccionados->count(),
+                'usuario' => $user->name
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Se han separado {$productosSeleccionados->count()} productos exitosamente. Nueva NVV #{$nuevaCotizacion->id} creada con los productos seleccionados.",
+                'nota_separada_id' => $nuevaCotizacion->id,
+                'nota_original_id' => $cotizacion->id,
+                'productos_separados' => $productosSeleccionados->pluck('nombre_producto')->toArray()
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error("Error al separar productos múltiples: " . $e->getMessage(), [
+                'cotizacion_id' => $id,
+                'productos_ids' => $request->productos_ids,
+                'usuario' => $user->name
+            ]);
+
+            return response()->json(['error' => 'Error al separar los productos: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Modificar cantidades de productos (solo para perfil Compras)
+     */
+    public function modificarCantidadesProductos(Request $request, $id)
+    {
+        $request->validate([
+            'producto_id' => 'required|integer|exists:cotizacion_productos,id',
+            'nueva_cantidad' => 'required|integer|min:1',
+            'motivo' => 'nullable|string|max:500'
+        ]);
+
+        $cotizacion = Cotizacion::with(['productos', 'user'])->findOrFail($id);
+        $user = Auth::user();
+
+        // Verificar permisos - solo Compras puede modificar cantidades
+        if (!$user->hasRole('Compras')) {
+            return response()->json(['error' => 'No tienes permisos para realizar esta acción'], 403);
+        }
+
+        try {
+            $producto = $cotizacion->productos()->findOrFail($request->producto_id);
+            $cantidadAnterior = $producto->cantidad;
+            $nuevaCantidad = $request->nueva_cantidad;
+
+            // Actualizar la cantidad del producto
+            $producto->update([
+                'cantidad' => $nuevaCantidad,
+                'subtotal' => $producto->precio_unitario * $nuevaCantidad
+            ]);
+
+            // Actualizar totales de la cotización
+            $this->actualizarTotalesCotizacion($cotizacion);
+
+            // Registrar en el historial
+            CotizacionHistorial::registrarModificacionProductos(
+                $cotizacion->id,
+                [], // productos agregados
+                [], // productos eliminados
+                [[
+                    'codigo' => $producto->codigo_producto,
+                    'nombre' => $producto->nombre_producto,
+                    'cantidad_anterior' => $cantidadAnterior,
+                    'cantidad_nueva' => $nuevaCantidad
+                ]], // productos modificados
+                $request->motivo ?: "Cantidad modificada de {$cantidadAnterior} a {$nuevaCantidad} por perfil Compras"
+            );
+
+            Log::info("Cantidad de producto modificada por Compras", [
+                'cotizacion_id' => $cotizacion->id,
+                'producto_id' => $producto->id,
+                'cantidad_anterior' => $cantidadAnterior,
+                'cantidad_nueva' => $nuevaCantidad,
+                'usuario' => $user->name
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Cantidad del producto '{$producto->nombre_producto}' modificada de {$cantidadAnterior} a {$nuevaCantidad}",
+                'producto' => [
+                    'id' => $producto->id,
+                    'nombre' => $producto->nombre_producto,
+                    'cantidad_anterior' => $cantidadAnterior,
+                    'cantidad_nueva' => $nuevaCantidad,
+                    'subtotal' => $producto->subtotal
+                ],
+                'total_cotizacion' => $cotizacion->total
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error("Error al modificar cantidad de producto: " . $e->getMessage(), [
+                'cotizacion_id' => $id,
+                'producto_id' => $request->producto_id,
+                'usuario' => $user->name
+            ]);
+
+            return response()->json(['error' => 'Error al modificar la cantidad: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Crear una nueva NVV duplicada con múltiples productos problemáticos
+     */
+    private function crearNvvDuplicadaMultiple($cotizacionOriginal, $productos, $motivo)
+    {
+        // Crear nueva cotización con los productos seleccionados
+        $nuevaCotizacion = $cotizacionOriginal->replicate();
+        $nuevaCotizacion->estado = 'pendiente_stock';
+        $nuevaCotizacion->estado_aprobacion = 'pendiente';
+        $nuevaCotizacion->created_at = now();
+        $nuevaCotizacion->updated_at = now();
+        $nuevaCotizacion->observaciones = "NVV creada con productos separados por problemas de stock. Motivo: {$motivo}";
+        $nuevaCotizacion->nota_original_id = $cotizacionOriginal->id; // Referencia a la NVV original
+        $nuevaCotizacion->save();
+
+        // Duplicar los productos problemáticos
+        foreach ($productos as $producto) {
+            $nuevoProducto = $producto->replicate();
+            $nuevoProducto->cotizacion_id = $nuevaCotizacion->id;
+            $nuevoProducto->save();
+        }
+
+        // Calcular totales de la nueva cotización
+        $this->actualizarTotalesCotizacion($nuevaCotizacion);
+
+        return $nuevaCotizacion;
+    }
+
+    /**
+     * Registrar la separación múltiple en el historial
+     */
+    private function registrarSeparacionProductos($cotizacionOriginal, $cotizacionNueva, $productos, $motivo, $user)
+    {
+        $productosNombres = $productos->pluck('nombre_producto')->implode(', ');
+
+        // Historial para la cotización original (mantiene productos no seleccionados)
+        \App\Models\CotizacionHistorial::create([
+            'cotizacion_id' => $cotizacionOriginal->id,
+            'usuario_id' => $user->id,
+            'estado_anterior' => $cotizacionOriginal->estado_aprobacion,
+            'estado_nuevo' => $cotizacionOriginal->estado_aprobacion,
+            'fecha_accion' => now(),
+            'comentarios' => "Se separaron {$productos->count()} productos con problemas de stock. Nueva NVV #{$cotizacionNueva->id} creada con productos separados.",
+            'detalles_adicionales' => [
+                'accion' => 'separar_productos_multiples',
+                'productos_count' => $productos->count(),
+                'productos_nombres' => $productosNombres,
+                'nueva_cotizacion_id' => $cotizacionNueva->id,
+                'motivo' => $motivo,
+                'descripcion' => 'Productos separados de esta NVV para crear nueva NVV'
+            ]
+        ]);
+
+        // Historial para la nueva cotización (contiene productos separados)
+        \App\Models\CotizacionHistorial::create([
+            'cotizacion_id' => $cotizacionNueva->id,
+            'usuario_id' => $user->id,
+            'estado_anterior' => null,
+            'estado_nuevo' => 'pendiente',
+            'fecha_accion' => now(),
+            'comentarios' => "NVV creada con {$productos->count()} productos separados por problemas de stock. NVV original: #{$cotizacionOriginal->id}",
+            'detalles_adicionales' => [
+                'accion' => 'creada_por_separacion_productos',
+                'cotizacion_original_id' => $cotizacionOriginal->id,
+                'productos_count' => $productos->count(),
+                'productos_nombres' => $productosNombres,
+                'motivo' => $motivo,
+                'descripcion' => 'Nueva NVV creada con productos separados de NVV original'
+            ]
+        ]);
+    }
+
+    /**
+     * Enviar notificación al vendedor sobre la separación múltiple
+     */
+    private function enviarNotificacionSeparacionMultiple($cotizacionOriginal, $cotizacionNueva, $productos, $user)
+    {
+        try {
+            $productosNombres = $productos->pluck('nombre_producto')->implode(', ');
+
+            // Crear notificación en la base de datos
+            \App\Models\Notificacion::create([
+                'usuario_id' => $cotizacionOriginal->user_id,
+                'tipo' => 'separacion_productos_stock',
+                'titulo' => 'Productos Separados por Problemas de Stock',
+                'mensaje' => "Se han separado {$productos->count()} productos de la NVV #{$cotizacionOriginal->id} por problemas de stock. Se ha creado una nueva NVV #{$cotizacionNueva->id} específicamente para estos productos.",
+                'datos_adicionales' => json_encode([
+                    'cotizacion_original_id' => $cotizacionOriginal->id,
+                    'cotizacion_nueva_id' => $cotizacionNueva->id,
+                    'productos_count' => $productos->count(),
+                    'productos_nombres' => $productosNombres,
+                    'usuario_separacion' => $user->name
+                ]),
+                'leida' => false,
+                'fecha_creacion' => now()
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error("Error al enviar notificación de separación múltiple: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Imprimir guía de despacho
+     */
+    public function imprimir($id)
+    {
+        $cotizacion = Cotizacion::with(['productos', 'cliente'])->findOrFail($id);
+        $observacionesExtra = request('observaciones', '');
+        
+        return view('aprobaciones.imprimir', compact('cotizacion', 'observacionesExtra'));
+    }
+
+    /**
+     * Guardar cantidad a separar
+     */
+    public function guardarSeparar($id)
+    {
+        try {
+            $request = request();
+            $productoId = $request->producto_id;
+            $cantidadSeparar = $request->cantidad_separar;
+            $user = Auth::user();
+
+            // Verificar permisos - solo Compras y Picking pueden separar
+            if (!$user->hasRole('Compras') && !$user->hasRole('Picking')) {
+                return response()->json(['error' => 'No tienes permisos para realizar esta acción'], 403);
+            }
+
+            $cotizacion = Cotizacion::findOrFail($id);
+            $producto = $cotizacion->productos()->findOrFail($productoId);
+
+            // Validar que la cantidad a separar no exceda la cantidad disponible
+            if ($cantidadSeparar > $producto->cantidad) {
+                return response()->json(['error' => 'La cantidad a separar no puede exceder la cantidad del producto'], 400);
+            }
+
+            // Guardar la cantidad a separar en el producto
+            $producto->update([
+                'cantidad_separar' => $cantidadSeparar
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Cantidad a separar guardada correctamente'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al guardar cantidad a separar: ' . $e->getMessage());
+            return response()->json(['error' => 'Error interno del servidor'], 500);
+        }
+    }
+
+    /**
+     * Separar producto individual con lógica de cantidades
+     */
+    public function separarProductoIndividual(Request $request, $id)
+    {
+        $request->validate([
+            'producto_id' => 'required|integer|exists:cotizacion_productos,id',
+            'motivo' => 'required|string|max:500'
+        ]);
+
+        $cotizacion = Cotizacion::with(['productos', 'user'])->findOrFail($id);
+        $user = Auth::user();
+
+        // Verificar permisos - solo Compras y Picking pueden separar
+        if (!$user->hasRole('Compras') && !$user->hasRole('Picking')) {
+            return response()->json(['error' => 'No tienes permisos para realizar esta acción'], 403);
+        }
+
+        try {
+            $producto = $cotizacion->productos()->findOrFail($request->producto_id);
+            $cantidadSeparar = $producto->cantidad_separar ?? 0;
+
+            if ($cantidadSeparar <= 0) {
+                return response()->json(['error' => 'Debe especificar una cantidad a separar mayor a 0'], 400);
+            }
+
+            if ($cantidadSeparar > $producto->cantidad) {
+                return response()->json(['error' => 'La cantidad a separar no puede exceder la cantidad del producto'], 400);
+            }
+
+            // Crear nueva NVV con el producto separado
+            $nuevaCotizacion = $this->crearNvvConProductoSeparado($cotizacion, $producto, $cantidadSeparar, $request->motivo);
+
+            // Lógica de separación:
+            if ($cantidadSeparar == $producto->cantidad) {
+                // Si separar = cantidad total, eliminar el producto de la NVV original
+                $producto->delete();
+            } else {
+                // Si separar < cantidad, reducir la cantidad del producto original
+                $nuevaCantidad = $producto->cantidad - $cantidadSeparar;
+                $producto->update([
+                    'cantidad' => $nuevaCantidad,
+                    'cantidad_separar' => 0, // Resetear cantidad a separar
+                    'subtotal' => $producto->precio_unitario * $nuevaCantidad
+                ]);
+            }
+
+            // Actualizar totales de la NVV original
+            $this->actualizarTotalesCotizacion($cotizacion);
+
+            // Registrar en el historial
+            $this->registrarSeparacionIndividual($cotizacion, $nuevaCotizacion, $producto, $cantidadSeparar, $request->motivo, $user);
+
+            Log::info("Producto separado individualmente", [
+                'cotizacion_original' => $cotizacion->id,
+                'cotizacion_nueva' => $nuevaCotizacion->id,
+                'producto' => $producto->codigo_producto,
+                'cantidad_separada' => $cantidadSeparar,
+                'usuario' => $user->name
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Producto '{$producto->nombre_producto}' separado exitosamente. Nueva NVV #{$nuevaCotizacion->id} creada con {$cantidadSeparar} unidades.",
+                'nota_separada_id' => $nuevaCotizacion->id,
+                'nota_original_id' => $cotizacion->id
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error("Error al separar producto individual: " . $e->getMessage(), [
+                'cotizacion_id' => $id,
+                'producto_id' => $request->producto_id,
+                'usuario' => $user->name
+            ]);
+
+            return response()->json(['error' => 'Error al separar el producto: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Crear nueva NVV con producto separado
+     */
+    private function crearNvvConProductoSeparado($cotizacionOriginal, $producto, $cantidadSeparar, $motivo)
+    {
+        // Crear nueva cotización
+        $nuevaCotizacion = $cotizacionOriginal->replicate();
+        $nuevaCotizacion->estado = 'pendiente_stock';
+        $nuevaCotizacion->estado_aprobacion = 'pendiente';
+        $nuevaCotizacion->created_at = now();
+        $nuevaCotizacion->updated_at = now();
+        $nuevaCotizacion->observaciones = "NVV creada con producto separado: {$producto->nombre_producto} (Cantidad: {$cantidadSeparar}). Motivo: {$motivo}";
+        $nuevaCotizacion->nota_original_id = $cotizacionOriginal->id;
+        $nuevaCotizacion->save();
+
+        // Crear el producto separado con la cantidad especificada
+        $nuevoProducto = $producto->replicate();
+        $nuevoProducto->cotizacion_id = $nuevaCotizacion->id;
+        $nuevoProducto->cantidad = $cantidadSeparar;
+        $nuevoProducto->cantidad_separar = 0; // Resetear cantidad a separar
+        $nuevoProducto->subtotal = $producto->precio_unitario * $cantidadSeparar;
+        $nuevoProducto->save();
+
+        // Calcular totales de la nueva cotización
+        $this->actualizarTotalesCotizacion($nuevaCotizacion);
+
+        return $nuevaCotizacion;
+    }
+
+    /**
+     * Registrar la separación individual en el historial
+     */
+    private function registrarSeparacionIndividual($cotizacionOriginal, $cotizacionNueva, $producto, $cantidadSeparada, $motivo, $user)
+    {
+        // Historial para la cotización original
+        \App\Models\CotizacionHistorial::create([
+            'cotizacion_id' => $cotizacionOriginal->id,
+            'usuario_id' => $user->id,
+            'estado_anterior' => $cotizacionOriginal->estado_aprobacion,
+            'estado_nuevo' => $cotizacionOriginal->estado_aprobacion,
+            'fecha_accion' => now(),
+            'comentarios' => "Producto '{$producto->nombre_producto}' separado. Cantidad separada: {$cantidadSeparada}. Nueva NVV #{$cotizacionNueva->id} creada.",
+            'detalles_adicionales' => [
+                'accion' => 'separar_producto_individual',
+                'producto_codigo' => $producto->codigo_producto,
+                'producto_nombre' => $producto->nombre_producto,
+                'cantidad_original' => $producto->cantidad,
+                'cantidad_separada' => $cantidadSeparada,
+                'nueva_cotizacion_id' => $cotizacionNueva->id,
+                'motivo' => $motivo,
+                'descripcion' => 'Producto separado de esta NVV para crear nueva NVV'
+            ]
+        ]);
+
+        // Historial para la nueva cotización
+        \App\Models\CotizacionHistorial::create([
+            'cotizacion_id' => $cotizacionNueva->id,
+            'usuario_id' => $user->id,
+            'estado_anterior' => null,
+            'estado_nuevo' => 'pendiente',
+            'fecha_accion' => now(),
+            'comentarios' => "NVV creada por separación de producto '{$producto->nombre_producto}' de la NVV #{$cotizacionOriginal->id}. Cantidad: {$cantidadSeparada}.",
+            'detalles_adicionales' => [
+                'accion' => 'crear_por_separacion',
+                'cotizacion_origen_id' => $cotizacionOriginal->id,
+                'producto_codigo' => $producto->codigo_producto,
+                'producto_nombre' => $producto->nombre_producto,
+                'cantidad_separada' => $cantidadSeparada,
+                'motivo' => $motivo,
+                'descripcion' => 'NVV creada por separación de producto'
+            ]
+        ]);
+    }
+
 }
