@@ -69,12 +69,29 @@
             @endif
 
             <!-- Compras - Productos -->
-            @if(auth()->user()->hasRole('Compras'))
-            <li @if ($pageSlug == 'productos') class="active " @endif>
-                <a href="{{ route('productos.index') }}">
+            @if(auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Super Admin'))
+            <li>
+                <a data-toggle="collapse" href="#ComprasMenu" aria-expanded="false">
                     <i class="tim-icons icon-bag-16"></i>
-                    <p>{{ __('Productos') }}</p>
+                    <span class="nav-link-text">{{ __('Compras') }}</span>
+                    <b class="caret mt-1"></b>
                 </a>
+                <div class="collapse" id="ComprasMenu">
+                    <ul class="nav pl-4">
+                        <li @if (($pageSlug ?? '') == 'productos') class="active " @endif>
+                            <a href="{{ route('productos.index') }}">
+                                <i class="tim-icons icon-notes"></i>
+                                <p>{{ __('Lista de Productos') }}</p>
+                            </a>
+                        </li>
+                        <li @if (($pageSlug ?? '') == 'multiplos-productos') class="active " @endif>
+                            <a href="{{ route('admin.productos.multiplos') }}">
+                                <i class="material-icons">inventory_2</i>
+                                <p>{{ __('Múltiplos de Venta') }}</p>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
             </li>
             @endif
 

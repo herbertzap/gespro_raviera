@@ -380,7 +380,7 @@ function mostrarResultadosProductosAjax(productos) {
                     ${!precioValido ? '<br><small class="text-danger"><i class="material-icons">warning</i> Precio no disponible</small>' : ''}
                 </td>
                 <td>
-                    <button class="btn btn-sm ${buttonClass}" onclick="${precioValido ? `agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', '${producto.NOMBRE_PRODUCTO.replace(/'/g, "\\'")}', ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}', ${producto.DESCUENTO_MAXIMO || 0})` : 'alert(\'Este producto no tiene precio disponible\')'}" ${buttonDisabled} title="${motivoBloqueo || ''}">
+                    <button class="btn btn-sm ${buttonClass}" onclick="${precioValido ? `agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', '${producto.NOMBRE_PRODUCTO.replace(/'/g, "\\'")}', ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}', ${producto.DESCUENTO_MAXIMO || 0}, ${producto.MULTIPLO_VENTA || 1})` : 'alert(\'Este producto no tiene precio disponible\')'}" ${buttonDisabled} title="${motivoBloqueo || ''}">
                         <i class="material-icons">${buttonIcon}</i> ${buttonText}
                     </button>
                 </td>
@@ -494,16 +494,17 @@ function mostrarResultadosProductos(productos) {
 }
 
 // Función para agregar producto a la cotización desde PHP
-function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuentoMaximo = 0) {
-    console.log('Agregando producto desde PHP:', { codigo, nombre, precio, stock, unidad, descuentoMaximo });
+function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuentoMaximo = 0, multiplo = 1) {
+    console.log('Agregando producto desde PHP:', { codigo, nombre, precio, stock, unidad, descuentoMaximo, multiplo });
     
     // Verificar si el producto ya está en la cotización
     const productoExistente = productosCotizacion.find(p => p.codigo === codigo);
     
     if (productoExistente) {
-        // Incrementar cantidad según la unidad
-        const incremento = obtenerIncrementoPorUnidad(unidad);
+        // Incrementar cantidad según el múltiplo del producto
+        const incremento = Math.max(multiplo, obtenerIncrementoPorUnidad(unidad));
         productoExistente.cantidad += incremento;
+        productoExistente.multiplo = multiplo; // Actualizar múltiplo
         actualizarSubtotal(productosCotizacion.indexOf(productoExistente));
     } else {
         // Validar límite máximo de productos diferentes (24)
@@ -512,8 +513,8 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
             return;
         }
         
-        // Agregar nuevo producto con cantidad inicial según unidad
-        const cantidadInicial = obtenerIncrementoPorUnidad(unidad);
+        // Agregar nuevo producto con cantidad inicial según múltiplo
+        const cantidadInicial = Math.max(multiplo, obtenerIncrementoPorUnidad(unidad));
         productosCotizacion.push({
             codigo: codigo,
             nombre: nombre,
@@ -523,7 +524,8 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
             descuentoMaximo: parseFloat(descuentoMaximo) || 0,
             subtotal: parseFloat(precio) * cantidadInicial,
             stock: parseFloat(stock),
-            unidad: unidad
+            unidad: unidad,
+            multiplo: multiplo // Guardar múltiplo para validaciones posteriores
         });
     }
     
@@ -533,10 +535,11 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
     // Limpiar búsqueda después de agregar el producto
     limpiarBusqueda();
     
-    // Mostrar mensaje de confirmación con información de stock
+    // Mostrar mensaje de confirmación con información de stock y múltiplo
     const stockInfo = parseFloat(stock) <= 0 ? ' (Sin stock - Nota pendiente)' : '';
+    const multiploInfo = multiplo > 1 ? ` - Múltiplo: ${multiplo}` : '';
     const productosInfo = productosCotizacion.length > 1 ? `\n\nProductos en cotización: ${productosCotizacion.length}/24` : '';
-    alert('Producto agregado: ' + nombre + ' (Cantidad: ' + obtenerIncrementoPorUnidad(unidad) + ' ' + unidad + ')' + stockInfo + productosInfo);
+    alert('Producto agregado: ' + nombre + ' (Cantidad: ' + Math.max(multiplo, obtenerIncrementoPorUnidad(unidad)) + ' ' + unidad + ')' + multiploInfo + stockInfo + productosInfo);
 }
 
 // Función para obtener el incremento de cantidad según la unidad
@@ -631,8 +634,19 @@ function obtenerStepPorUnidad(unidad) {
 // Función para actualizar cantidad
 function actualizarCantidad(index, nuevaCantidad) {
     const cantidad = parseFloat(nuevaCantidad);
+    const producto = productosCotizacion[index];
+    const multiplo = producto.multiplo || 1;
+    
     if (cantidad > 0) {
-        productosCotizacion[index].cantidad = cantidad;
+        // Validar que la cantidad sea múltiplo del mínimo de venta
+        if (multiplo > 1 && cantidad % multiplo !== 0) {
+            const cantidadAjustada = Math.ceil(cantidad / multiplo) * multiplo;
+            alert(`Este producto se vende en múltiplos de ${multiplo} unidades.\nLa cantidad se ajustará a ${cantidadAjustada} unidades.`);
+            producto.cantidad = cantidadAjustada;
+        } else {
+            producto.cantidad = cantidad;
+        }
+        
         actualizarSubtotal(index);
         actualizarTablaProductos();
         calcularTotales();

@@ -44,7 +44,9 @@ class Producto extends Model
         'stock_fisico',
         'stock_comprometido',
         'stock_disponible',
-        'activo'
+        'activo',
+        // Múltiplo de venta
+        'multiplo_venta'
     ];
 
     protected $casts = [
@@ -63,7 +65,8 @@ class Producto extends Model
         'DIVISIBLE' => 'boolean',
         'DIVISIBLE2' => 'boolean',
         'activo' => 'boolean',
-        'estado' => 'integer'
+        'estado' => 'integer',
+        'multiplo_venta' => 'integer'
     ];
 
     // Scope para productos activos

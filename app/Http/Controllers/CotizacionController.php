@@ -403,6 +403,7 @@ class CotizacionController extends Controller
                         'STOCK_FISICO' => $producto->stock_fisico ?? 0,
                         'STOCK_COMPROMETIDO' => $producto->stock_comprometido ?? 0,
                         'CANTIDAD_MINIMA' => 1,
+                        'MULTIPLO_VENTA' => $producto->multiplo_venta ?? 1,
                         'LISTA_PRECIOS' => $listaPrecios,
                         'PRECIO_VALIDO' => $precioValido, // Nuevo campo para indicar si se puede agregar
                         'MOTIVO_BLOQUEO' => $precioValido ? null : 'Precio no disponible'

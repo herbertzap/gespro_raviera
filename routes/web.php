@@ -283,6 +283,12 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
             return response()->json(['success' => false, 'message' => $e->getMessage()]);
         }
     })->name('vendedores.sincronizar');
+
+    // Gestión de Múltiplos de Productos
+    Route::get('/productos/multiplos', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'index'])->name('productos.multiplos');
+    Route::post('/productos/multiplos/cargar', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'cargarExcel'])->name('productos.multiplos.cargar');
+    Route::put('/productos/multiplos/{id}', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'actualizar'])->name('productos.multiplos.actualizar');
+    Route::post('/productos/multiplos/{id}/restablecer', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'restablecer'])->name('productos.multiplos.restablecer');
 });
 
 // Webhook para despliegue automático desde GitHub
