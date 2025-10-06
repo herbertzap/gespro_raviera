@@ -103,22 +103,22 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @forelse($notasPendientes ?? [] as $nota)
+                                    @forelse($nvvPendientes ?? [] as $nota)
                                     <tr>
-                                        <td>{{ $nota->numero_nota_venta ?? 'N/A' }}</td>
-                                        <td>{{ $nota->user->name ?? 'N/A' }}</td>
-                                        <td>{{ $nota->cliente->nombre ?? $nota->nombre_cliente ?? 'N/A' }}</td>
-                                        <td>${{ number_format($nota->total ?? 0, 2) }}</td>
+                                        <td>{{ $nota['numero'] ?? 'N/A' }}</td>
+                                        <td>{{ $nota['vendedor'] ?? 'N/A' }}</td>
+                                        <td>{{ $nota['cliente_nombre'] ?? 'N/A' }}</td>
+                                        <td>${{ number_format($nota['total'] ?? 0, 2) }}</td>
                                         <td>
                                             <span class="badge badge-{{ 
-                                                $nota->estado_aprobacion == 'pendiente_supervisor' ? 'warning' : 
-                                                ($nota->estado_aprobacion == 'pendiente_compras' ? 'info' : 'primary')
+                                                $nota['estado'] == 'pendiente_supervisor' ? 'warning' : 
+                                                ($nota['estado'] == 'aprobada_supervisor' ? 'info' : 'primary')
                                             }}">
-                                                {{ ucfirst(str_replace('_', ' ', $nota->estado_aprobacion ?? 'pendiente')) }}
+                                                {{ ucfirst(str_replace('_', ' ', $nota['estado'] ?? 'pendiente')) }}
                                             </span>
                                         </td>
                                         <td>
-                                            <a href="{{ route('aprobaciones.show', $nota->id) }}" class="btn btn-sm btn-primary">
+                                            <a href="{{ $nota['url'] ?? '#' }}" class="btn btn-sm btn-primary">
                                                 <i class="material-icons">visibility</i> Ver
                                             </a>
                                         </td>
@@ -157,7 +157,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @forelse($notasVentaSQL ?? [] as $nota)
+                                    @forelse($nvvSistema ?? [] as $nota)
                                     <tr>
                                         <td><span class="badge badge-info">{{ $nota['TIPO_DOCTO'] }}</span></td>
                                         <td>{{ $nota['NRO_DOCTO'] }}</td>

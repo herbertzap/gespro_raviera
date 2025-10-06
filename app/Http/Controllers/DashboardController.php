@@ -47,6 +47,10 @@ class DashboardController extends Controller
             $data = $this->getSupervisorDashboard($user);
             $data['pageSlug'] = 'dashboard';
             return view('dashboard.finanzas', $data);
+        } elseif ($user->hasRole('Picking')) {
+            $data = $this->getPickingDashboard($user);
+            $data['pageSlug'] = 'dashboard';
+            return view('dashboard.picking', $data);
         } else {
             // Rol por defecto
             $data = $this->getVendedorDashboard($user);
@@ -232,6 +236,13 @@ class DashboardController extends Controller
             // Resumen básico de compras desde MySQL
             $resumenCompras = $this->getResumenComprasMySQL();
 
+            // Crear resumen de cobranza para las tarjetas del dashboard
+            $resumenCobranza = [
+                'TOTAL_FACTURAS_PENDIENTES' => $resumenFacturasPendientes['total_facturas'] ?? 0,
+                'TOTAL_NOTAS_VENTA_SQL' => $totalNvvSistema,
+                'TOTAL_NOTAS_PENDIENTES_VALIDAR' => count($nvvPendientes)
+            ];
+
             return [
                 'facturasPendientes' => $facturasPendientes,
                 'resumenFacturasPendientes' => $resumenFacturasPendientes,
@@ -240,6 +251,7 @@ class DashboardController extends Controller
                 'nvvPendientes' => $nvvPendientes,
                 'productosBajoStock' => $productosBajoStock,
                 'resumenCompras' => $resumenCompras,
+                'resumenCobranza' => $resumenCobranza,
                 'tipoUsuario' => 'Compras'
             ];
         } catch (\Exception $e) {
@@ -260,6 +272,11 @@ class DashboardController extends Controller
                     'total_compras_mes' => 0,
                     'productos_bajo_stock' => 0,
                     'compras_pendientes' => 0
+                ],
+                'resumenCobranza' => [
+                    'TOTAL_FACTURAS_PENDIENTES' => 0,
+                    'TOTAL_NOTAS_VENTA_SQL' => 0,
+                    'TOTAL_NOTAS_PENDIENTES_VALIDAR' => 0
                 ],
                 'tipoUsuario' => 'Compras',
                 'error' => 'Error al cargar datos del dashboard'
@@ -710,27 +727,31 @@ class DashboardController extends Controller
     private function getPickingDashboard($user)
     {
         try {
-            // Obtener pedidos pendientes de preparación (limitado)
-            $pedidosPendientes = $this->getPedidosPendientesPickingOptimizado();
-            
-            // Obtener pedidos en preparación (limitado)
-            $pedidosEnPreparacion = $this->getPedidosEnPreparacionOptimizado();
-            
-            // Obtener resumen de picking del día (optimizado)
-            $resumenPicking = $this->getResumenPickingDiaOptimizado();
-            
-            // Obtener productos con stock insuficiente (limitado)
-            $productosStockInsuficiente = $this->getProductosStockInsuficienteOptimizado();
-            
-            // Obtener pedidos completados hoy (limitado)
-            $pedidosCompletadosHoy = $this->getPedidosCompletadosHoyOptimizado();
+            // Obtener facturas pendientes (limitado a 10)
+            $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 10);
+            $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes(null);
+
+            // Obtener NVV del sistema SQL (limitado a 10)
+            $nvvSistema = $this->cobranzaService->getNotasVentaSQL(10);
+            $totalNvvSistema = $this->cobranzaService->getTotalNotasVentaSQL();
+
+            // Obtener NVV pendientes de aprobación por Picking
+            $nvvPendientes = $this->getNvvPendientesPicking();
+
+            // Crear resumen de cobranza para las tarjetas del dashboard
+            $resumenCobranza = [
+                'TOTAL_FACTURAS_PENDIENTES' => $resumenFacturasPendientes['total_facturas'] ?? 0,
+                'TOTAL_NOTAS_VENTA_SQL' => $totalNvvSistema,
+                'TOTAL_NOTAS_PENDIENTES_VALIDAR' => count($nvvPendientes)
+            ];
 
             return [
-                'pedidosPendientes' => $pedidosPendientes,
-                'pedidosEnPreparacion' => $pedidosEnPreparacion,
-                'resumenPicking' => $resumenPicking,
-                'productosStockInsuficiente' => $productosStockInsuficiente,
-                'pedidosCompletadosHoy' => $pedidosCompletadosHoy,
+                'facturasPendientes' => $facturasPendientes,
+                'resumenFacturasPendientes' => $resumenFacturasPendientes,
+                'nvvSistema' => $nvvSistema,
+                'totalNvvSistema' => $totalNvvSistema,
+                'notasPendientes' => $nvvPendientes,
+                'resumenCobranza' => $resumenCobranza,
                 'tipoUsuario' => 'Picking'
             ];
         } catch (\Exception $e) {
@@ -738,21 +759,51 @@ class DashboardController extends Controller
             
             // Retornar datos básicos en caso de error
             return [
-                'pedidosPendientes' => [],
-                'pedidosEnPreparacion' => [],
-                'resumenPicking' => [
-                    'fecha' => date('Y-m-d'),
-                    'pedidos_completados' => 0,
-                    'pedidos_iniciados' => 0,
-                    'pedidos_pendientes' => 0,
-                    'tiempo_promedio_minutos' => 0,
-                    'eficiencia' => 0
+                'facturasPendientes' => [],
+                'resumenFacturasPendientes' => [
+                    'total_facturas' => 0,
+                    'por_estado' => []
                 ],
-                'productosStockInsuficiente' => [],
-                'pedidosCompletadosHoy' => [],
+                'nvvSistema' => [],
+                'totalNvvSistema' => 0,
+                'notasPendientes' => [],
+                'resumenCobranza' => [
+                    'TOTAL_FACTURAS_PENDIENTES' => 0,
+                    'TOTAL_NOTAS_VENTA_SQL' => 0,
+                    'TOTAL_NOTAS_PENDIENTES_VALIDAR' => 0
+                ],
                 'tipoUsuario' => 'Picking',
                 'error' => 'Error al cargar datos del dashboard'
             ];
+        }
+    }
+
+    private function getNvvPendientesPicking()
+    {
+        try {
+            // Obtener NVV que están aprobadas por Compras y pendientes de Picking
+            $nvvPendientes = Cotizacion::with(['user', 'cliente'])
+                ->where('estado_aprobacion', 'aprobada_compras')
+                ->whereNull('aprobado_por_picking')
+                ->orderBy('created_at', 'desc')
+                ->limit(10)
+                ->get();
+
+            return $nvvPendientes->map(function($cotizacion) {
+                return [
+                    'id' => $cotizacion->id,
+                    'numero_nota_venta' => 'N°' . $cotizacion->id,
+                    'user' => $cotizacion->user,
+                    'cliente' => $cotizacion->cliente,
+                    'nombre_cliente' => $cotizacion->cliente ? $cotizacion->cliente->nombre : 'N/A',
+                    'total' => $cotizacion->total,
+                    'estado_aprobacion' => $cotizacion->estado_aprobacion,
+                    'created_at' => $cotizacion->created_at
+                ];
+            })->toArray();
+        } catch (\Exception $e) {
+            \Log::error("Error al obtener NVV pendientes de Picking: " . $e->getMessage());
+            return [];
         }
     }
 
@@ -841,18 +892,32 @@ class DashboardController extends Controller
     {
         try {
             // Obtener cotizaciones pendientes de aprobación por Compras
-            // Usar las columnas correctas de la tabla cotizaciones
+            // Incluir todas las cotizaciones que necesitan aprobación por Compras:
+            // 1. Las que ya fueron aprobadas por supervisor pero no por compras
+            // 2. Las que están pendientes (necesitan aprobación por Compras)
+            // 3. Las que están pendiente_picking (necesitan aprobación por Compras)
             $cotizaciones = \App\Models\Cotizacion::with(['user', 'productos'])
-                ->where('estado_aprobacion', 'aprobada_supervisor') // Ya aprobada por supervisor
-                ->whereNull('aprobado_por_compras') // Pendiente de aprobación por compras
+                ->where(function($query) {
+                    $query->where(function($q) {
+                        // Ya aprobadas por supervisor pero no por compras
+                        $q->where('estado_aprobacion', 'aprobada_supervisor')
+                          ->whereNull('aprobado_por_compras');
+                    })->orWhere(function($q) {
+                        // Pendientes que necesitan aprobación por Compras
+                        $q->where('estado_aprobacion', 'pendiente');
+                    })->orWhere(function($q) {
+                        // Pendientes de picking que necesitan aprobación por Compras
+                        $q->where('estado_aprobacion', 'pendiente_picking');
+                    });
+                })
                 ->orderBy('created_at', 'desc')
-                ->limit(10) // Limitar para evitar timeout
+                ->limit(20) // Aumentar límite para incluir más cotizaciones
                 ->get();
 
             return $cotizaciones->map(function($cotizacion) {
                 return [
                     'id' => $cotizacion->id,
-                    'numero' => $cotizacion->numero_cotizacion ?? 'N/A',
+                    'numero' => 'N°' . $cotizacion->id,
                     'cliente_codigo' => $cotizacion->cliente_codigo,
                     'cliente_nombre' => $cotizacion->cliente_nombre,
                     'total' => $cotizacion->total,
@@ -862,7 +927,7 @@ class DashboardController extends Controller
                     'tiene_problemas_stock' => $cotizacion->tiene_problemas_stock ?? false,
                     'tiene_problemas_credito' => $cotizacion->tiene_problemas_credito ?? false,
                     'estado' => $cotizacion->estado_aprobacion,
-                    'url' => route('cotizaciones.show', $cotizacion->id)
+                    'url' => route('aprobaciones.show', $cotizacion->id)
                 ];
             })->toArray();
         } catch (\Exception $e) {

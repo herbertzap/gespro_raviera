@@ -179,8 +179,8 @@ class AprobacionController extends Controller
 
             $cotizacion->aprobarPorPicking($user->id, $request->comentarios);
             
-            // Aquí se insertaría en SQL Server (esto se implementará después)
-            // $this->insertarEnSQLServer($cotizacion);
+            // Insertar en SQL Server
+            $this->insertarEnSQLServer($cotizacion);
             
             Log::info("Nota de venta {$cotizacion->id} aprobada por picking {$user->id}");
             
@@ -192,6 +192,234 @@ class AprobacionController extends Controller
         } catch (\Exception $e) {
             Log::error("Error aprobando nota de venta por picking: " . $e->getMessage());
             return response()->json(['error' => 'Error al aprobar la nota de venta'], 500);
+        }
+    }
+
+    /**
+     * Insertar cotización en SQL Server
+     */
+    private function insertarEnSQLServer($cotizacion)
+    {
+        try {
+            // Obtener siguiente correlativo para MAEEDO
+            $queryCorrelativo = "SELECT TOP 1 ISNULL(MAX(IDMAEEDO), 0) + 1 AS siguiente_id FROM MAEEDO WHERE EMPRESA = '01'";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $queryCorrelativo . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            // Parsear el resultado para obtener el siguiente ID
+            $siguienteId = 1; // Valor por defecto
+            if ($result && !str_contains($result, 'error')) {
+                $lines = explode("\n", $result);
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if (is_numeric($line) && $line > 0) {
+                        $siguienteId = (int)$line;
+                        break;
+                    }
+                }
+            }
+            
+            Log::info('Siguiente ID para MAEEDO: ' . $siguienteId);
+            
+            // Calcular fecha de vencimiento (30 días desde hoy)
+            $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
+            
+            // Obtener información del vendedor
+            $codigoVendedor = $cotizacion->user->codigo_vendedor ?? '001';
+            $nombreVendedor = $cotizacion->user->name ?? 'Vendedor Sistema';
+            
+            // Insertar encabezado en MAEEDO
+            $insertMAEEDO = "
+                INSERT INTO MAEEDO (
+                    IDMAEEDO, TIDO, NUDO, ENDO, SUENDO, FEEMDO, FE01VEDO, FEULVEDO, 
+                    VABRDO, VAABDO, EMPRESA, KOFU, SUDO, ESDO, TIDOEXTE, NUDOEXTE,
+                    FEULVEDO, KOFUEN, KOFUAUX, KOFUPA, KOFUVE, KOFUCO, KOFUCA,
+                    KOFUCH, KOFUPE, KOFUIN, KOFUAD, KOFUGE, KOFUGE2, KOFUGE3,
+                    KOFUGE4, KOFUGE5, KOFUGE6, KOFUGE7, KOFUGE8, KOFUGE9, KOFUGE10
+                ) VALUES (
+                    {$siguienteId}, 'NVV', {$siguienteId}, '{$cotizacion->cliente_codigo}', 
+                    '001', GETDATE(), '{$fechaVencimiento}', '{$fechaVencimiento}', 
+                    {$cotizacion->total}, 0, '01', '{$codigoVendedor}', '001', 'N',
+                    'NVV', {$siguienteId}, '{$fechaVencimiento}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                    '{$codigoVendedor}', '{$codigoVendedor}'
+                )
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $insertMAEEDO . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            if (str_contains($result, 'error')) {
+                throw new \Exception('Error insertando encabezado: ' . $result);
+            }
+            
+            Log::info('Encabezado MAEEDO insertado correctamente');
+            
+            // Insertar detalles en MAEDDO
+            foreach ($cotizacion->productos as $index => $producto) {
+                $lineaId = $index + 1;
+                
+                $insertMAEDDO = "
+                    INSERT INTO MAEDDO (
+                        IDMAEEDO, IDMAEDDO, KOPRCT, NOKOPR, CAPRCO1, PPPRNE, 
+                        CAPRCO2, PPPRNE2, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
+                        FEEMLI, FEULVE, VANELI, VABRLI, VAABLI, ESDO, LILG,
+                        CAPRAD1, CAPREX1, CAPRAD2, CAPREX2, KOFULIDO, KOFUAUX,
+                        KOFUPA, KOFUVE, KOFUCO, KOFUCA, KOFUCH, KOFUPE, KOFUIN,
+                        KOFUAD, KOFUGE, KOFUGE2, KOFUGE3, KOFUGE4, KOFUGE5,
+                        KOFUGE6, KOFUGE7, KOFUGE8, KOFUGE9, KOFUGE10
+                    ) VALUES (
+                        {$siguienteId}, {$lineaId}, '{$producto->producto_codigo}', 
+                        '{$producto->producto_nombre}', {$producto->cantidad}, 
+                        {$producto->precio_unitario}, 0, 0, '01', 'NVV', {$siguienteId},
+                        '{$cotizacion->cliente_codigo}', '001', GETDATE(),
+                        '{$fechaVencimiento}', " . ($producto->cantidad * $producto->precio_unitario) . ",
+                        " . ($producto->cantidad * $producto->precio_unitario) . ", 0, 'N', 'SI',
+                        0, 0, 0, 0, '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
+                        '{$codigoVendedor}', '{$codigoVendedor}'
+                    )
+                ";
+                
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $insertMAEDDO . "\ngo\nquit");
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+                
+                unlink($tempFile);
+                
+                if (str_contains($result, 'error')) {
+                    throw new \Exception('Error insertando detalle línea ' . $lineaId . ': ' . $result);
+                }
+            }
+            
+            Log::info('Detalles MAEDDO insertados correctamente');
+            
+            // Insertar en MAEEDOOB (Observaciones)
+            $insertMAEEDOOB = "
+                INSERT INTO MAEEDOOB (
+                    IDMAEEDO, IDMAEDOOB, OBSERVACION, EMPRESA
+                ) VALUES (
+                    {$siguienteId}, 1, 'NVV generada desde sistema web - ID: {$cotizacion->id}', '01'
+                )
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $insertMAEEDOOB . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            if (str_contains($result, 'error')) {
+                Log::warning('Error insertando observaciones MAEEDOOB: ' . $result);
+            } else {
+                Log::info('Observaciones MAEEDOOB insertadas correctamente');
+            }
+            
+            // Insertar en MAEVEN (Vendedor)
+            $insertMAEVEN = "
+                INSERT INTO MAEVEN (
+                    IDMAEEDO, KOFU, NOKOFU, EMPRESA
+                ) VALUES (
+                    {$siguienteId}, '{$codigoVendedor}', '{$nombreVendedor}', '01'
+                )
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $insertMAEVEN . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            if (str_contains($result, 'error')) {
+                Log::warning('Error insertando vendedor MAEVEN: ' . $result);
+            } else {
+                Log::info('Vendedor MAEVEN insertado correctamente');
+            }
+            
+            // Actualizar stock comprometido en MAEST
+            foreach ($cotizacion->productos as $producto) {
+                $updateMAEST = "
+                    UPDATE MAEST 
+                    SET STOCKSALIDA = ISNULL(STOCKSALIDA, 0) + {$producto->cantidad}
+                    WHERE KOPR = '{$producto->producto_codigo}' AND EMPRESA = '01'
+                ";
+                
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $updateMAEST . "\ngo\nquit");
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+                
+                unlink($tempFile);
+                
+                if (str_contains($result, 'error')) {
+                    Log::warning('Error actualizando stock comprometido para producto ' . $producto->producto_codigo . ': ' . $result);
+                }
+            }
+            
+            Log::info('Stock comprometido MAEST actualizado correctamente');
+            
+            // Actualizar productos en MAEPR
+            foreach ($cotizacion->productos as $producto) {
+                $updateMAEPR = "
+                    UPDATE MAEPR 
+                    SET ULTIMACOMPRA = GETDATE()
+                    WHERE KOPR = '{$producto->producto_codigo}'
+                ";
+                
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $updateMAEPR . "\ngo\nquit");
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+                
+                unlink($tempFile);
+                
+                if (str_contains($result, 'error')) {
+                    Log::warning('Error actualizando MAEPR para producto ' . $producto->producto_codigo . ': ' . $result);
+                }
+            }
+            
+            Log::info('Productos MAEPR actualizados correctamente');
+            
+            return [
+                'success' => true,
+                'nota_venta_id' => $siguienteId,
+                'message' => 'NVV insertada correctamente en SQL Server'
+            ];
+            
+        } catch (\Exception $e) {
+            Log::error('Error en insertarEnSQLServer: ' . $e->getMessage());
+            throw $e;
         }
     }
 

@@ -158,7 +158,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @forelse($notasVentaSQL ?? [] as $nota)
+                                    @forelse($nvvSistema ?? [] as $nota)
                                     <tr>
                                         <td><span class="badge badge-info">{{ $nota['TIPO_DOCTO'] }}</span></td>
                                         <td>{{ $nota['NRO_DOCTO'] }}</td>

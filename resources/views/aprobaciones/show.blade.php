@@ -287,7 +287,7 @@
                                                     {{ $producto->nombre_producto }}
                                                 </td>
                                                 <td>
-                                                    @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock && $producto->stock_disponible < $producto->cantidad)
+                                                    @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock && $producto->stock_disponible < $producto->cantidad && !$cotizacion->aprobado_por_compras)
                                                         <div class="input-group input-group-sm">
                                                             <input type="number" class="form-control cantidad-input" 
                                                                    value="{{ $producto->cantidad }}" 
@@ -307,7 +307,7 @@
                                                     @endif
                                                 </td>
                                                 <td>
-                                                    @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking')) && $cotizacion->tiene_problemas_stock)
+                                                    @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking')))
                                                         <div class="input-group input-group-sm">
                                                             <input type="number" class="form-control separar-input" 
                                                                    value="{{ $producto->cantidad_separar ?? 0 }}" 
@@ -350,7 +350,7 @@
                                                         <span class="badge badge-warning">Stock Insuficiente</span>
                                                     @endif
                                                 </td>
-                                                @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock)
+                                                @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock && !$cotizacion->aprobado_por_compras)
                                                     <td>
                                                         @if($producto->stock_disponible < $producto->cantidad)
                                                             <button class="btn btn-warning btn-sm" 
@@ -372,7 +372,7 @@
                         @endif
                         
                         <!-- Botones de Acción para Compras -->
-                        @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock)
+                        @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock && !$cotizacion->aprobado_por_compras)
                             <div class="row mt-3">
                                 <div class="col-md-12">
                                     <div class="card">
