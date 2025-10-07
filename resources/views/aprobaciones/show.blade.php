@@ -556,6 +556,11 @@ function imprimirNotaVenta() {
 
 // Aprobar nota de venta
 function aprobarNota(notaId, tipo) {
+    // Confirmar aprobación
+    if (!confirm('¿Estás seguro de aprobar esta nota de venta?')) {
+        return;
+    }
+
     // Usar las rutas específicas que ya funcionaban
     let url = '';
     switch(tipo) {
@@ -580,8 +585,24 @@ function aprobarNota(notaId, tipo) {
         csrfToken.type = 'hidden';
         csrfToken.name = '_token';
         csrfToken.value = '{{ csrf_token() }}';
-        
         form.appendChild(csrfToken);
+        
+        // Para picking, agregar campo validar_stock_real
+        if (tipo === 'picking') {
+            const validarStock = document.createElement('input');
+            validarStock.type = 'hidden';
+            validarStock.name = 'validar_stock_real';
+            validarStock.value = '1';
+            form.appendChild(validarStock);
+        }
+        
+        // Para supervisor y compras, agregar comentarios vacíos si no existen
+        const comentarios = document.createElement('input');
+        comentarios.type = 'hidden';
+        comentarios.name = 'comentarios';
+        comentarios.value = '';
+        form.appendChild(comentarios);
+        
         document.body.appendChild(form);
         form.submit();
     }
