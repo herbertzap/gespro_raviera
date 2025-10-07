@@ -27,6 +27,7 @@ class Cotizacion extends Model
         'motivo_rechazo',
         'requiere_aprobacion',
         'nota_venta_id',
+        'numero_nvv',
         'fecha_aprobacion',
         'aprobado_por',
         'fecha_cancelacion',

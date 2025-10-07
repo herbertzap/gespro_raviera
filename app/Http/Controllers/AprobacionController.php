@@ -411,6 +411,27 @@ class AprobacionController extends Controller
             
             Log::info('Productos MAEPR actualizados correctamente');
             
+            // Actualizar stock comprometido en MySQL (productos tabla local)
+            foreach ($cotizacion->productos as $producto) {
+                $productoLocal = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
+                
+                if ($productoLocal) {
+                    // Incrementar stock comprometido virtual
+                    $productoLocal->stock_comprometido = ($productoLocal->stock_comprometido ?? 0) + $producto->cantidad;
+                    // Recalcular stock disponible
+                    $productoLocal->stock_disponible = ($productoLocal->stock_fisico ?? 0) - $productoLocal->stock_comprometido;
+                    $productoLocal->save();
+                    
+                    Log::info("Stock MySQL actualizado para {$producto->codigo_producto}: Comprometido +{$producto->cantidad}, Disponible: {$productoLocal->stock_disponible}");
+                }
+            }
+            
+            Log::info('Stock comprometido MySQL actualizado correctamente');
+            
+            // Guardar el número de NVV en la cotización
+            $cotizacion->numero_nvv = $siguienteId;
+            $cotizacion->save();
+            
             return [
                 'success' => true,
                 'nota_venta_id' => $siguienteId,

@@ -1556,16 +1556,16 @@ pre code {
 .table-secondary,
 .table-secondary>th,
 .table-secondary>td {
-  background-color: #fcfcfd;
+  background: rgba(0, 0, 0, 0.5);
 }
 
 .table-hover .table-secondary:hover {
-  background-color: #ededf3;
+  background: rgba(0, 0, 0, 0.8);
 }
 
 .table-hover .table-secondary:hover>td,
 .table-hover .table-secondary:hover>th {
-  background-color: #ededf3;
+  background:  rgba(0, 0, 0, 0.8);
 }
 
 .table-success,
