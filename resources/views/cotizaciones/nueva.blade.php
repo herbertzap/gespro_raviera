@@ -364,11 +364,17 @@ function mostrarResultadosProductosAjax(productos) {
         const buttonText = precioValido ? 'Agregar' : 'Sin precio';
         const buttonIcon = precioValido ? 'add_shopping_cart' : 'block';
         
+        const multiploVenta = producto.MULTIPLO_VENTA || 1;
+        const multiploInfo = multiploVenta > 1 ? `<br><small class="text-info">Múltiplo: ${multiploVenta}</small>` : '';
+        
         contenido += `
             <tr class="${rowClass}">
-                <td><input type="checkbox" class="producto-checkbox" value="${producto.CODIGO_PRODUCTO}" onchange="actualizarContadorSeleccionados()" ${checkboxDisabled}></td>
+                <td><input type="checkbox" class="producto-checkbox" value="${producto.CODIGO_PRODUCTO}" 
+                    data-multiplo="${multiploVenta}" 
+                    data-descuento-maximo="${producto.DESCUENTO_MAXIMO || 0}"
+                    onchange="actualizarContadorSeleccionados()" ${checkboxDisabled}></td>
                 <td><strong>${producto.CODIGO_PRODUCTO || ''}</strong></td>
-                <td>${producto.NOMBRE_PRODUCTO || ''}</td>
+                <td>${producto.NOMBRE_PRODUCTO || ''}${multiploInfo}</td>
                 <td class="${stockClass}">
                     <i class="material-icons">${stockReal > 0 ? 'check_circle' : 'warning'}</i>
                     ${stockReal || 0} ${producto.UNIDAD_MEDIDA || 'UN'}
@@ -380,7 +386,7 @@ function mostrarResultadosProductosAjax(productos) {
                     ${!precioValido ? '<br><small class="text-danger"><i class="material-icons">warning</i> Precio no disponible</small>' : ''}
                 </td>
                 <td>
-                    <button class="btn btn-sm ${buttonClass}" onclick="${precioValido ? `agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', '${producto.NOMBRE_PRODUCTO.replace(/'/g, "\\'")}', ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}', ${producto.DESCUENTO_MAXIMO || 0}, ${producto.MULTIPLO_VENTA || 1})` : 'alert(\'Este producto no tiene precio disponible\')'}" ${buttonDisabled} title="${motivoBloqueo || ''}">
+                    <button class="btn btn-sm ${buttonClass}" onclick="${precioValido ? `agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', '${producto.NOMBRE_PRODUCTO.replace(/'/g, "\\'")}', ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}', ${producto.DESCUENTO_MAXIMO || 0}, ${multiploVenta})` : 'alert(\'Este producto no tiene precio disponible\')'}" ${buttonDisabled} title="${motivoBloqueo || ''}">
                         <i class="material-icons">${buttonIcon}</i> ${buttonText}
                     </button>
                 </td>
@@ -501,8 +507,8 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
     const productoExistente = productosCotizacion.find(p => p.codigo === codigo);
     
     if (productoExistente) {
-        // Incrementar cantidad según el múltiplo del producto
-        const incremento = Math.max(multiplo, obtenerIncrementoPorUnidad(unidad));
+        // Incrementar cantidad según el múltiplo del producto (no usar Math.max)
+        const incremento = multiplo > 0 ? multiplo : 1;
         productoExistente.cantidad += incremento;
         productoExistente.multiplo = multiplo; // Actualizar múltiplo
         actualizarSubtotal(productosCotizacion.indexOf(productoExistente));
@@ -513,8 +519,8 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
             return;
         }
         
-        // Agregar nuevo producto con cantidad inicial según múltiplo
-        const cantidadInicial = Math.max(multiplo, obtenerIncrementoPorUnidad(unidad));
+        // Agregar nuevo producto con cantidad inicial = múltiplo
+        const cantidadInicial = multiplo > 0 ? multiplo : 1;
         productosCotizacion.push({
             codigo: codigo,
             nombre: nombre,
@@ -536,10 +542,11 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
     limpiarBusqueda();
     
     // Mostrar mensaje de confirmación con información de stock y múltiplo
-    const stockInfo = parseFloat(stock) <= 0 ? ' (Sin stock - Nota pendiente)' : '';
-    const multiploInfo = multiplo > 1 ? ` - Múltiplo: ${multiplo}` : '';
-    const productosInfo = productosCotizacion.length > 1 ? `\n\nProductos en cotización: ${productosCotizacion.length}/24` : '';
-    alert('Producto agregado: ' + nombre + ' (Cantidad: ' + Math.max(multiplo, obtenerIncrementoPorUnidad(unidad)) + ' ' + unidad + ')' + multiploInfo + stockInfo + productosInfo);
+    const cantidadAgregada = multiplo > 0 ? multiplo : 1;
+    const stockInfo = parseFloat(stock) <= 0 ? '\n⚠️ Sin stock - Se generará nota pendiente' : '';
+    const multiploInfo = multiplo > 1 ? `\n📦 Se vende en múltiplos de ${multiplo} unidades` : '';
+    const productosInfo = productosCotizacion.length > 1 ? `\n\n📋 Productos en cotización: ${productosCotizacion.length}/24` : '';
+    alert('✅ Producto agregado\n\n' + nombre + '\nCantidad: ' + cantidadAgregada + ' ' + unidad + multiploInfo + stockInfo + productosInfo);
 }
 
 // Función para obtener el incremento de cantidad según la unidad
@@ -590,17 +597,21 @@ function actualizarTablaProductos() {
             stockText = 'Insuficiente';
         }
         
-        // Determinar el step según la unidad
-        const step = obtenerStepPorUnidad(producto.unidad);
+        // Determinar el step según el múltiplo del producto
+        const multiplo = producto.multiplo || 1;
+        const step = multiplo;
+        
+        // Agregar información del múltiplo si es > 1
+        const multiploInfo = multiplo > 1 ? `<br><small class="text-info">Múltiplo: ${multiplo}</small>` : '';
         
         const row = `
             <tr>
                 <td>${producto.codigo}</td>
                 <td>${producto.nombre}</td>
                 <td>
-                    <input type="number" class="form-control" value="${producto.cantidad}" step="${step}" 
+                    <input type="number" class="form-control" value="${producto.cantidad}" step="${step}" min="${multiplo}"
                            onchange="actualizarCantidad(${index}, this.value)" style="width: 80px;">
-                    <small class="text-muted">${producto.unidad}</small>
+                    <small class="text-muted">${producto.unidad}${multiploInfo}</small>
                 </td>
                 <td>$${Math.round(producto.precio).toLocaleString()}</td>
                 <td>
@@ -745,11 +756,12 @@ function agregarProductosSeleccionados() {
         const stock = parseFloat(stockText.split(' ')[0]) || 0;
         const unidad = stockText.includes('UN') ? 'UN' : 'UN';
         
+        // Obtener múltiplo y descuento máximo desde los data attributes del checkbox
+        const multiplo = parseInt(checkbox.getAttribute('data-multiplo')) || 1;
+        const descuentoMaximo = parseFloat(checkbox.getAttribute('data-descuento-maximo')) || 0;
+        
         // Verificar si el producto tiene precio válido
         const precioValido = precio > 0;
-        
-        // Obtener descuento máximo desde el botón (necesitamos extraerlo de los datos del producto)
-        const descuentoMaximo = 0; // Por ahora 0, se puede mejorar extrayendo de los datos
         
         if (precioValido) {
             productosSeleccionados.push({
@@ -758,7 +770,8 @@ function agregarProductosSeleccionados() {
                 precio: precio,
                 stock: stock,
                 unidad: unidad,
-                descuentoMaximo: descuentoMaximo
+                descuentoMaximo: descuentoMaximo,
+                multiplo: multiplo
             });
         } else {
             productosSinPrecio.push(nombre);
@@ -788,7 +801,7 @@ function agregarProductosSeleccionados() {
     productosSeleccionados.forEach(producto => {
         const productoExistente = productosCotizacion.find(p => p.codigo === producto.codigo);
         if (!productoExistente && productosCotizacion.length < 24) {
-            agregarProductoDesdePHP(producto.codigo, producto.nombre, producto.precio, producto.stock, producto.unidad, producto.descuentoMaximo);
+            agregarProductoDesdePHP(producto.codigo, producto.nombre, producto.precio, producto.stock, producto.unidad, producto.descuentoMaximo, producto.multiplo);
             productosAgregados++;
         }
     });
