@@ -359,8 +359,12 @@ class CotizacionController extends Controller
             }
             
             // Buscar productos en tabla local MySQL (consulta optimizada)
+            // Buscar por código (KOPR) o por nombre (NOKOPR)
             $productos = DB::table('productos')
-                ->where('NOKOPR', 'LIKE', "{$busqueda}%")
+                ->where(function($query) use ($busqueda) {
+                    $query->where('KOPR', 'LIKE', "{$busqueda}%")
+                          ->orWhere('NOKOPR', 'LIKE', "{$busqueda}%");
+                })
                 ->where('activo', true)
                 ->limit(15)
                 ->get()
