@@ -150,18 +150,20 @@ class AprobacionController extends Controller
     {
         $request->validate([
             'comentarios' => 'nullable|string|max:500',
-            'validar_stock_real' => 'required|boolean'
+            'validar_stock_real' => 'nullable|boolean'
         ]);
 
         $cotizacion = Cotizacion::findOrFail($id);
         $user = Auth::user();
 
         if (!$user->hasRole('Picking')) {
-            return response()->json(['error' => 'No tienes permisos para aprobar como picking'], 403);
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'No tienes permisos para aprobar como picking');
         }
 
         if (!$cotizacion->puedeAprobarPicking() && $cotizacion->estado_aprobacion !== 'pendiente_picking') {
-            return response()->json(['error' => 'La nota de venta no puede ser aprobada por picking'], 400);
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'La nota de venta no puede ser aprobada por picking');
         }
 
         try {
@@ -170,28 +172,43 @@ class AprobacionController extends Controller
                 $stockValidado = $this->validarStockReal($cotizacion);
                 
                 if (!$stockValidado['valido']) {
-                    return response()->json([
-                        'error' => 'Stock insuficiente en algunos productos',
-                        'detalle' => $stockValidado['detalle']
-                    ], 400);
+                    $mensajeError = "Stock insuficiente en algunos productos:\n";
+                    foreach ($stockValidado['detalle'] as $detalle) {
+                        $mensajeError .= "- {$detalle['nombre']}: Requerido {$detalle['cantidad_solicitada']}, Disponible {$detalle['stock_disponible']}\n";
+                    }
+                    return redirect()->route('aprobaciones.show', $id)
+                        ->with('error', $mensajeError);
                 }
             }
 
+            Log::info("Iniciando aprobación por picking para cotización {$cotizacion->id}");
+            
+            // Aprobar en MySQL primero
             $cotizacion->aprobarPorPicking($user->id, $request->comentarios);
             
+            Log::info("Cotización aprobada en MySQL, iniciando insert en SQL Server");
+            
             // Insertar en SQL Server
-            $this->insertarEnSQLServer($cotizacion);
+            $resultado = $this->insertarEnSQLServer($cotizacion);
             
-            Log::info("Nota de venta {$cotizacion->id} aprobada por picking {$user->id}");
+            if ($resultado['success']) {
+                Log::info("Nota de venta {$cotizacion->id} aprobada por picking {$user->id} y insertada en SQL Server con ID {$resultado['nota_venta_id']}");
+                
+                // Registrar en el historial
+                \App\Services\HistorialCotizacionService::registrarAprobacionPicking($cotizacion, $request->comentarios);
+                
+                return redirect()->route('aprobaciones.show', $id)
+                    ->with('success', "Nota de venta aprobada correctamente. NVV N° {$resultado['nota_venta_id']} creada en el sistema.");
+            } else {
+                throw new \Exception('Error al insertar en SQL Server');
+            }
             
-            return response()->json([
-                'success' => true,
-                'message' => 'Nota de venta aprobada por picking e insertada en sistema',
-                'estado_aprobacion' => $cotizacion->estado_aprobacion
-            ]);
         } catch (\Exception $e) {
             Log::error("Error aprobando nota de venta por picking: " . $e->getMessage());
-            return response()->json(['error' => 'Error al aprobar la nota de venta'], 500);
+            Log::error("Stack trace: " . $e->getTraceAsString());
+            
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'Error al aprobar la nota de venta: ' . $e->getMessage());
         }
     }
 
@@ -286,8 +303,8 @@ class AprobacionController extends Controller
                         KOFUAD, KOFUGE, KOFUGE2, KOFUGE3, KOFUGE4, KOFUGE5,
                         KOFUGE6, KOFUGE7, KOFUGE8, KOFUGE9, KOFUGE10
                     ) VALUES (
-                        {$siguienteId}, {$lineaId}, '{$producto->producto_codigo}', 
-                        '{$producto->producto_nombre}', {$producto->cantidad}, 
+                        {$siguienteId}, {$lineaId}, '{$producto->codigo_producto}', 
+                        '{$producto->nombre_producto}', {$producto->cantidad}, 
                         {$producto->precio_unitario}, 0, 0, '01', 'NVV', {$siguienteId},
                         '{$cotizacion->cliente_codigo}', '001', GETDATE(),
                         '{$fechaVencimiento}', " . ($producto->cantidad * $producto->precio_unitario) . ",
@@ -370,7 +387,7 @@ class AprobacionController extends Controller
                 $updateMAEST = "
                     UPDATE MAEST 
                     SET STOCKSALIDA = ISNULL(STOCKSALIDA, 0) + {$producto->cantidad}
-                    WHERE KOPR = '{$producto->producto_codigo}' AND EMPRESA = '01'
+                    WHERE KOPR = '{$producto->codigo_producto}' AND EMPRESA = '01'
                 ";
                 
                 $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
@@ -382,7 +399,7 @@ class AprobacionController extends Controller
                 unlink($tempFile);
                 
                 if (str_contains($result, 'error')) {
-                    Log::warning('Error actualizando stock comprometido para producto ' . $producto->producto_codigo . ': ' . $result);
+                    Log::warning('Error actualizando stock comprometido para producto ' . $producto->codigo_producto . ': ' . $result);
                 }
             }
             
@@ -393,7 +410,7 @@ class AprobacionController extends Controller
                 $updateMAEPR = "
                     UPDATE MAEPR 
                     SET ULTIMACOMPRA = GETDATE()
-                    WHERE KOPR = '{$producto->producto_codigo}'
+                    WHERE KOPR = '{$producto->codigo_producto}'
                 ";
                 
                 $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
@@ -405,7 +422,7 @@ class AprobacionController extends Controller
                 unlink($tempFile);
                 
                 if (str_contains($result, 'error')) {
-                    Log::warning('Error actualizando MAEPR para producto ' . $producto->producto_codigo . ': ' . $result);
+                    Log::warning('Error actualizando MAEPR para producto ' . $producto->codigo_producto . ': ' . $result);
                 }
             }
             
