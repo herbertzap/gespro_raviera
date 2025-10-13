@@ -225,7 +225,7 @@ class AprobacionController extends Controller
     private function insertarEnSQLServer($cotizacion)
     {
         try {
-            // Obtener siguiente correlativo para MAEEDO
+            // Obtener siguiente correlativo para IDMAEEDO
             $queryCorrelativo = "SELECT TOP 1 ISNULL(MAX(IDMAEEDO), 0) + 1 AS siguiente_id FROM MAEEDO WHERE EMPRESA = '01'";
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
@@ -251,6 +251,35 @@ class AprobacionController extends Controller
             
             Log::info('Siguiente ID para MAEEDO: ' . $siguienteId);
             
+            // Obtener siguiente número correlativo (NUDO) para NVV
+            $queryNudo = "SELECT TOP 1 CAST(NUDO AS INT) + 1 AS siguiente_nudo FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1 ORDER BY CAST(NUDO AS INT) DESC";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            // Parsear el resultado para obtener el siguiente NUDO
+            $siguienteNudo = 1;
+            if ($result && !str_contains($result, 'error')) {
+                $lines = explode("\n", $result);
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if (is_numeric($line) && $line > 0) {
+                        $siguienteNudo = (int)$line;
+                        break;
+                    }
+                }
+            }
+            
+            // Formatear NUDO con ceros a la izquierda (10 dígitos)
+            $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
+            
+            Log::info('Siguiente número correlativo NVV (NUDO): ' . $nudoFormateado);
+            
             // Calcular fecha de vencimiento (30 días desde hoy)
             $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
             
@@ -268,7 +297,7 @@ class AprobacionController extends Controller
                     FEEMDO, FE01VEDO, FEULVEDO, 
                     VABRDO, VANEDO, VAABDO, ESDO, KOFUDO
                 ) VALUES (
-                    {$siguienteId}, '01', 'NVV', {$siguienteId}, '{$cotizacion->cliente_codigo}', 
+                    {$siguienteId}, '01', 'NVV', '{$nudoFormateado}', '{$cotizacion->cliente_codigo}', 
                     '001', '001',
                     'I', 'LIB', 'S',
                     GETDATE(), '{$fechaVencimiento}', '{$fechaVencimiento}', 
@@ -302,7 +331,7 @@ class AprobacionController extends Controller
                         LILG, KOPRCT, NOKOPR, CAPRCO1, PPPRNE, VANELI, VABRLI,
                         FEEMLI
                     ) VALUES (
-                        {$siguienteId}, '01', 'NVV', {$siguienteId},
+                        {$siguienteId}, '01', 'NVV', '{$nudoFormateado}',
                         '{$cotizacion->cliente_codigo}', '001', 'SI', '{$producto->codigo_producto}', 
                         '{$producto->nombre_producto}', {$producto->cantidad}, 
                         {$producto->precio_unitario}, 
