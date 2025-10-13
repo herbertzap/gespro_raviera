@@ -54,11 +54,11 @@ class AprobarPickingManual extends Command
                 $this->info("NVV N° {$resultado['nota_venta_id']} creada en SQL Server");
                 $this->info("Número correlativo: {$resultado['numero_correlativo']}");
                 
-                // Guardar número de NVV
-                $cotizacion->numero_nvv = $resultado['nota_venta_id'];
+                // Guardar número correlativo (NUDO) no el ID interno
+                $cotizacion->numero_nvv = $resultado['numero_correlativo'];
                 $cotizacion->save();
                 
-                $this->info("✓ Número NVV guardado en MySQL");
+                $this->info("✓ Número NVV {$resultado['numero_correlativo']} guardado en MySQL");
             } else {
                 $this->error("Error al insertar en SQL Server");
                 return 1;
