@@ -286,39 +286,77 @@ class AprobacionController extends Controller
             
             Log::info('Siguiente ID para MAEEDO: ' . $siguienteId);
             
-            // Obtener siguiente número correlativo (NUDO) - último insertado + 1
-            $queryNudo = "SELECT TOP 1 CAST(NUDO AS INT) as ULTIMO_NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1 ORDER BY IDMAEEDO DESC";
+            // Obtener siguiente número correlativo (NUDO) con reintentos en caso de colisión
+            $maxIntentos = 5;
+            $intento = 0;
+            $nudoFormateado = null;
+            $siguienteNudo = null;
             
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
-            
-            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-            $result = shell_exec($command);
-            
-            unlink($tempFile);
-            
-            // Parsear el resultado para obtener el último NUDO
-            $ultimoNudo = 37507; // Valor por defecto basado en el último conocido
-            if ($result && !str_contains($result, 'error')) {
-                $lines = explode("\n", $result);
-                foreach ($lines as $line) {
-                    $line = trim($line);
-                    // Buscar línea con el número (debe ser numérico)
-                    if (is_numeric($line) && $line > 0) {
-                        $ultimoNudo = (int)$line;
-                        break;
+            while ($intento < $maxIntentos && !$nudoFormateado) {
+                $intento++;
+                
+                // Obtener último NUDO insertado (considerando NVV y FCV que comparten numeración)
+                $queryNudo = "SELECT TOP 1 CAST(NUDO AS INT) as ULTIMO_NUDO FROM MAEEDO WHERE ISNUMERIC(NUDO) = 1 ORDER BY IDMAEEDO DESC";
+                
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+                unlink($tempFile);
+                
+                $ultimoNudo = 37559; // Valor por defecto
+                if ($result && !str_contains($result, 'error')) {
+                    $lines = explode("\n", $result);
+                    foreach ($lines as $line) {
+                        $line = trim($line);
+                        if (is_numeric($line) && $line > 0) {
+                            $ultimoNudo = (int)$line;
+                            break;
+                        }
                     }
+                }
+                
+                $siguienteNudo = $ultimoNudo + 1;
+                $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
+                
+                Log::info("Intento {$intento}: Último NUDO: {$ultimoNudo}, Siguiente: {$nudoFormateado}");
+                
+                // Verificar que el número no esté siendo usado (por si se insertó entre medio)
+                $queryVerificar = "SELECT COUNT(*) as EXISTE FROM MAEEDO WHERE LTRIM(RTRIM(NUDO)) = '{$nudoFormateado}'";
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $queryVerificar . "\ngo\nquit");
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+                unlink($tempFile);
+                
+                $existe = false;
+                if ($result && !str_contains($result, 'error')) {
+                    $lines = explode("\n", $result);
+                    foreach ($lines as $line) {
+                        $line = trim($line);
+                        if (is_numeric($line)) {
+                            $existe = ((int)$line > 0);
+                            break;
+                        }
+                    }
+                }
+                
+                if ($existe) {
+                    Log::warning("⚠️ NUDO {$nudoFormateado} ya existe, reintentando...");
+                    $nudoFormateado = null; // Reintentar
+                    sleep(1); // Esperar 1 segundo antes de reintentar
+                } else {
+                    Log::info("✓ NUDO {$nudoFormateado} disponible");
                 }
             }
             
-            // El siguiente número es el último + 1 (correlativo)
-            $siguienteNudo = $ultimoNudo + 1;
+            if (!$nudoFormateado) {
+                throw new \Exception("No se pudo obtener un número correlativo único después de {$maxIntentos} intentos");
+            }
             
-            // Formatear NUDO con ceros a la izquierda (10 dígitos)
-            $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
-            
-            Log::info('Último NUDO insertado: ' . $ultimoNudo);
-            Log::info('Siguiente número correlativo NVV (NUDO): ' . $nudoFormateado);
+            Log::info('Número correlativo NVV asignado: ' . $nudoFormateado);
             
             // Calcular fecha de vencimiento (30 días desde hoy)
             $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
