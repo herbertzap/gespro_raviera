@@ -182,16 +182,22 @@ class AprobacionController extends Controller
         try {
             // Si se requiere validar stock real
             if ($request->validar_stock_real) {
+                Log::info("Validando stock real...");
                 $stockValidado = $this->validarStockReal($cotizacion);
+                Log::info("Resultado validación stock: " . json_encode($stockValidado));
                 
                 if (!$stockValidado['valido']) {
                     $mensajeError = "Stock insuficiente en algunos productos:\n";
                     foreach ($stockValidado['detalle'] as $detalle) {
                         $mensajeError .= "- {$detalle['nombre']}: Requerido {$detalle['cantidad_solicitada']}, Disponible {$detalle['stock_disponible']}\n";
                     }
+                    Log::warning("Stock insuficiente, redirigiendo con error");
                     return redirect()->route('aprobaciones.show', $id)
                         ->with('error', $mensajeError);
                 }
+                Log::info("✓ Stock validado correctamente");
+            } else {
+                Log::info("Validación de stock omitida (validar_stock_real = false)");
             }
 
             Log::info("Iniciando aprobación por picking para cotización {$cotizacion->id}");
