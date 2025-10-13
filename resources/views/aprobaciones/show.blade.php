@@ -41,6 +41,74 @@
             </div>
         </div>
 
+        <!-- Modal de Éxito NVV -->
+        @if(session('success') && session('numero_nvv'))
+        <div class="modal fade" id="modalExitoNVV" tabindex="-1" role="dialog" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered" role="document">
+                <div class="modal-content">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title">
+                            <i class="material-icons">check_circle</i> NVV Creada Exitosamente
+                        </h5>
+                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body text-center">
+                        <div class="alert alert-success">
+                            <h3><i class="material-icons" style="font-size: 48px;">assignment_turned_in</i></h3>
+                            <h4>NVV N° {{ session('numero_nvv') }}</h4>
+                            <p class="mb-0">Insertada correctamente en SQL Server</p>
+                        </div>
+                        <div class="text-left">
+                            <p><strong>📋 Número NVV:</strong> {{ session('numero_nvv') }}</p>
+                            <p><strong>🔢 ID Interno:</strong> {{ session('id_nvv_interno') }}</p>
+                            <p><strong>👤 Cliente:</strong> {{ $cotizacion->cliente_nombre }}</p>
+                            <p><strong>💰 Total:</strong> ${{ number_format($cotizacion->total, 0, ',', '.') }}</p>
+                            <p><strong>📦 Productos:</strong> {{ $cotizacion->productos->count() }}</p>
+                            <p><strong>⏰ Fecha:</strong> {{ now()->format('d/m/Y H:i:s') }}</p>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cerrar</button>
+                        <a href="{{ route('aprobaciones.index') }}" class="btn btn-primary">
+                            <i class="material-icons">list</i> Ver Todas las NVV
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endif
+
+        <!-- Alertas de Sesión -->
+        @if(session('success'))
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="alert alert-success alert-dismissible fade show" role="alert">
+                        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                        <strong><i class="material-icons">check_circle</i> Éxito!</strong>
+                        <pre style="white-space: pre-wrap; font-family: inherit; margin: 10px 0 0 0;">{{ session('success') }}</pre>
+                    </div>
+                </div>
+            </div>
+        @endif
+
+        @if(session('error'))
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                        <strong><i class="material-icons">error</i> Error!</strong>
+                        <pre style="white-space: pre-wrap; font-family: inherit; margin: 10px 0 0 0;">{{ session('error') }}</pre>
+                    </div>
+                </div>
+            </div>
+        @endif
+
         <!-- Información General -->
         <div class="row">
             <div class="col-md-6">
@@ -482,12 +550,12 @@
                                     <p>Esta nota de venta requiere tu aprobación.</p>
                                     <p><strong>⚠️ IMPORTANTE:</strong> Al aprobar se insertará la NVV en la base de datos de producción.</p>
                                 </div>
-                                <form action="{{ route('aprobaciones.picking', $cotizacion->id) }}" method="POST" style="display: inline;">
+                                <form id="formAprobarPicking" action="{{ route('aprobaciones.picking', $cotizacion->id) }}" method="POST" style="display: inline;">
                                     @csrf
                                     <input type="hidden" name="validar_stock_real" value="0">
                                     <input type="hidden" name="comentarios" value="">
-                                    <button type="submit" class="btn btn-success btn-lg" onclick="return confirm('¿Estás seguro de aprobar esta nota de venta? Se insertará en la base de datos de producción.')">
-                                        <i class="material-icons">check</i> Aprobar
+                                    <button type="submit" id="btnAprobarPicking" class="btn btn-success btn-lg" onclick="return confirmarAprobacionPicking(event)">
+                                        <i class="material-icons">check</i> <span id="textoBotonAprobar">Aprobar</span>
                                     </button>
                                 </form>
                                 <button type="button" class="btn btn-danger btn-lg ml-3" onclick="rechazarNota({{ $cotizacion->id }})">
@@ -534,6 +602,17 @@
         </div>
     </div>
 </div>
+
+@push('js')
+<script>
+// Mostrar modal de éxito automáticamente si existe
+@if(session('success') && session('numero_nvv'))
+$(document).ready(function() {
+    $('#modalExitoNVV').modal('show');
+});
+@endif
+</script>
+@endpush
 
 @endsection
 
@@ -638,6 +717,33 @@ function rechazarNota(notaId) {
         document.body.appendChild(form);
         form.submit();
     }
+}
+
+// Confirmar y bloquear botón de aprobación Picking
+function confirmarAprobacionPicking(event) {
+    if (!confirm('¿Estás seguro de aprobar esta nota de venta? Se insertará en la base de datos de producción.')) {
+        event.preventDefault();
+        return false;
+    }
+    
+    // Bloquear el botón para evitar doble clic
+    const btn = document.getElementById('btnAprobarPicking');
+    const texto = document.getElementById('textoBotonAprobar');
+    
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.remove('btn-success');
+        btn.classList.add('btn-secondary');
+        texto.innerHTML = 'Procesando...';
+        
+        // Mostrar mensaje de espera
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-info mt-3';
+        alert.innerHTML = '<i class="material-icons">hourglass_empty</i> Procesando aprobación e insertando en SQL Server. Por favor espera...';
+        btn.parentElement.parentElement.appendChild(alert);
+    }
+    
+    return true;
 }
 
 // ===== FUNCIONES PARA COMPRAS =====

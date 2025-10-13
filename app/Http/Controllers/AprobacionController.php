@@ -216,15 +216,31 @@ class AprobacionController extends Controller
                 // Refrescar la cotización para obtener el número_nvv actualizado
                 $cotizacion->refresh();
                 
-                // Registrar en el historial con el número de NVV
+                $numeroNVV = $resultado['numero_correlativo'] ?? $resultado['nota_venta_id'];
+                
+                Log::info("✅ Nota de venta {$cotizacion->id} aprobada por picking {$user->id}");
+                Log::info("📋 NVV N° {$numeroNVV} (ID: {$resultado['nota_venta_id']}) insertada en SQL Server");
+                
+                // Registrar en el historial con el número de NVV y timestamp
                 \App\Services\HistorialCotizacionService::registrarAprobacionPicking(
                     $cotizacion, 
-                    $request->comentarios,
+                    $request->comentarios ?? 'Aprobado por Picking - NVV N° ' . $numeroNVV,
                     $resultado['nota_venta_id']
                 );
                 
+                // Crear mensaje de éxito detallado
+                $mensajeExito = "✅ Nota de Venta aprobada exitosamente\n\n";
+                $mensajeExito .= "📋 NVV N° {$numeroNVV} creada en SQL Server\n";
+                $mensajeExito .= "🔢 ID Interno: {$resultado['nota_venta_id']}\n";
+                $mensajeExito .= "👤 Cliente: {$cotizacion->cliente_nombre}\n";
+                $mensajeExito .= "💰 Total: $" . number_format($cotizacion->total, 0, ',', '.') . "\n";
+                $mensajeExito .= "📦 Productos: " . $cotizacion->productos->count() . "\n";
+                $mensajeExito .= "⏰ Fecha: " . now()->format('d/m/Y H:i:s');
+                
                 return redirect()->route('aprobaciones.show', $id)
-                    ->with('success', "Nota de venta aprobada correctamente. NVV N° {$resultado['nota_venta_id']} creada en el sistema.");
+                    ->with('success', $mensajeExito)
+                    ->with('numero_nvv', $numeroNVV)
+                    ->with('id_nvv_interno', $resultado['nota_venta_id']);
             } else {
                 throw new \Exception('Error al insertar en SQL Server');
             }
