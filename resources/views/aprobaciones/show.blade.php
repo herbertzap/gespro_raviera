@@ -484,7 +484,7 @@
                                 </div>
                                 <form action="{{ route('aprobaciones.picking', $cotizacion->id) }}" method="POST" style="display: inline;">
                                     @csrf
-                                    <input type="hidden" name="validar_stock_real" value="1">
+                                    <input type="hidden" name="validar_stock_real" value="0">
                                     <input type="hidden" name="comentarios" value="">
                                     <button type="submit" class="btn btn-success btn-lg" onclick="return confirm('¿Estás seguro de aprobar esta nota de venta? Se insertará en la base de datos de producción.')">
                                         <i class="material-icons">check</i> Aprobar
