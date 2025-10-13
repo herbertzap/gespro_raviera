@@ -287,6 +287,44 @@ class AprobacionController extends Controller
             $codigoVendedor = $cotizacion->user->codigo_vendedor ?? '001';
             $nombreVendedor = $cotizacion->user->name ?? 'Vendedor Sistema';
             
+            // Obtener sucursal del cliente desde SQL Server
+            $querySucursal = "SELECT SUEN FROM MAEEN WHERE KOEN = '{$cotizacion->cliente_codigo}'";
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $querySucursal . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            unlink($tempFile);
+            
+            // Parsear sucursal del cliente
+            $sucursalCliente = '001'; // Valor por defecto
+            if ($result && !str_contains($result, 'error')) {
+                $lines = explode("\n", $result);
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    // Buscar línea que no sea header ni separador
+                    if (!empty($line) && $line !== 'SUEN' && !str_contains($line, '---') && !str_contains($line, 'locale') && !str_contains($line, 'charset') && !str_contains($line, 'Setting') && !str_contains($line, 'row')) {
+                        $sucursalCliente = $line;
+                        break;
+                    }
+                }
+            }
+            
+            // Si la sucursal está vacía, usar valor por defecto
+            if (empty(trim($sucursalCliente))) {
+                $sucursalCliente = '001';
+            }
+            
+            Log::info("=== DATOS PARA INSERT NVV ===");
+            Log::info("Cotización ID: {$cotizacion->id}");
+            Log::info("Cliente: {$cotizacion->cliente_codigo} - {$cotizacion->cliente_nombre}");
+            Log::info("Sucursal Cliente (SUENDO): '{$sucursalCliente}'");
+            Log::info("Vendedor: {$codigoVendedor} - {$nombreVendedor}");
+            Log::info("Total: {$cotizacion->total}");
+            Log::info("IDMAEEDO: {$siguienteId}");
+            Log::info("NUDO: {$nudoFormateado}");
+            Log::info("Fecha Vencimiento: {$fechaVencimiento}");
+            
             // Insertar encabezado en MAEEDO con campos requeridos por el sistema interno
             $insertMAEEDO = "
                 SET IDENTITY_INSERT MAEEDO ON
@@ -298,7 +336,7 @@ class AprobacionController extends Controller
                     VABRDO, VANEDO, VAABDO, ESDO, KOFUDO
                 ) VALUES (
                     {$siguienteId}, '01', 'NVV', '{$nudoFormateado}', '{$cotizacion->cliente_codigo}', 
-                    '001', '001',
+                    '{$sucursalCliente}', '001',
                     'I', 'LIB', 'S',
                     GETDATE(), '{$fechaVencimiento}', '{$fechaVencimiento}', 
                     {$cotizacion->total}, {$cotizacion->total}, 0, 'N', '{$codigoVendedor}'
@@ -306,6 +344,9 @@ class AprobacionController extends Controller
                 
                 SET IDENTITY_INSERT MAEEDO OFF
             ";
+            
+            Log::info("=== SQL INSERT MAEEDO ===");
+            Log::info($insertMAEEDO);
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $insertMAEEDO . "\ngo\nquit");
@@ -324,6 +365,14 @@ class AprobacionController extends Controller
             // Insertar detalles en MAEDDO
             foreach ($cotizacion->productos as $index => $producto) {
                 $lineaId = $index + 1;
+                $subtotal = $producto->cantidad * $producto->precio_unitario;
+                
+                Log::info("=== PRODUCTO #{$lineaId} ===");
+                Log::info("Código: {$producto->codigo_producto}");
+                Log::info("Nombre: {$producto->nombre_producto}");
+                Log::info("Cantidad: {$producto->cantidad}");
+                Log::info("Precio: {$producto->precio_unitario}");
+                Log::info("Subtotal: {$subtotal}");
                 
                 $insertMAEDDO = "
                     INSERT INTO MAEDDO (
@@ -332,14 +381,16 @@ class AprobacionController extends Controller
                         FEEMLI
                     ) VALUES (
                         {$siguienteId}, '01', 'NVV', '{$nudoFormateado}',
-                        '{$cotizacion->cliente_codigo}', '001', 'SI', '{$producto->codigo_producto}', 
+                        '{$cotizacion->cliente_codigo}', '{$sucursalCliente}', 'SI', '{$producto->codigo_producto}', 
                         '{$producto->nombre_producto}', {$producto->cantidad}, 
                         {$producto->precio_unitario}, 
-                        " . ($producto->cantidad * $producto->precio_unitario) . ",
-                        " . ($producto->cantidad * $producto->precio_unitario) . ",
+                        {$subtotal}, {$subtotal},
                         GETDATE()
                     )
                 ";
+                
+                Log::info("SQL INSERT MAEDDO línea {$lineaId}:");
+                Log::info($insertMAEDDO);
                 
                 $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
                 file_put_contents($tempFile, $insertMAEDDO . "\ngo\nquit");
