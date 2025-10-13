@@ -19,6 +19,12 @@ class CotizacionProducto extends Model
         'cantidad',
         'cantidad_separar',
         'subtotal',
+        'descuento_porcentaje',
+        'descuento_valor',
+        'subtotal_con_descuento',
+        'iva_porcentaje',
+        'iva_valor',
+        'total_producto',
         'stock_disponible',
         'stock_suficiente'
     ];
@@ -28,6 +34,12 @@ class CotizacionProducto extends Model
         'cantidad_separar' => 'decimal:2',
         'precio_unitario' => 'decimal:2',
         'subtotal' => 'decimal:2',
+        'descuento_porcentaje' => 'decimal:2',
+        'descuento_valor' => 'decimal:2',
+        'subtotal_con_descuento' => 'decimal:2',
+        'iva_porcentaje' => 'decimal:2',
+        'iva_valor' => 'decimal:2',
+        'total_producto' => 'decimal:2',
         'stock_disponible' => 'integer',
         'stock_suficiente' => 'boolean'
     ];

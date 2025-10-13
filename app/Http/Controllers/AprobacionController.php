@@ -194,8 +194,15 @@ class AprobacionController extends Controller
             if ($resultado['success']) {
                 Log::info("Nota de venta {$cotizacion->id} aprobada por picking {$user->id} y insertada en SQL Server con ID {$resultado['nota_venta_id']}");
                 
-                // Registrar en el historial
-                \App\Services\HistorialCotizacionService::registrarAprobacionPicking($cotizacion, $request->comentarios);
+                // Refrescar la cotización para obtener el número_nvv actualizado
+                $cotizacion->refresh();
+                
+                // Registrar en el historial con el número de NVV
+                \App\Services\HistorialCotizacionService::registrarAprobacionPicking(
+                    $cotizacion, 
+                    $request->comentarios,
+                    $resultado['nota_venta_id']
+                );
                 
                 return redirect()->route('aprobaciones.show', $id)
                     ->with('success', "Nota de venta aprobada correctamente. NVV N° {$resultado['nota_venta_id']} creada en el sistema.");
@@ -251,28 +258,24 @@ class AprobacionController extends Controller
             $codigoVendedor = $cotizacion->user->codigo_vendedor ?? '001';
             $nombreVendedor = $cotizacion->user->name ?? 'Vendedor Sistema';
             
-            // Insertar encabezado en MAEEDO
+            // Insertar encabezado en MAEEDO con campos requeridos por el sistema interno
             $insertMAEEDO = "
+                SET IDENTITY_INSERT MAEEDO ON
+                
                 INSERT INTO MAEEDO (
-                    IDMAEEDO, TIDO, NUDO, ENDO, SUENDO, FEEMDO, FE01VEDO, FEULVEDO, 
-                    VABRDO, VAABDO, EMPRESA, KOFU, SUDO, ESDO, TIDOEXTE, NUDOEXTE,
-                    FEULVEDO, KOFUEN, KOFUAUX, KOFUPA, KOFUVE, KOFUCO, KOFUCA,
-                    KOFUCH, KOFUPE, KOFUIN, KOFUAD, KOFUGE, KOFUGE2, KOFUGE3,
-                    KOFUGE4, KOFUGE5, KOFUGE6, KOFUGE7, KOFUGE8, KOFUGE9, KOFUGE10
+                    IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO, SUDO,
+                    TIGEDO, LUVTDO, MEARDO,
+                    FEEMDO, FE01VEDO, FEULVEDO, 
+                    VABRDO, VANEDO, VAABDO, ESDO, KOFUDO
                 ) VALUES (
-                    {$siguienteId}, 'NVV', {$siguienteId}, '{$cotizacion->cliente_codigo}', 
-                    '001', GETDATE(), '{$fechaVencimiento}', '{$fechaVencimiento}', 
-                    {$cotizacion->total}, 0, '01', '{$codigoVendedor}', '001', 'N',
-                    'NVV', {$siguienteId}, '{$fechaVencimiento}', '{$codigoVendedor}',
-                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
-                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
-                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
-                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
-                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
-                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
-                    '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
-                    '{$codigoVendedor}', '{$codigoVendedor}'
+                    {$siguienteId}, '01', 'NVV', {$siguienteId}, '{$cotizacion->cliente_codigo}', 
+                    '001', '001',
+                    'I', 'LIB', 'S',
+                    GETDATE(), '{$fechaVencimiento}', '{$fechaVencimiento}', 
+                    {$cotizacion->total}, {$cotizacion->total}, 0, 'N', '{$codigoVendedor}'
                 )
+                
+                SET IDENTITY_INSERT MAEEDO OFF
             ";
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
@@ -283,7 +286,7 @@ class AprobacionController extends Controller
             
             unlink($tempFile);
             
-            if (str_contains($result, 'error')) {
+            if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
                 throw new \Exception('Error insertando encabezado: ' . $result);
             }
             
@@ -295,29 +298,17 @@ class AprobacionController extends Controller
                 
                 $insertMAEDDO = "
                     INSERT INTO MAEDDO (
-                        IDMAEEDO, IDMAEDDO, KOPRCT, NOKOPR, CAPRCO1, PPPRNE, 
-                        CAPRCO2, PPPRNE2, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
-                        FEEMLI, FEULVE, VANELI, VABRLI, VAABLI, ESDO, LILG,
-                        CAPRAD1, CAPREX1, CAPRAD2, CAPREX2, KOFULIDO, KOFUAUX,
-                        KOFUPA, KOFUVE, KOFUCO, KOFUCA, KOFUCH, KOFUPE, KOFUIN,
-                        KOFUAD, KOFUGE, KOFUGE2, KOFUGE3, KOFUGE4, KOFUGE5,
-                        KOFUGE6, KOFUGE7, KOFUGE8, KOFUGE9, KOFUGE10
+                        IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
+                        LILG, KOPRCT, NOKOPR, CAPRCO1, PPPRNE, VANELI, VABRLI,
+                        FEEMLI
                     ) VALUES (
-                        {$siguienteId}, {$lineaId}, '{$producto->codigo_producto}', 
+                        {$siguienteId}, '01', 'NVV', {$siguienteId},
+                        '{$cotizacion->cliente_codigo}', '001', 'SI', '{$producto->codigo_producto}', 
                         '{$producto->nombre_producto}', {$producto->cantidad}, 
-                        {$producto->precio_unitario}, 0, 0, '01', 'NVV', {$siguienteId},
-                        '{$cotizacion->cliente_codigo}', '001', GETDATE(),
-                        '{$fechaVencimiento}', " . ($producto->cantidad * $producto->precio_unitario) . ",
-                        " . ($producto->cantidad * $producto->precio_unitario) . ", 0, 'N', 'SI',
-                        0, 0, 0, 0, '{$codigoVendedor}', '{$codigoVendedor}',
-                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
-                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
-                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
-                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
-                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
-                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
-                        '{$codigoVendedor}', '{$codigoVendedor}', '{$codigoVendedor}',
-                        '{$codigoVendedor}', '{$codigoVendedor}'
+                        {$producto->precio_unitario}, 
+                        " . ($producto->cantidad * $producto->precio_unitario) . ",
+                        " . ($producto->cantidad * $producto->precio_unitario) . ",
+                        GETDATE()
                     )
                 ";
                 
@@ -329,58 +320,12 @@ class AprobacionController extends Controller
                 
                 unlink($tempFile);
                 
-                if (str_contains($result, 'error')) {
+                if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
                     throw new \Exception('Error insertando detalle línea ' . $lineaId . ': ' . $result);
                 }
             }
             
             Log::info('Detalles MAEDDO insertados correctamente');
-            
-            // Insertar en MAEEDOOB (Observaciones)
-            $insertMAEEDOOB = "
-                INSERT INTO MAEEDOOB (
-                    IDMAEEDO, IDMAEDOOB, OBSERVACION, EMPRESA
-                ) VALUES (
-                    {$siguienteId}, 1, 'NVV generada desde sistema web - ID: {$cotizacion->id}', '01'
-                )
-            ";
-            
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $insertMAEEDOOB . "\ngo\nquit");
-            
-            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-            $result = shell_exec($command);
-            
-            unlink($tempFile);
-            
-            if (str_contains($result, 'error')) {
-                Log::warning('Error insertando observaciones MAEEDOOB: ' . $result);
-            } else {
-                Log::info('Observaciones MAEEDOOB insertadas correctamente');
-            }
-            
-            // Insertar en MAEVEN (Vendedor)
-            $insertMAEVEN = "
-                INSERT INTO MAEVEN (
-                    IDMAEEDO, KOFU, NOKOFU, EMPRESA
-                ) VALUES (
-                    {$siguienteId}, '{$codigoVendedor}', '{$nombreVendedor}', '01'
-                )
-            ";
-            
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $insertMAEVEN . "\ngo\nquit");
-            
-            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-            $result = shell_exec($command);
-            
-            unlink($tempFile);
-            
-            if (str_contains($result, 'error')) {
-                Log::warning('Error insertando vendedor MAEVEN: ' . $result);
-            } else {
-                Log::info('Vendedor MAEVEN insertado correctamente');
-            }
             
             // Actualizar stock comprometido en MAEST
             foreach ($cotizacion->productos as $producto) {
@@ -398,18 +343,20 @@ class AprobacionController extends Controller
                 
                 unlink($tempFile);
                 
-                if (str_contains($result, 'error')) {
+                if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
                     Log::warning('Error actualizando stock comprometido para producto ' . $producto->codigo_producto . ': ' . $result);
                 }
             }
             
             Log::info('Stock comprometido MAEST actualizado correctamente');
             
-            // Actualizar productos en MAEPR
+            // Actualizar productos en MAEPR (STOCNV1 y STOCNV2)
             foreach ($cotizacion->productos as $producto) {
                 $updateMAEPR = "
                     UPDATE MAEPR 
-                    SET ULTIMACOMPRA = GETDATE()
+                    SET STOCNV1 = ISNULL(STOCNV1, 0) + {$producto->cantidad},
+                        STOCNV2 = ISNULL(STOCNV2, 0) + {$producto->cantidad},
+                        ULTIMACOMPRA = GETDATE()
                     WHERE KOPR = '{$producto->codigo_producto}'
                 ";
                 
@@ -421,10 +368,60 @@ class AprobacionController extends Controller
                 
                 unlink($tempFile);
                 
-                if (str_contains($result, 'error')) {
+                if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
                     Log::warning('Error actualizando MAEPR para producto ' . $producto->codigo_producto . ': ' . $result);
                 }
             }
+            
+            Log::info('STOCNV1 y STOCNV2 en MAEPR actualizados correctamente');
+            
+            // Actualizar stock en MAEST (STOCKNV1 y STOCKNV2)
+            foreach ($cotizacion->productos as $producto) {
+                $updateMAESTStock = "
+                    UPDATE MAEST 
+                    SET STOCKNV1 = ISNULL(STOCKNV1, 0) + {$producto->cantidad},
+                        STOCKNV2 = ISNULL(STOCKNV2, 0) + {$producto->cantidad}
+                    WHERE KOPR = '{$producto->codigo_producto}' AND KOPRST = 'LIB'
+                ";
+                
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $updateMAESTStock . "\ngo\nquit");
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+                
+                unlink($tempFile);
+                
+                if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
+                    Log::warning('Error actualizando STOCKNV en MAEST para producto ' . $producto->codigo_producto . ': ' . $result);
+                }
+            }
+            
+            Log::info('STOCKNV1 y STOCKNV2 en MAEST actualizados correctamente');
+            
+            // Actualizar stock en MAEPREM (STOCNV1 y STOCNV2)
+            foreach ($cotizacion->productos as $producto) {
+                $updateMAEPREM = "
+                    UPDATE MAEPREM 
+                    SET STOCNV1 = ISNULL(STOCNV1, 0) + {$producto->cantidad},
+                        STOCNV2 = ISNULL(STOCNV2, 0) + {$producto->cantidad}
+                    WHERE KOPR = '{$producto->codigo_producto}' AND EMPRESA = '01'
+                ";
+                
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $updateMAEPREM . "\ngo\nquit");
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+                
+                unlink($tempFile);
+                
+                if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
+                    Log::warning('Error actualizando STOCNV en MAEPREM para producto ' . $producto->codigo_producto . ': ' . $result);
+                }
+            }
+            
+            Log::info('STOCNV1 y STOCNV2 en MAEPREM actualizados correctamente');
             
             Log::info('Productos MAEPR actualizados correctamente');
             
@@ -445,14 +442,44 @@ class AprobacionController extends Controller
             
             Log::info('Stock comprometido MySQL actualizado correctamente');
             
-            // Guardar el número de NVV en la cotización
+            // Verificar que la NVV realmente se insertó en SQL Server
+            $queryVerificacion = "SELECT COUNT(*) as total FROM MAEEDO WHERE IDMAEEDO = {$siguienteId} AND EMPRESA = '01' AND TIDO = 'NVV'";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $queryVerificacion . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $resultVerificacion = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            // Verificar si se encontró el registro
+            $insertado = false;
+            if ($resultVerificacion) {
+                $lines = explode("\n", $resultVerificacion);
+                foreach ($lines as $line) {
+                    if (trim($line) === '1') {
+                        $insertado = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (!$insertado) {
+                Log::error("NVV {$siguienteId} no se encontró en SQL Server después del insert");
+                throw new \Exception("No se pudo verificar que la NVV fue insertada correctamente en SQL Server");
+            }
+            
+            Log::info("NVV {$siguienteId} verificada exitosamente en SQL Server");
+            
+            // Guardar el número de NVV en la cotización SOLO si se verificó
             $cotizacion->numero_nvv = $siguienteId;
             $cotizacion->save();
             
             return [
                 'success' => true,
                 'nota_venta_id' => $siguienteId,
-                'message' => 'NVV insertada correctamente en SQL Server'
+                'message' => "NVV #{$siguienteId} insertada y verificada correctamente en SQL Server"
             ];
             
         } catch (\Exception $e) {

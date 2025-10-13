@@ -51,22 +51,33 @@
                 </div>
                 <div class="card-body">
                     <div class="row">
-                        <div class="col-md-3">
+                        <div class="col-md-2">
                             <strong>Fecha:</strong><br>
                             {{ $cotizacion->fecha ? \Carbon\Carbon::parse($cotizacion->fecha)->format('d/m/Y H:i') : 'N/A' }}
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-2">
                             <strong>Estado:</strong><br>
                             <span class="badge badge-{{ $cotizacion->estado == 'enviada' ? 'success' : ($cotizacion->estado == 'borrador' ? 'warning' : 'info') }}">
                                 {{ ucfirst($cotizacion->estado) }}
                             </span>
+                            @if($cotizacion->numero_nvv)
+                                <br><small class="text-success"><i class="tim-icons icon-check-2"></i> NVV #{{ $cotizacion->numero_nvv }} en SQL</small>
+                            @endif
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-2">
                             <strong>Subtotal:</strong><br>
                             ${{ number_format($cotizacion->subtotal ?? 0, 0, ',', '.') }}
                         </div>
-                        <div class="col-md-3">
-                            <strong>Total:</strong><br>
+                        <div class="col-md-2">
+                            <strong>Descuento:</strong><br>
+                            <span class="text-danger">${{ number_format($cotizacion->descuento_global ?? 0, 0, ',', '.') }}</span>
+                        </div>
+                        <div class="col-md-2">
+                            <strong>IVA (19%):</strong><br>
+                            <span class="text-info">${{ number_format($cotizacion->iva ?? 0, 0, ',', '.') }}</span>
+                        </div>
+                        <div class="col-md-2">
+                            <strong>Total (c/IVA):</strong><br>
                             <span class="h5 text-success">${{ number_format($cotizacion->total ?? 0, 0, ',', '.') }}</span>
                         </div>
                     </div>
@@ -103,22 +114,45 @@
                                     <th>Descripción</th>
                                     <th>Cantidad</th>
                                     <th>Precio Unit.</th>
-                                    <th>Descuento</th>
+                                    <th>Descuento (%)</th>
+                                    <th>Descuento ($)</th>
                                     <th>Subtotal</th>
+                                    <th>IVA (19%)</th>
+                                    <th>Total</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach($productosCotizacion as $producto)
+                                @php
+                                    // Usar valores de BD si están disponibles, si no calcular
+                                    $descuentoPorcentaje = $producto['descuento'] ?? 0;
+                                    $descuentoValor = $producto['descuento_valor'] ?? (($producto['cantidad'] * $producto['precio']) * ($descuentoPorcentaje / 100));
+                                    $subtotalConDescuento = $producto['subtotal_con_descuento'] ?? (($producto['cantidad'] * $producto['precio']) - $descuentoValor);
+                                    $ivaValor = $producto['iva_valor'] ?? ($subtotalConDescuento * 0.19);
+                                    $totalProducto = $producto['total_producto'] ?? ($subtotalConDescuento + $ivaValor);
+                                @endphp
                                 <tr>
                                     <td>{{ $producto['codigo'] }}</td>
                                     <td>{{ $producto['nombre'] }}</td>
                                     <td>{{ number_format($producto['cantidad'], 0, ',', '.') }}</td>
                                     <td>${{ number_format($producto['precio'], 0, ',', '.') }}</td>
-                                    <td>0%</td>
-                                    <td>${{ number_format($producto['subtotal'], 0, ',', '.') }}</td>
+                                    <td>{{ number_format($descuentoPorcentaje, 2) }}%</td>
+                                    <td class="text-danger">${{ number_format($descuentoValor, 0, ',', '.') }}</td>
+                                    <td>${{ number_format($subtotalConDescuento, 0, ',', '.') }}</td>
+                                    <td class="text-info">${{ number_format($ivaValor, 0, ',', '.') }}</td>
+                                    <td class="text-success font-weight-bold">${{ number_format($totalProducto, 0, ',', '.') }}</td>
                                 </tr>
                                 @endforeach
                             </tbody>
+                            <tfoot>
+                                <tr class="table-info">
+                                    <td colspan="5" class="text-right"><strong>TOTALES:</strong></td>
+                                    <td class="text-danger"><strong>${{ number_format($cotizacion->descuento_global ?? 0, 0, ',', '.') }}</strong></td>
+                                    <td><strong>${{ number_format($cotizacion->subtotal_neto ?? 0, 0, ',', '.') }}</strong></td>
+                                    <td class="text-info"><strong>${{ number_format($cotizacion->iva ?? 0, 0, ',', '.') }}</strong></td>
+                                    <td class="text-success"><strong>${{ number_format($cotizacion->total ?? 0, 0, ',', '.') }}</strong></td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                     @else

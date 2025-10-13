@@ -125,6 +125,9 @@ class SincronizarClientesSimple extends Command
                     'dias_credito' => intval($clienteExterno['DIAS_CREDITO'] ?? 0),
                     'comentario_administracion' => $clienteExterno['COMENTARIO_ADMIN'] ?? '',
                     'rut_cliente' => $clienteExterno['RUT_CLIENTE'] ?? '',
+                    'credito_total' => floatval($clienteExterno['CREDITO_TOTAL'] ?? 0),
+                    'credito_utilizado' => floatval($clienteExterno['CREDITO_UTILIZADO'] ?? 0),
+                    'credito_disponible' => floatval($clienteExterno['CREDITO_DISPONIBLE'] ?? 0),
                     'activo' => true,
                     'ultima_sincronizacion' => now()
                 ];
@@ -165,8 +168,8 @@ class SincronizarClientesSimple extends Command
             // Asegurar que la línea esté en UTF-8
             $line = mb_convert_encoding($line, 'UTF-8', 'UTF-8');
             
-            // Buscar líneas que contengan datos (código de cliente seguido de |)
-            if (!preg_match('/^(\d+)\s+\|(.+)$/', $line, $matches)) {
+            // Buscar líneas que contengan datos (código de cliente seguido de | con o sin espacios)
+            if (!preg_match('/^(\d+)\s*\|(.+)$/', $line, $matches)) {
                 return null;
             }
             
@@ -188,7 +191,9 @@ class SincronizarClientesSimple extends Command
             $nombreVendedor = trim($campos[4] ?? '');
             $region = trim($campos[5] ?? '');
             $comuna = trim($campos[6] ?? '');
-            $bloqueado = trim($campos[7] ?? '0');
+            $creditoTotal = floatval(trim($campos[7] ?? 0));  // CRTO
+            $saldoUtilizado = floatval(trim($campos[8] ?? 0));  // SUEN (puede venir vacío)
+            $bloqueado = trim($campos[9] ?? '0');
             
             // Limpiar campos NULL y espacios
             if ($nombreCliente === 'NULL') $nombreCliente = '';
@@ -216,6 +221,9 @@ class SincronizarClientesSimple extends Command
                 return null;
             }
             
+            // Calcular crédito disponible
+            $creditoDisponible = $creditoTotal - $saldoUtilizado;
+            
             return [
                 'CODIGO_CLIENTE' => $codigoCliente,
                 'NOMBRE_CLIENTE' => $nombreCliente,
@@ -226,7 +234,10 @@ class SincronizarClientesSimple extends Command
                 'REGION' => $region,
                 'COMUNA' => $comuna,
                 'EMAIL' => '',
-                'BLOQUEADO' => $bloqueado
+                'BLOQUEADO' => $bloqueado,
+                'CREDITO_TOTAL' => $creditoTotal,
+                'CREDITO_UTILIZADO' => $saldoUtilizado,
+                'CREDITO_DISPONIBLE' => $creditoDisponible
             ];
             
         } catch (\Exception $e) {
@@ -262,6 +273,8 @@ class SincronizarClientesSimple extends Command
                     CAST(ISNULL(TABFU.NOKOFU, '') AS VARCHAR(100)) + '|' +
                     CAST(ISNULL(TABCI.NOKOCI, '') AS VARCHAR(50)) + '|' +
                     CAST(ISNULL(TABCM.NOKOCM, '') AS VARCHAR(50)) + '|' +
+                    CAST(ISNULL(MAEEN.CRTO, 0) AS VARCHAR(20)) + '|' +
+                    CAST(ISNULL(MAEEN.SUEN, 0) AS VARCHAR(20)) + '|' +
                     CAST(0 AS VARCHAR(1)) AS DATOS_CLIENTE
                 FROM dbo.MAEEN 
                 LEFT JOIN dbo.TABFU ON MAEEN.KOFUEN = TABFU.KOFU
@@ -306,8 +319,8 @@ class SincronizarClientesSimple extends Command
                     continue;
                 }
                 
-                // Buscar líneas que empiecen con números (códigos de cliente)
-                if (preg_match('/^(\d{7,})/', $line)) {
+                // Buscar líneas que empiecen con números (códigos de cliente) - acepta cualquier longitud
+                if (preg_match('/^(\d+)/', $line)) {
                     $cliente = self::extraerClienteDeLinea($line, $codigoVendedor);
                     if ($cliente) {
                         $clientesExternos[] = $cliente;
@@ -344,6 +357,9 @@ class SincronizarClientesSimple extends Command
                     'dias_credito' => intval($clienteExterno['DIAS_CREDITO'] ?? 0),
                     'comentario_administracion' => $clienteExterno['COMENTARIO_ADMIN'] ?? '',
                     'rut_cliente' => $clienteExterno['RUT_CLIENTE'] ?? '',
+                    'credito_total' => floatval($clienteExterno['CREDITO_TOTAL'] ?? 0),
+                    'credito_utilizado' => floatval($clienteExterno['CREDITO_UTILIZADO'] ?? 0),
+                    'credito_disponible' => floatval($clienteExterno['CREDITO_DISPONIBLE'] ?? 0),
                     'activo' => true,
                     'ultima_sincronizacion' => now()
                 ];

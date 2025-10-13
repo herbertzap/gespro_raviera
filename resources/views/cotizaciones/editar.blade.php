@@ -131,7 +131,11 @@
                                                     <th>Producto</th>
                                                     <th>Cantidad</th>
                                                     <th>Precio Unit.</th>
+                                                    <th>Descuento (%)</th>
+                                                    <th>Descuento ($)</th>
                                                     <th>Subtotal</th>
+                                                    <th>IVA (19%)</th>
+                                                    <th>Total</th>
                                                     <th>Stock</th>
                                                     <th>Acciones</th>
                                                 </tr>
@@ -167,6 +171,22 @@
                                                         </div>
                                                         <div class="col-md-6 text-right">
                                                             <h5 id="descuento">$0</h5>
+                                                        </div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="col-md-6">
+                                                            <h5>Subtotal Neto:</h5>
+                                                        </div>
+                                                        <div class="col-md-6 text-right">
+                                                            <h5 id="subtotal-neto">$0</h5>
+                                                        </div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="col-md-6">
+                                                            <h5>IVA (19%):</h5>
+                                                        </div>
+                                                        <div class="col-md-6 text-right">
+                                                            <h5 id="iva">$0</h5>
                                                         </div>
                                                     </div>
                                                     <hr>
@@ -234,6 +254,7 @@ let lastSearchTerm = '';
 
 console.log('🔍 Script de cotizaciones cargándose...');
 console.log('🔍 Cliente data:', clienteData);
+console.log('🔍 Productos cargados:', productosCotizacion);
 
 // Función para buscar productos con AJAX optimizada
 function buscarProductosAjax() {
@@ -308,8 +329,14 @@ function mostrarResultadosProductosAjax(productos) {
         return;
     }
 
-    let contenido = '<div class="table-responsive"><table class="table table-striped table-hover">';
-    contenido += '<thead class="thead"><tr><th>Código</th><th>Producto</th><th>Stock</th><th>Precio</th><th>Acción</th></tr></thead><tbody>';
+    let contenido = '<div class="table-responsive">';
+    contenido += '<div class="mb-3">';
+    contenido += '<button class="btn btn-success btn-sm" onclick="agregarProductosSeleccionados()" id="btnAgregarSeleccionados" disabled>';
+    contenido += '<i class="material-icons">add_shopping_cart</i> Agregar Seleccionados (<span id="contadorSeleccionados">0</span>)';
+    contenido += '</button>';
+    contenido += '</div>';
+    contenido += '<table class="table table-striped table-hover">';
+    contenido += '<thead class="thead"><tr><th><input type="checkbox" id="selectAllProductos" onchange="toggleAllProductos()"></th><th>Código</th><th>Producto</th><th>Stock</th><th>Precio</th><th>Acción</th></tr></thead><tbody>';
     
     productos.forEach(producto => {
         // Usar información de stock mejorada
@@ -317,20 +344,42 @@ function mostrarResultadosProductosAjax(productos) {
         const stockClass = producto.CLASE_STOCK || (stockReal > 0 ? 'text-success' : 'text-danger');
         const stockText = producto.ESTADO_STOCK || (stockReal > 0 ? 'Disponible' : 'Sin stock');
         
+        // Verificar si el producto se puede agregar (precio válido)
+        const precioValido = producto.PRECIO_VALIDO !== undefined ? producto.PRECIO_VALIDO : (producto.PRECIO_UD1 > 0);
+        const motivoBloqueo = producto.MOTIVO_BLOQUEO || (precioValido ? null : 'Precio no disponible');
+        
+        // Determinar clases y estilos según el estado del producto
+        const rowClass = !precioValido ? 'table-secondary' : '';
+        const checkboxDisabled = !precioValido ? 'disabled' : '';
+        const buttonClass = precioValido ? 'btn-primary' : 'btn-secondary';
+        const buttonDisabled = !precioValido ? 'disabled' : '';
+        const buttonText = precioValido ? 'Agregar' : 'Sin precio';
+        const buttonIcon = precioValido ? 'add_shopping_cart' : 'block';
+        
+        const multiploVenta = producto.MULTIPLO_VENTA || 1;
+        const multiploInfo = multiploVenta > 1 ? `<br><small class="text-info">Múltiplo: ${multiploVenta}</small>` : '';
+        
         contenido += `
-            <tr>
+            <tr class="${rowClass}">
+                <td><input type="checkbox" class="producto-checkbox" value="${producto.CODIGO_PRODUCTO}" 
+                    data-multiplo="${multiploVenta}" 
+                    data-descuento-maximo="${producto.DESCUENTO_MAXIMO || 0}"
+                    onchange="actualizarContadorSeleccionados()" ${checkboxDisabled}></td>
                 <td><strong>${producto.CODIGO_PRODUCTO || ''}</strong></td>
-                <td>${producto.NOMBRE_PRODUCTO || ''}</td>
+                <td>${producto.NOMBRE_PRODUCTO || ''}${multiploInfo}</td>
                 <td class="${stockClass}">
                     <i class="material-icons">${stockReal > 0 ? 'check_circle' : 'warning'}</i>
                     ${stockReal || 0} ${producto.UNIDAD_MEDIDA || 'UN'}
                     ${producto.STOCK_COMPROMETIDO > 0 ? `<br><small class="text-muted">Comprometido: ${producto.STOCK_COMPROMETIDO}</small>` : ''}
                     ${stockReal <= 0 ? '<br><small class="text-warning"><i class="material-icons">info</i> Sin stock - Nota pendiente</small>' : ''}
                 </td>
-                <td><strong>$${Math.round(producto.PRECIO_UD1 || 0).toLocaleString()}</strong></td>
                 <td>
-                    <button class="btn btn-sm btn-primary" onclick="agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', '${producto.NOMBRE_PRODUCTO.replace(/'/g, "\\'")}', ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}')">
-                        <i class="material-icons">add_shopping_cart</i> Agregar
+                    <strong class="${!precioValido ? 'text-muted' : ''}" data-precio="${producto.PRECIO_UD1 || 0}">$${Math.round(producto.PRECIO_UD1 || 0).toLocaleString()}</strong>
+                    ${!precioValido ? '<br><small class="text-danger"><i class="material-icons">warning</i> Precio no disponible</small>' : ''}
+                </td>
+                <td>
+                    <button class="btn btn-sm ${buttonClass}" onclick="${precioValido ? `agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', '${producto.NOMBRE_PRODUCTO.replace(/'/g, "\\'")}', ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}', ${producto.DESCUENTO_MAXIMO || 0}, ${multiploVenta})` : 'alert(\'Este producto no tiene precio disponible\')'}" ${buttonDisabled} title="${motivoBloqueo || ''}">
+                        <i class="material-icons">${buttonIcon}</i> ${buttonText}
                     </button>
                 </td>
             </tr>
@@ -443,28 +492,38 @@ function mostrarResultadosProductos(productos) {
 }
 
 // Función para agregar producto a la cotización desde PHP
-function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad) {
-    console.log('Agregando producto desde PHP:', { codigo, nombre, precio, stock, unidad });
+function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuentoMaximo = 0, multiplo = 1) {
+    console.log('Agregando producto desde PHP:', { codigo, nombre, precio, stock, unidad, descuentoMaximo, multiplo });
     
     // Verificar si el producto ya está en la cotización
     const productoExistente = productosCotizacion.find(p => p.codigo === codigo);
     
     if (productoExistente) {
-        // Incrementar cantidad según la unidad
-        const incremento = obtenerIncrementoPorUnidad(unidad);
+        // Incrementar cantidad según el múltiplo del producto (no usar Math.max)
+        const incremento = multiplo > 0 ? multiplo : 1;
         productoExistente.cantidad += incremento;
-        productoExistente.subtotal = productoExistente.cantidad * productoExistente.precio;
+        productoExistente.multiplo = multiplo; // Actualizar múltiplo
+        actualizarSubtotal(productosCotizacion.indexOf(productoExistente));
     } else {
-        // Agregar nuevo producto con cantidad inicial según unidad
-        const cantidadInicial = obtenerIncrementoPorUnidad(unidad);
+        // Validar límite máximo de productos diferentes (24)
+        if (productosCotizacion.length >= 24) {
+            alert('No se pueden agregar más de 24 productos diferentes a la cotización.\n\nProductos actuales: ' + productosCotizacion.length + '/24');
+            return;
+        }
+        
+        // Agregar nuevo producto con cantidad inicial = múltiplo
+        const cantidadInicial = multiplo > 0 ? multiplo : 1;
         productosCotizacion.push({
             codigo: codigo,
             nombre: nombre,
             cantidad: cantidadInicial,
             precio: parseFloat(precio),
+            descuento: 0,
+            descuentoMaximo: parseFloat(descuentoMaximo) || 0,
             subtotal: parseFloat(precio) * cantidadInicial,
             stock: parseFloat(stock),
-            unidad: unidad
+            unidad: unidad,
+            multiplo: multiplo // Guardar múltiplo para validaciones posteriores
         });
     }
     
@@ -474,9 +533,12 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad) {
     // Limpiar búsqueda después de agregar el producto
     limpiarBusqueda();
     
-    // Mostrar mensaje de confirmación con información de stock
-    const stockInfo = parseFloat(stock) <= 0 ? ' (Sin stock - Nota pendiente)' : '';
-    alert('Producto agregado: ' + nombre + ' (Cantidad: ' + obtenerIncrementoPorUnidad(unidad) + ' ' + unidad + ')' + stockInfo);
+    // Mostrar mensaje de confirmación con información de stock y múltiplo
+    const cantidadAgregada = multiplo > 0 ? multiplo : 1;
+    const stockInfo = parseFloat(stock) <= 0 ? '\n⚠️ Sin stock - Se generará nota pendiente' : '';
+    const multiploInfo = multiplo > 1 ? `\n📦 Se vende en múltiplos de ${multiplo} unidades` : '';
+    const productosInfo = productosCotizacion.length > 1 ? `\n\n📋 Productos en cotización: ${productosCotizacion.length}/24` : '';
+    alert('✅ Producto agregado\n\n' + nombre + '\nCantidad: ' + cantidadAgregada + ' ' + unidad + multiploInfo + stockInfo + productosInfo);
 }
 
 // Función para obtener el incremento de cantidad según la unidad
@@ -495,6 +557,24 @@ function actualizarTablaProductos() {
     const tbody = document.getElementById('productosCotizacion');
     tbody.innerHTML = '';
     
+    // Actualizar contador de productos
+    const contador = document.getElementById('contadorProductos');
+    if (contador) {
+        const cantidad = productosCotizacion.length;
+        const maximo = 24;
+        contador.textContent = `${cantidad}/${maximo} productos`;
+        
+        // Cambiar color según el límite
+        contador.className = 'badge';
+        if (cantidad >= maximo) {
+            contador.classList.add('badge-danger');
+        } else if (cantidad >= maximo * 0.8) {
+            contador.classList.add('badge-warning');
+        } else {
+            contador.classList.add('badge-info');
+        }
+    }
+    
     productosCotizacion.forEach((producto, index) => {
         let stockClass, stockText;
         
@@ -509,20 +589,41 @@ function actualizarTablaProductos() {
             stockText = 'Insuficiente';
         }
         
-        // Determinar el step según la unidad
-        const step = obtenerStepPorUnidad(producto.unidad);
+        // Determinar el step según el múltiplo del producto
+        const multiplo = producto.multiplo || 1;
+        const step = multiplo;
         
+        // Agregar información del múltiplo si es > 1
+        const multiploInfo = multiplo > 1 ? `<br><small class="text-info">Múltiplo: ${multiplo}</small>` : '';
+        
+        // Calcular valores para mostrar
+        const precioBase = producto.precio * producto.cantidad;
+        const descuentoPorcentaje = (producto.descuento || 0) / 100;
+        const descuentoValor = precioBase * descuentoPorcentaje;
+        const subtotalConDescuento = precioBase - descuentoValor;
+        const ivaValor = subtotalConDescuento * 0.19;
+        const totalConIva = subtotalConDescuento + ivaValor;
+
         const row = `
             <tr>
                 <td>${producto.codigo}</td>
                 <td>${producto.nombre}</td>
                 <td>
-                    <input type="number" class="form-control" value="${producto.cantidad}" step="${step}" 
+                    <input type="number" class="form-control" value="${producto.cantidad}" step="${step}" min="${multiplo}"
                            onchange="actualizarCantidad(${index}, this.value)" style="width: 80px;">
-                    <small class="text-muted">${producto.unidad}</small>
+                    <small class="text-muted">${producto.unidad}${multiploInfo}</small>
                 </td>
                 <td>$${Math.round(producto.precio).toLocaleString()}</td>
-                <td>$${Math.round(producto.subtotal).toLocaleString()}</td>
+                <td>
+                    <input type="number" class="form-control descuento-input" value="${producto.descuento || 0}" 
+                           min="0" max="${producto.descuentoMaximo || 0}" step="0.01"
+                           onchange="actualizarDescuento(${index}, this.value)" style="width: 80px;">
+                    <small class="text-muted">Máx: ${producto.descuentoMaximo || 0}%</small>
+                </td>
+                <td class="text-danger">$${Math.round(descuentoValor).toLocaleString()}</td>
+                <td>$${Math.round(subtotalConDescuento).toLocaleString()}</td>
+                <td class="text-info">$${Math.round(ivaValor).toLocaleString()}</td>
+                <td class="text-success font-weight-bold">$${Math.round(totalConIva).toLocaleString()}</td>
                 <td class="${stockClass}">
                     ${stockText}
                     ${producto.stock > 0 ? `<br><small>Disponible: ${producto.stock} ${producto.unidad}</small>` : '<br><small>Nota pendiente de stock</small>'}
@@ -547,12 +648,57 @@ function obtenerStepPorUnidad(unidad) {
 // Función para actualizar cantidad
 function actualizarCantidad(index, nuevaCantidad) {
     const cantidad = parseFloat(nuevaCantidad);
+    const producto = productosCotizacion[index];
+    const multiplo = producto.multiplo || 1;
+    
     if (cantidad > 0) {
-        productosCotizacion[index].cantidad = cantidad;
-        productosCotizacion[index].subtotal = cantidad * productosCotizacion[index].precio;
+        // Validar que la cantidad sea múltiplo del mínimo de venta
+        if (multiplo > 1 && cantidad % multiplo !== 0) {
+            const cantidadAjustada = Math.ceil(cantidad / multiplo) * multiplo;
+            alert(`Este producto se vende en múltiplos de ${multiplo} unidades.\nLa cantidad se ajustará a ${cantidadAjustada} unidades.`);
+            producto.cantidad = cantidadAjustada;
+        } else {
+            producto.cantidad = cantidad;
+        }
+        
+        actualizarSubtotal(index);
         actualizarTablaProductos();
         calcularTotales();
     }
+}
+
+// Función para actualizar descuento
+function actualizarDescuento(index, nuevoDescuento) {
+    const descuento = parseFloat(nuevoDescuento) || 0;
+    const descuentoMaximo = productosCotizacion[index].descuentoMaximo || 0;
+    
+    if (descuento > descuentoMaximo) {
+        alert(`El descuento no puede exceder el máximo permitido: ${descuentoMaximo}%`);
+        // Restaurar el valor anterior
+        productosCotizacion[index].descuento = productosCotizacion[index].descuento || 0;
+        actualizarTablaProductos();
+        return;
+    }
+    
+    if (descuento < 0) {
+        alert('El descuento no puede ser negativo');
+        productosCotizacion[index].descuento = 0;
+        actualizarTablaProductos();
+        return;
+    }
+    
+    productosCotizacion[index].descuento = descuento;
+    actualizarSubtotal(index);
+    actualizarTablaProductos();
+    calcularTotales();
+}
+
+// Función para actualizar subtotal considerando descuento
+function actualizarSubtotal(index) {
+    const producto = productosCotizacion[index];
+    const precioBase = producto.precio * producto.cantidad;
+    const descuento = (producto.descuento || 0) / 100;
+    producto.subtotal = precioBase * (1 - descuento);
 }
 
 // Función para eliminar producto
@@ -562,21 +708,153 @@ function eliminarProducto(index) {
     calcularTotales();
 }
 
-// Función para calcular totales
-function calcularTotales() {
-    const subtotal = productosCotizacion.reduce((sum, producto) => sum + producto.subtotal, 0);
+// Funciones para selección múltiple de productos
+function toggleAllProductos() {
+    const selectAll = document.getElementById('selectAllProductos');
+    const checkboxes = document.querySelectorAll('.producto-checkbox');
     
-    // Calcular descuento (5% si supera $400,000)
-    let descuento = 0;
-    if (subtotal > 400000) {
-        descuento = subtotal * 0.05;
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll.checked;
+    });
+    
+    actualizarContadorSeleccionados();
+}
+
+function actualizarContadorSeleccionados() {
+    const checkboxes = document.querySelectorAll('.producto-checkbox:checked');
+    const contador = document.getElementById('contadorSeleccionados');
+    const btnAgregar = document.getElementById('btnAgregarSeleccionados');
+    
+    if (contador) {
+        contador.textContent = checkboxes.length;
     }
     
-    const total = subtotal - descuento;
+    if (btnAgregar) {
+        btnAgregar.disabled = checkboxes.length === 0;
+        btnAgregar.textContent = `Agregar Seleccionados (${checkboxes.length})`;
+    }
+}
+
+function agregarProductosSeleccionados() {
+    const checkboxes = document.querySelectorAll('.producto-checkbox:checked');
     
-    document.getElementById('subtotal').textContent = '$' + Math.round(subtotal).toLocaleString();
-    document.getElementById('descuento').textContent = '$' + Math.round(descuento).toLocaleString();
-    document.getElementById('total').textContent = '$' + Math.round(total).toLocaleString();
+    if (checkboxes.length === 0) {
+        alert('Selecciona al menos un producto para agregar');
+        return;
+    }
+    
+    // Obtener datos de los productos seleccionados
+    const productosSeleccionados = [];
+    const productosSinPrecio = [];
+    
+    checkboxes.forEach(checkbox => {
+        const row = checkbox.closest('tr');
+        const codigo = row.cells[1].textContent.trim();
+        const nombre = row.cells[2].textContent.trim();
+        // Obtener el precio desde el atributo data-precio para evitar problemas de parsing
+        const precioElement = row.cells[4].querySelector('[data-precio]');
+        const precio = precioElement ? parseFloat(precioElement.getAttribute('data-precio')) : 0;
+        console.log('Precio desde data-precio:', precio);
+        const stockText = row.cells[3].textContent;
+        const stock = parseFloat(stockText.split(' ')[0]) || 0;
+        const unidad = stockText.includes('UN') ? 'UN' : 'UN';
+        
+        // Obtener múltiplo y descuento máximo desde los data attributes del checkbox
+        const multiplo = parseInt(checkbox.getAttribute('data-multiplo')) || 1;
+        const descuentoMaximo = parseFloat(checkbox.getAttribute('data-descuento-maximo')) || 0;
+        
+        // Verificar si el producto tiene precio válido
+        const precioValido = precio > 0;
+        
+        if (precioValido) {
+            productosSeleccionados.push({
+                codigo: codigo,
+                nombre: nombre,
+                precio: precio,
+                stock: stock,
+                unidad: unidad,
+                descuentoMaximo: descuentoMaximo,
+                multiplo: multiplo
+            });
+        } else {
+            productosSinPrecio.push(nombre);
+        }
+    });
+    
+    // Mostrar advertencia si hay productos sin precio
+    if (productosSinPrecio.length > 0) {
+        alert(`Los siguientes productos no se pueden agregar porque no tienen precio disponible:\n\n${productosSinPrecio.join('\n')}\n\nSolo se agregarán los productos con precio válido.`);
+    }
+    
+    // Validar límite de productos antes de agregar
+    const productosNuevos = productosSeleccionados.filter(p => !productosCotizacion.find(existente => existente.codigo === p.codigo));
+    const totalProductos = productosCotizacion.length + productosNuevos.length;
+    
+    if (totalProductos > 24) {
+        const productosActuales = productosCotizacion.length;
+        const productosDisponibles = 24 - productosActuales;
+        alert(`No se pueden agregar todos los productos seleccionados.\n\nProductos actuales: ${productosActuales}/24\nProductos seleccionados: ${productosNuevos.length}\nProductos disponibles: ${productosDisponibles}\n\nSolo se agregarán los primeros ${productosDisponibles} productos.`);
+        
+        // Limitar a los productos disponibles
+        productosSeleccionados.splice(productosDisponibles);
+    }
+    
+    // Agregar cada producto válido a la cotización
+    let productosAgregados = 0;
+    productosSeleccionados.forEach(producto => {
+        const productoExistente = productosCotizacion.find(p => p.codigo === producto.codigo);
+        if (!productoExistente && productosCotizacion.length < 24) {
+            agregarProductoDesdePHP(producto.codigo, producto.nombre, producto.precio, producto.stock, producto.unidad, producto.descuentoMaximo, producto.multiplo);
+            productosAgregados++;
+        }
+    });
+    
+    // Limpiar selección
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    document.getElementById('selectAllProductos').checked = false;
+    actualizarContadorSeleccionados();
+    
+    // Mostrar resumen
+    let mensaje = `${productosAgregados} productos agregados a la cotización`;
+    if (productosSinPrecio.length > 0) {
+        mensaje += `\n\n${productosSinPrecio.length} productos omitidos (sin precio)`;
+    }
+    if (totalProductos > 24) {
+        mensaje += `\n\nAlgunos productos no se agregaron (límite de 24 productos)`;
+    }
+    alert(mensaje);
+}
+
+// Función para calcular totales
+function calcularTotales() {
+    // Calcular subtotal sin descuentos (precio base * cantidad)
+    const subtotalSinDescuentos = productosCotizacion.reduce((sum, producto) => {
+        return sum + (producto.precio * producto.cantidad);
+    }, 0);
+    
+    // Calcular descuento total aplicado a todos los productos
+    const descuentoTotal = productosCotizacion.reduce((sum, producto) => {
+        const precioBase = producto.precio * producto.cantidad;
+        const descuentoPorcentaje = (producto.descuento || 0) / 100;
+        return sum + (precioBase * descuentoPorcentaje);
+    }, 0);
+    
+    // Calcular subtotal final (con descuentos aplicados)
+    const subtotalFinal = subtotalSinDescuentos - descuentoTotal;
+    
+    // Calcular IVA (19% sobre el subtotal con descuentos)
+    const ivaTotal = subtotalFinal * 0.19;
+    
+    // Calcular total final (subtotal + IVA)
+    const totalFinal = subtotalFinal + ivaTotal;
+    
+    document.getElementById('subtotal').textContent = '$' + Math.round(subtotalSinDescuentos).toLocaleString();
+    document.getElementById('descuento').textContent = '$' + Math.round(descuentoTotal).toLocaleString();
+    document.getElementById('subtotal-neto').textContent = '$' + Math.round(subtotalFinal).toLocaleString();
+    document.getElementById('iva').textContent = '$' + Math.round(ivaTotal).toLocaleString();
+    document.getElementById('total').textContent = '$' + Math.round(totalFinal).toLocaleString();
 }
 
 // Función para limpiar búsqueda

@@ -160,7 +160,10 @@
                                                     <th>Cantidad</th>
                                                     <th>Precio Unit.</th>
                                                     <th>Descuento (%)</th>
+                                                    <th>Descuento ($)</th>
                                                     <th>Subtotal</th>
+                                                    <th>IVA (19%)</th>
+                                                    <th>Total</th>
                                                     <th>Stock</th>
                                                     <th>Acciones</th>
                                                 </tr>
@@ -196,6 +199,22 @@
                                                         </div>
                                                         <div class="col-md-6 text-right">
                                                             <h5 id="descuento">$0</h5>
+                                                        </div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="col-md-6">
+                                                            <h5>Subtotal Neto:</h5>
+                                                        </div>
+                                                        <div class="col-md-6 text-right">
+                                                            <h5 id="subtotal-neto">$0</h5>
+                                                        </div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="col-md-6">
+                                                            <h5>IVA (19%):</h5>
+                                                        </div>
+                                                        <div class="col-md-6 text-right">
+                                                            <h5 id="iva">$0</h5>
                                                         </div>
                                                     </div>
                                                     <hr>
@@ -604,6 +623,14 @@ function actualizarTablaProductos() {
         // Agregar información del múltiplo si es > 1
         const multiploInfo = multiplo > 1 ? `<br><small class="text-info">Múltiplo: ${multiplo}</small>` : '';
         
+        // Calcular valores para mostrar
+        const precioBase = producto.precio * producto.cantidad;
+        const descuentoPorcentaje = (producto.descuento || 0) / 100;
+        const descuentoValor = precioBase * descuentoPorcentaje;
+        const subtotalConDescuento = precioBase - descuentoValor;
+        const ivaValor = subtotalConDescuento * 0.19;
+        const totalConIva = subtotalConDescuento + ivaValor;
+
         const row = `
             <tr>
                 <td>${producto.codigo}</td>
@@ -620,7 +647,10 @@ function actualizarTablaProductos() {
                            onchange="actualizarDescuento(${index}, this.value)" style="width: 80px;">
                     <small class="text-muted">Máx: ${producto.descuentoMaximo || 0}%</small>
                 </td>
-                <td>$${Math.round(producto.subtotal).toLocaleString()}</td>
+                <td class="text-danger">$${Math.round(descuentoValor).toLocaleString()}</td>
+                <td>$${Math.round(subtotalConDescuento).toLocaleString()}</td>
+                <td class="text-info">$${Math.round(ivaValor).toLocaleString()}</td>
+                <td class="text-success font-weight-bold">$${Math.round(totalConIva).toLocaleString()}</td>
                 <td class="${stockClass}">
                     ${stockText}
                     ${producto.stock > 0 ? `<br><small>Disponible: ${producto.stock} ${producto.unidad}</small>` : '<br><small>Nota pendiente de stock</small>'}
@@ -826,19 +856,32 @@ function agregarProductosSeleccionados() {
 
 // Función para calcular totales
 function calcularTotales() {
-    const subtotal = productosCotizacion.reduce((sum, producto) => sum + producto.subtotal, 0);
+    // Calcular subtotal sin descuentos (precio base * cantidad)
+    const subtotalSinDescuentos = productosCotizacion.reduce((sum, producto) => {
+        return sum + (producto.precio * producto.cantidad);
+    }, 0);
     
-    // Calcular descuento (5% si supera $400,000)
-    let descuento = 0;
-    if (subtotal > 400000) {
-        descuento = subtotal * 0.05;
-    }
+    // Calcular descuento total aplicado a todos los productos
+    const descuentoTotal = productosCotizacion.reduce((sum, producto) => {
+        const precioBase = producto.precio * producto.cantidad;
+        const descuentoPorcentaje = (producto.descuento || 0) / 100;
+        return sum + (precioBase * descuentoPorcentaje);
+    }, 0);
     
-    const total = subtotal - descuento;
+    // Calcular subtotal final (con descuentos aplicados)
+    const subtotalFinal = subtotalSinDescuentos - descuentoTotal;
     
-    document.getElementById('subtotal').textContent = '$' + Math.round(subtotal).toLocaleString();
-    document.getElementById('descuento').textContent = '$' + Math.round(descuento).toLocaleString();
-    document.getElementById('total').textContent = '$' + Math.round(total).toLocaleString();
+    // Calcular IVA (19% sobre el subtotal con descuentos)
+    const ivaTotal = subtotalFinal * 0.19;
+    
+    // Calcular total final (subtotal + IVA)
+    const totalFinal = subtotalFinal + ivaTotal;
+    
+    document.getElementById('subtotal').textContent = '$' + Math.round(subtotalSinDescuentos).toLocaleString();
+    document.getElementById('descuento').textContent = '$' + Math.round(descuentoTotal).toLocaleString();
+    document.getElementById('subtotal-neto').textContent = '$' + Math.round(subtotalFinal).toLocaleString();
+    document.getElementById('iva').textContent = '$' + Math.round(ivaTotal).toLocaleString();
+    document.getElementById('total').textContent = '$' + Math.round(totalFinal).toLocaleString();
 }
 
 // Función para limpiar búsqueda

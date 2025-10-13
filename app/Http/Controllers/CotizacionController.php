@@ -867,22 +867,35 @@ class CotizacionController extends Controller
             // 1. Obtener información del cliente
             $cliente = Cliente::where('codigo_cliente', $request->cliente_codigo)->first();
             
-            // 2. Calcular totales
+            // 2. Calcular totales por producto y generales
             \Log::info('💰 CALCULANDO TOTALES');
-            $subtotal = 0;
+            $subtotalSinDescuentos = 0;
+            $descuentoTotal = 0;
+            $ivaTotal = 0;
+            
             foreach ($request->productos as $index => $producto) {
-                $subtotal += $producto['cantidad'] * $producto['precio'];
-                \Log::info("📦 Producto {$index}: {$producto['codigo']} - Cantidad: {$producto['cantidad']} - Precio: {$producto['precio']}");
+                // Calcular valores por producto
+                $precioBase = $producto['cantidad'] * $producto['precio'];
+                $descuentoPorcentaje = $producto['descuento'] ?? 0;
+                $descuentoValor = $precioBase * ($descuentoPorcentaje / 100);
+                $subtotalConDescuento = $precioBase - $descuentoValor;
+                $ivaProducto = $subtotalConDescuento * 0.19;
+                $totalProducto = $subtotalConDescuento + $ivaProducto;
+                
+                // Acumular totales
+                $subtotalSinDescuentos += $precioBase;
+                $descuentoTotal += $descuentoValor;
+                $ivaTotal += $ivaProducto;
+                
+                \Log::info("📦 Producto {$index}: {$producto['codigo']} - Cantidad: {$producto['cantidad']} - Precio: {$producto['precio']} - Descuento: {$descuentoPorcentaje}% - IVA: {$ivaProducto}");
             }
             
-            // Calcular descuento global (5% si supera $400,000)
-            $descuentoGlobal = 0;
-            if ($subtotal > 400000) {
-                $descuentoGlobal = $subtotal * 0.05;
-            }
+            // Calcular subtotal neto (después de descuentos)
+            $subtotalNeto = $subtotalSinDescuentos - $descuentoTotal;
             
-            $total = $subtotal - $descuentoGlobal;
-            \Log::info("💰 Subtotal: {$subtotal}, Descuento: {$descuentoGlobal}, Total: {$total}");
+            // Total final con IVA
+            $total = $subtotalNeto + $ivaTotal;
+            \Log::info("💰 Subtotal sin descuentos: {$subtotalSinDescuentos}, Descuento total: {$descuentoTotal}, Subtotal neto: {$subtotalNeto}, IVA total: {$ivaTotal}, Total: {$total}");
             
             // 3. Crear cotización en base de datos local
             \Log::info('📝 CREANDO COTIZACIÓN EN TABLA cotizaciones');
@@ -894,8 +907,10 @@ class CotizacionController extends Controller
                 'cliente_telefono' => $cliente->telefono ?? null,
                 'cliente_lista_precios' => $cliente->lista_precios_codigo ?? null,
                 'fecha' => now(),
-                'subtotal' => $subtotal,
-                'descuento_global' => $descuentoGlobal,
+                'subtotal' => $subtotalSinDescuentos,
+                'descuento_global' => $descuentoTotal,
+                'subtotal_neto' => $subtotalNeto,
+                'iva' => $ivaTotal,
                 'total' => $total,
                 'observaciones' => $request->observaciones,
                 'estado' => 'borrador',
@@ -921,17 +936,29 @@ class CotizacionController extends Controller
                 
                 \Log::info("📦 Stock para producto {$producto['codigo']}: Disponible={$stockDisponibleReal}, Comprometido={$stockComprometido}, Cantidad solicitada={$producto['cantidad']}");
                 
+                // Calcular valores del producto
+                $precioBase = $producto['cantidad'] * $producto['precio'];
+                $descuentoPorcentaje = $producto['descuento'] ?? 0;
+                $descuentoValor = $precioBase * ($descuentoPorcentaje / 100);
+                $subtotalConDescuento = $precioBase - $descuentoValor;
+                $ivaProducto = $subtotalConDescuento * 0.19;
+                $totalProducto = $subtotalConDescuento + $ivaProducto;
+                
                 $productoData = [
                     'cotizacion_id' => $cotizacion->id,
                     'codigo_producto' => $producto['codigo'],
                     'nombre_producto' => $producto['nombre'],
                     'cantidad' => $producto['cantidad'],
                     'precio_unitario' => $producto['precio'],
-                    'subtotal' => $producto['cantidad'] * $producto['precio'],
+                    'subtotal' => $precioBase, // Precio base sin descuentos
+                    'descuento_porcentaje' => $descuentoPorcentaje,
+                    'descuento_valor' => $descuentoValor,
+                    'subtotal_con_descuento' => $subtotalConDescuento,
+                    'iva_porcentaje' => 19.00,
+                    'iva_valor' => $ivaProducto,
+                    'total_producto' => $totalProducto,
                     'stock_disponible' => $stockDisponibleReal,
-                    'stock_comprometido' => $stockComprometido,
-                    'stock_suficiente' => $stockDisponibleReal >= $producto['cantidad'],
-                    'unidad_medida' => $producto['unidad'] ?? 'UN'
+                    'stock_suficiente' => $stockDisponibleReal >= $producto['cantidad']
                 ];
                 \Log::info("📦 Datos de producto a crear:", $productoData);
                 
@@ -2482,13 +2509,33 @@ class CotizacionController extends Controller
             
             // Verificar que el usuario pueda editar esta cotización
             if (!auth()->user()->hasPermissionTo('edit_quotations') && 
-                auth()->id() !== $cotizacion->vendedor_id) {
+                auth()->id() !== $cotizacion->user_id) {
                 abort(403, 'No tienes permisos para editar esta cotización');
             }
             
-            // Verificar que la cotización no esté validada (no en SQL Server)
-            if (in_array($cotizacion->estado, ['procesada', 'ingresada', 'pendiente'])) {
-                abort(403, 'No se puede editar una cotización que ya ha sido validada y procesada');
+            // Verificar que la cotización no haya sido aprobada por ningún perfil
+            // Solo se puede editar si está en estado pendiente (borrador) o rechazada
+            $estadosNoEditables = [
+                'pendiente_picking',      // Ya aprobada por Supervisor
+                'aprobada_supervisor',    // Ya aprobada por Supervisor
+                'aprobada_compras',       // Ya aprobada por Compras
+                'aprobada_picking',       // Ya aprobada por Picking
+                'ingresada',             // Ya ingresada en SQL Server
+                'procesada'              // Ya procesada completamente
+            ];
+            
+            if (in_array($cotizacion->estado_aprobacion, $estadosNoEditables)) {
+                $mensajesEstado = [
+                    'pendiente_picking' => 'Esta NVV ya fue aprobada por el Supervisor y está pendiente de revisión por Compras',
+                    'aprobada_supervisor' => 'Esta NVV ya fue aprobada por el Supervisor',
+                    'aprobada_compras' => 'Esta NVV ya fue aprobada por Compras y está pendiente de Picking',
+                    'aprobada_picking' => 'Esta NVV ya fue aprobada por Picking',
+                    'ingresada' => 'Esta NVV ya fue ingresada al sistema SQL Server',
+                    'procesada' => 'Esta NVV ya fue procesada completamente'
+                ];
+                
+                $mensaje = $mensajesEstado[$cotizacion->estado_aprobacion] ?? 'No se puede editar una cotización que ya ha sido aprobada';
+                abort(403, $mensaje . '. Solo se pueden editar NVV en estado borrador o rechazadas.');
             }
             
             // Obtener datos del cliente desde la cotización (solo mostrar, no editar)
@@ -2512,14 +2559,52 @@ class CotizacionController extends Controller
             $productosCotizacion = [];
             
             foreach ($cotizacion->productos as $producto) {
+                // Obtener información adicional del producto desde la tabla productos
+                $productoDB = DB::table('productos')
+                    ->where('KOPR', $producto->codigo_producto)
+                    ->first();
+                
+                // Determinar lista de precios para obtener descuento máximo
+                $listaPrecios = $cotizacion->cliente_lista_precios ?? '01P';
+                $descuentoMaximo = 0;
+                $multiplo = 1;
+                $unidad = 'UN';
+                
+                if ($productoDB) {
+                    // Obtener múltiplo de venta
+                    $multiplo = $productoDB->MUVECODI ?? 1;
+                    if ($multiplo <= 0) $multiplo = 1;
+                    
+                    // Obtener unidad de medida
+                    $unidad = $productoDB->KOPRUDEN ?? 'UN';
+                    
+                    // Obtener descuento máximo según lista de precios
+                    if ($listaPrecios === '01P' || $listaPrecios === '01') {
+                        $descuentoMaximo = $productoDB->descuento_maximo_01p ?? 0;
+                    } elseif ($listaPrecios === '02P' || $listaPrecios === '02') {
+                        $descuentoMaximo = $productoDB->descuento_maximo_02p ?? 0;
+                    } elseif ($listaPrecios === '03P' || $listaPrecios === '03') {
+                        $descuentoMaximo = $productoDB->descuento_maximo_03p ?? 0;
+                    } elseif ($listaPrecios === '04P' || $listaPrecios === '04') {
+                        $descuentoMaximo = $productoDB->descuento_maximo_04p ?? 0;
+                    } elseif ($listaPrecios === '05P' || $listaPrecios === '05') {
+                        $descuentoMaximo = $productoDB->descuento_maximo_05p ?? 0;
+                    }
+                }
+                
                 $productosCotizacion[] = [
                     'codigo' => $producto->codigo_producto,
                     'nombre' => $producto->nombre_producto,
                     'cantidad' => $producto->cantidad,
                     'precio' => floatval($producto->precio_unitario),
                     'subtotal' => floatval($producto->subtotal),
+                    'descuento' => floatval($producto->descuento_porcentaje ?? 0),
+                    'descuentoMaximo' => floatval($descuentoMaximo),
+                    'multiplo' => intval($multiplo),
                     'stock_disponible' => $producto->stock_disponible,
-                    'stock_suficiente' => $producto->stock_suficiente
+                    'stock_suficiente' => $producto->stock_suficiente,
+                    'unidad' => $unidad,
+                    'stock' => $producto->stock_disponible // Alias para compatibilidad con frontend
                 ];
             }
             
@@ -2576,6 +2661,11 @@ class CotizacionController extends Controller
                     'cantidad' => $producto->cantidad,
                     'precio' => floatval($producto->precio_unitario),
                     'subtotal' => floatval($producto->subtotal),
+                    'descuento' => floatval($producto->descuento_porcentaje ?? 0),
+                    'descuento_valor' => floatval($producto->descuento_valor ?? 0),
+                    'subtotal_con_descuento' => floatval($producto->subtotal_con_descuento ?? 0),
+                    'iva_valor' => floatval($producto->iva_valor ?? 0),
+                    'total_producto' => floatval($producto->total_producto ?? 0),
                     'stock_disponible' => $producto->stock_disponible,
                     'stock_suficiente' => $producto->stock_suficiente
                 ];
@@ -2611,40 +2701,78 @@ class CotizacionController extends Controller
             
             // Verificar que el usuario pueda editar esta cotización
             if (!auth()->user()->hasPermissionTo('edit_quotations') && 
-                auth()->id() !== $cotizacion->vendedor_id) {
+                auth()->id() !== $cotizacion->user_id) {
                 return response()->json([
                     'success' => false,
                     'message' => 'No tienes permisos para editar esta cotización'
                 ], 403);
             }
             
-            // Verificar que la cotización no esté validada
-            if (in_array($cotizacion->estado, ['procesada', 'ingresada', 'pendiente'])) {
+            // Verificar que la cotización no haya sido aprobada por ningún perfil
+            // Solo se puede editar si está en estado pendiente (borrador) o rechazada
+            $estadosNoEditables = [
+                'pendiente_picking',      // Ya aprobada por Supervisor
+                'aprobada_supervisor',    // Ya aprobada por Supervisor
+                'aprobada_compras',       // Ya aprobada por Compras
+                'aprobada_picking',       // Ya aprobada por Picking
+                'ingresada',             // Ya ingresada en SQL Server
+                'procesada'              // Ya procesada completamente
+            ];
+            
+            if (in_array($cotizacion->estado_aprobacion, $estadosNoEditables)) {
+                $mensajesEstado = [
+                    'pendiente_picking' => 'Esta NVV ya fue aprobada por el Supervisor y está pendiente de revisión por Compras',
+                    'aprobada_supervisor' => 'Esta NVV ya fue aprobada por el Supervisor',
+                    'aprobada_compras' => 'Esta NVV ya fue aprobada por Compras y está pendiente de Picking',
+                    'aprobada_picking' => 'Esta NVV ya fue aprobada por Picking',
+                    'ingresada' => 'Esta NVV ya fue ingresada al sistema SQL Server',
+                    'procesada' => 'Esta NVV ya fue procesada completamente'
+                ];
+                
+                $mensaje = $mensajesEstado[$cotizacion->estado_aprobacion] ?? 'No se puede editar una cotización que ya ha sido aprobada';
+                
                 return response()->json([
                     'success' => false,
-                    'message' => 'No se puede editar una cotización que ya ha sido validada y procesada'
+                    'message' => $mensaje . '. Solo se pueden editar NVV en estado borrador o rechazadas.'
                 ], 403);
             }
             
-            // Calcular totales
+            // Calcular totales por producto y generales
             $productos = $request->input('productos', []);
-            $subtotal = 0;
-            $descuento = floatval($request->input('descuento', 0));
+            $subtotalSinDescuentos = 0;
+            $descuentoTotal = 0;
+            $ivaTotal = 0;
             
             foreach ($productos as $producto) {
-                $subtotal += floatval($producto['subtotal'] ?? 0);
+                // Calcular valores por producto
+                $precioBase = $producto['cantidad'] * $producto['precio'];
+                $descuentoPorcentaje = $producto['descuento'] ?? 0;
+                $descuentoValor = $precioBase * ($descuentoPorcentaje / 100);
+                $subtotalConDescuento = $precioBase - $descuentoValor;
+                $ivaProducto = $subtotalConDescuento * 0.19;
+                
+                // Acumular totales
+                $subtotalSinDescuentos += $precioBase;
+                $descuentoTotal += $descuentoValor;
+                $ivaTotal += $ivaProducto;
             }
             
-            $total = $subtotal - $descuento;
+            // Calcular subtotal neto (después de descuentos)
+            $subtotalNeto = $subtotalSinDescuentos - $descuentoTotal;
             
-            \Log::info('Totales calculados - Subtotal: ' . $subtotal . ', Descuento: ' . $descuento . ', Total: ' . $total);
+            // Total final con IVA
+            $total = $subtotalNeto + $ivaTotal;
+            
+            \Log::info('Totales calculados - Subtotal sin descuentos: ' . $subtotalSinDescuentos . ', Descuento total: ' . $descuentoTotal . ', Subtotal neto: ' . $subtotalNeto . ', IVA total: ' . $ivaTotal . ', Total: ' . $total);
             
             // Actualizar cotización
             $cotizacion->update([
                 'observaciones' => $request->input('observaciones', ''),
+                'subtotal' => $subtotalSinDescuentos,
+                'descuento_global' => $descuentoTotal,
+                'subtotal_neto' => $subtotalNeto,
+                'iva' => $ivaTotal,
                 'total' => $total,
-                'subtotal' => $subtotal,
-                'descuento_global' => $descuento,
                 'updated_at' => now()
             ]);
             
@@ -2654,12 +2782,26 @@ class CotizacionController extends Controller
             
             // Luego agregar los nuevos productos
             foreach ($productos as $producto) {
+                // Calcular valores del producto
+                $precioBase = $producto['cantidad'] * $producto['precio'];
+                $descuentoPorcentaje = $producto['descuento'] ?? 0;
+                $descuentoValor = $precioBase * ($descuentoPorcentaje / 100);
+                $subtotalConDescuento = $precioBase - $descuentoValor;
+                $ivaProducto = $subtotalConDescuento * 0.19;
+                $totalProducto = $subtotalConDescuento + $ivaProducto;
+                
                 $cotizacion->productos()->create([
                     'codigo_producto' => $producto['codigo'],
                     'nombre_producto' => $producto['nombre'],
                     'cantidad' => $producto['cantidad'],
                     'precio_unitario' => $producto['precio'],
-                    'subtotal' => $producto['subtotal'],
+                    'subtotal' => $precioBase, // Precio base sin descuentos
+                    'descuento_porcentaje' => $descuentoPorcentaje,
+                    'descuento_valor' => $descuentoValor,
+                    'subtotal_con_descuento' => $subtotalConDescuento,
+                    'iva_porcentaje' => 19.00,
+                    'iva_valor' => $ivaProducto,
+                    'total_producto' => $totalProducto,
                     'stock_disponible' => $producto['stock_disponible'] ?? 0,
                     'stock_suficiente' => $producto['stock_suficiente'] ?? false
                 ]);

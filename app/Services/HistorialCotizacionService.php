@@ -95,21 +95,34 @@ class HistorialCotizacionService
     /**
      * Registrar aprobación por Picking
      */
-    public static function registrarAprobacionPicking(Cotizacion $cotizacion, string $comentarios = null): void
+    public static function registrarAprobacionPicking(Cotizacion $cotizacion, string $comentarios = null, int $numeroNvvSQL = null): void
     {
+        $datosAdicionales = [
+            'rol_aprobador' => 'Picking',
+            'stock_verificado' => true
+        ];
+        
+        // Si se generó el número de NVV en SQL Server, agregarlo
+        if ($numeroNvvSQL) {
+            $datosAdicionales['numero_nvv_sql'] = $numeroNvvSQL;
+        }
+        
+        // Si ya está guardado en la cotización, usarlo
+        if ($cotizacion->numero_nvv) {
+            $datosAdicionales['numero_nvv_sql'] = $cotizacion->numero_nvv;
+            $comentarios = ($comentarios ?? 'Aprobada por Picking') . " - NVV #{$cotizacion->numero_nvv} generada en SQL Server";
+        }
+        
         CotizacionHistorial::crearRegistro(
             $cotizacion->id,
             'aprobada_picking',
             'aprobacion',
             $cotizacion->estado_aprobacion,
             $comentarios ?? 'Aprobada por Picking',
-            [
-                'rol_aprobador' => 'Picking',
-                'stock_verificado' => true
-            ]
+            $datosAdicionales
         );
         
-        Log::info("✅ Historial: Cotización {$cotizacion->id} aprobada por Picking");
+        Log::info("✅ Historial: Cotización {$cotizacion->id} aprobada por Picking" . ($cotizacion->numero_nvv ? " - NVV #{$cotizacion->numero_nvv}" : ''));
     }
 
     /**

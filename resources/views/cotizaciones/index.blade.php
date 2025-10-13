@@ -120,7 +120,7 @@
                                         <th>N° NV</th>
                                         <th>Cliente</th>
                                         <th>Fecha</th>
-                                        <th>Total</th>
+                                        <th>Total (c/IVA)</th>
                                         <th>Saldo</th>
                                         <th>Estado</th>
                                         <th>Fuente</th>
@@ -213,8 +213,13 @@
                                         </td>
                                         <td>
                                             @if(isset($cotizacion['fuente']) && $cotizacion['fuente'] === 'local')
-                                                @if(in_array($cotizacion['estado'], ['borrador', 'enviada', 'pendiente_stock']))
-                                                    <!-- Botones para cotizaciones editables -->
+                                                @php
+                                                    // Estados editables: solo borrador (pendiente) o rechazada
+                                                    $estadoAprobacion = $cotizacion['estado_aprobacion'] ?? 'pendiente';
+                                                    $esEditable = in_array($estadoAprobacion, ['pendiente', 'rechazada']);
+                                                @endphp
+                                                @if($esEditable)
+                                                    <!-- Botones para cotizaciones editables (borrador o rechazadas) -->
                                                     <div class="btn-group" role="group">
                                                         <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
                                                            class="btn btn-sm btn-info" title="Ver">
@@ -249,8 +254,8 @@
                                                             <i class="material-icons">receipt</i>
                                                         </button>
                                                     </div>
-                                                @elseif(in_array($cotizacion['estado'], ['procesada', 'ingresada', 'pendiente']))
-                                                    <!-- Solo ver para cotizaciones procesadas -->
+                                                @else
+                                                    <!-- Solo ver para cotizaciones ya aprobadas o procesadas -->
                                                     <div class="btn-group" role="group">
                                                         <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
                                                            class="btn btn-sm btn-info" title="Ver">
@@ -260,24 +265,20 @@
                                                            class="btn btn-sm btn-secondary" title="Historial">
                                                             <i class="material-icons">history</i>
                                                         </a>
+                                                        @if(in_array($estadoAprobacion, ['aprobada_picking', 'ingresada']))
+                                                            <span class="badge badge-success ml-2">
+                                                                <i class="material-icons" style="font-size: 14px;">check_circle</i>
+                                                                Procesada
+                                                            </span>
+                                                        @endif
                                                     </div>
-                                                @else
-                                                    <!-- Estado desconocido -->
-                                                    <span class="text-muted">
-                                                        <i class="material-icons" style="font-size: 14px;">info</i>
-                                                        {{ ucfirst($cotizacion['estado']) }}
-                                                    </span>
                                                 @endif
                                             @else
-                                                <!-- Cotizaciones de SQL Server (solo ver) -->
+                                                <!-- Cotizaciones de SQL Server - solo ver -->
                                                 <div class="btn-group" role="group">
                                                     <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
                                                        class="btn btn-sm btn-info" title="Ver">
                                                         <i class="material-icons">visibility</i>
-                                                    </a>
-                                                    <a href="{{ route('cotizacion.historial', $cotizacion['id']) }}" 
-                                                       class="btn btn-sm btn-secondary" title="Historial">
-                                                        <i class="material-icons">history</i>
                                                     </a>
                                                 </div>
                                             @endif

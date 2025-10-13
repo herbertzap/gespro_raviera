@@ -3544,27 +3544,27 @@ class CobranzaService
                 throw new \Exception('Credenciales SQL Server no configuradas en .env');
             }
 
-            // Consulta corregida para obtener información de crédito del cliente con separador |
+            // Consulta simplificada usando solo dbo.CLIENTES sin depender de vistas que pueden no tener datos
             $query = "
             SELECT 
                 CAST(dbo.CLIENTES.KOEN AS VARCHAR(20)) + '|' +
                 CAST(dbo.CLIENTES.NOKOEN AS VARCHAR(100)) + '|' +
-                CAST(dbo.Cobranza_CR.REGION AS VARCHAR(50)) + '|' +
-                CAST(dbo.Cobranza_CR.COMUNA AS VARCHAR(50)) + '|' +
+                CAST(ISNULL(dbo.Cobranza_CR.REGION, '') AS VARCHAR(50)) + '|' +
+                CAST(ISNULL(dbo.Cobranza_CR.COMUNA, '') AS VARCHAR(50)) + '|' +
                 CAST(dbo.CLIENTES.KOFUEN AS VARCHAR(20)) + '|' +
-                CAST(CASE WHEN dbo.Cobranza_CR.SALDO IS NULL THEN 0 ELSE dbo.Cobranza_CR.SALDO END AS VARCHAR(20)) + '|' +
-                CAST(dbo.CLIENTES.CRSD AS VARCHAR(20)) + '|' +
-                CAST(dbo.CLIENTES.CRSD - CASE WHEN dbo.Cobranza_CR.SALDO IS NULL THEN 0 ELSE dbo.Cobranza_CR.SALDO END AS VARCHAR(20)) + '|' +
-                CAST(CASE WHEN dbo.[CH CARTERA R].VALOR IS NULL THEN 0 ELSE dbo.[CH CARTERA R].VALOR END AS VARCHAR(20)) + '|' +
-                CAST(dbo.CLIENTES.CRCH AS VARCHAR(20)) + '|' +
-                CAST(dbo.CLIENTES.CRCH - (CASE WHEN dbo.[CH CARTERA R].VALOR IS NULL THEN 0 ELSE dbo.[CH CARTERA R].VALOR END) AS VARCHAR(20)) + '|' +
-                CAST((CASE WHEN dbo.[CH CARTERA R].VALOR IS NULL THEN 0 ELSE dbo.[CH CARTERA R].VALOR END) + (CASE WHEN dbo.Cobranza_CR.SALDO IS NULL THEN 0 ELSE dbo.Cobranza_CR.SALDO END) AS VARCHAR(20)) + '|' +
-                CAST(dbo.CLIENTES.CRTO AS VARCHAR(20)) + '|' +
-                CAST(dbo.CLIENTES.CRTO - ((CASE WHEN dbo.[CH CARTERA R].VALOR IS NULL THEN 0 ELSE dbo.[CH CARTERA R].VALOR END) + (CASE WHEN dbo.Cobranza_CR.SALDO IS NULL THEN 0 ELSE dbo.Cobranza_CR.SALDO END)) AS VARCHAR(20)) + '|' +
-                CAST(dbo.ULT_VTA_CL.ULT_VTA AS VARCHAR(50)) + '|' +
+                CAST(ISNULL(dbo.Cobranza_CR.SALDO, 0) AS VARCHAR(20)) + '|' +
+                CAST(ISNULL(dbo.CLIENTES.CRSD, 0) AS VARCHAR(20)) + '|' +
+                CAST(ISNULL(dbo.CLIENTES.CRSD, 0) - ISNULL(dbo.Cobranza_CR.SALDO, 0) AS VARCHAR(20)) + '|' +
+                CAST(ISNULL(dbo.[CH CARTERA R].VALOR, 0) AS VARCHAR(20)) + '|' +
+                CAST(ISNULL(dbo.CLIENTES.CRCH, 0) AS VARCHAR(20)) + '|' +
+                CAST(ISNULL(dbo.CLIENTES.CRCH, 0) - ISNULL(dbo.[CH CARTERA R].VALOR, 0) AS VARCHAR(20)) + '|' +
+                CAST(ISNULL(dbo.[CH CARTERA R].VALOR, 0) + ISNULL(dbo.Cobranza_CR.SALDO, 0) AS VARCHAR(20)) + '|' +
+                CAST(ISNULL(dbo.CLIENTES.CRTO, 0) AS VARCHAR(20)) + '|' +
+                CAST(ISNULL(dbo.CLIENTES.CRTO, 0) - (ISNULL(dbo.[CH CARTERA R].VALOR, 0) + ISNULL(dbo.Cobranza_CR.SALDO, 0)) AS VARCHAR(20)) + '|' +
+                CAST(ISNULL(dbo.ULT_VTA_CL.ULT_VTA, '') AS VARCHAR(50)) + '|' +
                 CAST(CASE WHEN dbo.CLIENTES.BLOQUEADO = 1 THEN 'BLOQUEADO' ELSE 'VIGENTE' END AS VARCHAR(20)) + '|' +
-                CAST(CASE WHEN dbo.Cobranza_Vta_Prom.VENTAM IS NULL THEN 0 ELSE dbo.Cobranza_Vta_Prom.VENTAM END AS VARCHAR(20)) + '|' +
-                CAST(CASE WHEN dbo.Cobranza_Vta_Prom.VENTA3M IS NULL THEN 0 ELSE dbo.Cobranza_Vta_Prom.VENTA3M END AS VARCHAR(20)) AS DATOS
+                CAST(ISNULL(dbo.Cobranza_Vta_Prom.VENTAM, 0) AS VARCHAR(20)) + '|' +
+                CAST(ISNULL(dbo.Cobranza_Vta_Prom.VENTA3M, 0) AS VARCHAR(20)) AS DATOS
             FROM dbo.CLIENTES 
             LEFT OUTER JOIN dbo.ULT_VTA_CL ON dbo.CLIENTES.KOEN = dbo.ULT_VTA_CL.ENDO 
             LEFT OUTER JOIN dbo.Cobranza_Vta_Prom ON dbo.CLIENTES.KOEN = dbo.Cobranza_Vta_Prom.ENDO 
