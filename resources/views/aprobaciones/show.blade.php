@@ -480,10 +480,16 @@
                                 <div class="alert alert-warning">
                                     <h6><i class="material-icons">local_shipping</i> Requiere Aprobación Final de Picking</h6>
                                     <p>Esta nota de venta requiere tu aprobación.</p>
+                                    <p><strong>⚠️ IMPORTANTE:</strong> Al aprobar se insertará la NVV en la base de datos de producción.</p>
                                 </div>
-                                <button type="button" class="btn btn-success btn-lg" onclick="aprobarNota({{ $cotizacion->id }}, 'picking')">
-                                    <i class="material-icons">check</i> Aprobar
-                                </button>
+                                <form action="{{ route('aprobaciones.picking', $cotizacion->id) }}" method="POST" style="display: inline;">
+                                    @csrf
+                                    <input type="hidden" name="validar_stock_real" value="1">
+                                    <input type="hidden" name="comentarios" value="">
+                                    <button type="submit" class="btn btn-success btn-lg" onclick="return confirm('¿Estás seguro de aprobar esta nota de venta? Se insertará en la base de datos de producción.')">
+                                        <i class="material-icons">check</i> Aprobar
+                                    </button>
+                                </form>
                                 <button type="button" class="btn btn-danger btn-lg ml-3" onclick="rechazarNota({{ $cotizacion->id }})">
                                     <i class="material-icons">close</i> Rechazar
                                 </button>
