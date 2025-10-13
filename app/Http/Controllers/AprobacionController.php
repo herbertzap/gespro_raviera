@@ -286,8 +286,8 @@ class AprobacionController extends Controller
             
             Log::info('Siguiente ID para MAEEDO: ' . $siguienteId);
             
-            // Obtener siguiente número correlativo (NUDO) para NVV - buscar el MÁXIMO numérico
-            $queryNudo = "SELECT MAX(CAST(NUDO AS INT)) as MAX_NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1";
+            // Obtener siguiente número correlativo (NUDO) - último insertado + 1
+            $queryNudo = "SELECT TOP 1 CAST(NUDO AS INT) as ULTIMO_NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1 ORDER BY IDMAEEDO DESC";
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
@@ -297,27 +297,27 @@ class AprobacionController extends Controller
             
             unlink($tempFile);
             
-            // Parsear el resultado para obtener el máximo NUDO
-            $maxNudo = 37555; // Valor por defecto basado en el último conocido
+            // Parsear el resultado para obtener el último NUDO
+            $ultimoNudo = 37507; // Valor por defecto basado en el último conocido
             if ($result && !str_contains($result, 'error')) {
                 $lines = explode("\n", $result);
                 foreach ($lines as $line) {
                     $line = trim($line);
                     // Buscar línea con el número (debe ser numérico)
                     if (is_numeric($line) && $line > 0) {
-                        $maxNudo = (int)$line;
+                        $ultimoNudo = (int)$line;
                         break;
                     }
                 }
             }
             
-            // El siguiente número es el máximo + 1
-            $siguienteNudo = $maxNudo + 1;
+            // El siguiente número es el último + 1 (correlativo)
+            $siguienteNudo = $ultimoNudo + 1;
             
             // Formatear NUDO con ceros a la izquierda (10 dígitos)
             $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
             
-            Log::info('Máximo NUDO actual: ' . $maxNudo);
+            Log::info('Último NUDO insertado: ' . $ultimoNudo);
             Log::info('Siguiente número correlativo NVV (NUDO): ' . $nudoFormateado);
             
             // Calcular fecha de vencimiento (30 días desde hoy)
