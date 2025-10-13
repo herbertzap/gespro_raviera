@@ -258,6 +258,19 @@
                                     @if($cotizacion->estado_aprobacion === 'aprobada_picking')
                                         <span class="badge badge-success">Aprobada</span>
                                         <br><small>Lista para procesar</small>
+                                        @if($cotizacion->numero_nvv)
+                                            <br><br>
+                                            <div class="alert alert-success" style="padding: 10px; margin-top: 10px;">
+                                                <strong><i class="material-icons" style="font-size: 18px; vertical-align: middle;">assignment</i> NVV Generada</strong>
+                                                <br>
+                                                <h4 style="margin: 5px 0;">N° {{ str_pad($cotizacion->numero_nvv, 10, '0', STR_PAD_LEFT) }}</h4>
+                                                <small>ID Interno: {{ $cotizacion->numero_nvv }}</small>
+                                                <br>
+                                                <a href="#" onclick="verDetalleNVV({{ $cotizacion->numero_nvv }}); return false;" class="btn btn-sm btn-info mt-2">
+                                                    <i class="material-icons">visibility</i> Ver NVV en Sistema
+                                                </a>
+                                            </div>
+                                        @endif
                                     @elseif($cotizacion->estado_aprobacion === 'rechazada')
                                         <span class="badge badge-danger">Rechazada</span>
                                         <br><small>{{ $cotizacion->motivo_rechazo }}</small>
@@ -744,6 +757,14 @@ function confirmarAprobacionPicking(event) {
     }
     
     return true;
+}
+
+// Ver detalle de NVV en sistema SQL Server
+function verDetalleNVV(numeroNVV) {
+    alert('🔍 Consultando NVV N° ' + numeroNVV + ' en SQL Server...\n\n' +
+          'Esta funcionalidad mostrará los detalles de la NVV directamente desde SQL Server.\n\n' +
+          'Por ahora puedes verificar la NVV en el sistema principal de gestión.');
+    // TODO: Implementar consulta real a SQL Server para mostrar detalles
 }
 
 // ===== FUNCIONES PARA COMPRAS =====
