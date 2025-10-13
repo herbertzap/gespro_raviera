@@ -1081,8 +1081,8 @@ class CotizacionController extends Controller
                     'vendedor_codigo' => auth()->user()->codigo_vendedor ?? null,
                     'numero_nota_venta' => null, // Se asignará cuando se apruebe
                     'fecha_nota_venta' => now(),
-                    'subtotal' => $subtotal,
-                    'descuento_global' => $descuentoGlobal,
+                    'subtotal' => $subtotalNeto,
+                    'descuento_global' => $descuentoTotal,
                     'total' => $total,
                     'observaciones' => $request->observaciones,
                     'estado' => 'pendiente',
