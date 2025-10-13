@@ -252,7 +252,7 @@ class AprobacionController extends Controller
             Log::info('Siguiente ID para MAEEDO: ' . $siguienteId);
             
             // Obtener siguiente número correlativo (NUDO) para NVV
-            $queryNudo = "SELECT TOP 1 CAST(NUDO AS INT) + 1 AS siguiente_nudo FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1 ORDER BY CAST(NUDO AS INT) DESC";
+            $queryNudo = "SELECT TOP 1 LTRIM(RTRIM(NUDO)) as ULTIMO_NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND LEN(LTRIM(RTRIM(NUDO))) > 0 ORDER BY IDMAEEDO DESC";
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
@@ -263,13 +263,14 @@ class AprobacionController extends Controller
             unlink($tempFile);
             
             // Parsear el resultado para obtener el siguiente NUDO
-            $siguienteNudo = 1;
+            $siguienteNudo = 37549; // Valor por defecto basado en el último conocido
             if ($result && !str_contains($result, 'error')) {
                 $lines = explode("\n", $result);
                 foreach ($lines as $line) {
                     $line = trim($line);
-                    if (is_numeric($line) && $line > 0) {
-                        $siguienteNudo = (int)$line;
+                    // Buscar línea con el número (debe ser numérico y de 6-10 dígitos)
+                    if (preg_match('/^\d{6,10}$/', $line)) {
+                        $siguienteNudo = (int)$line + 1;
                         break;
                     }
                 }
@@ -278,7 +279,7 @@ class AprobacionController extends Controller
             // Formatear NUDO con ceros a la izquierda (10 dígitos)
             $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
             
-            Log::info('Siguiente número correlativo NVV (NUDO): ' . $nudoFormateado);
+            Log::info('Siguiente número correlativo NVV (NUDO): ' . $nudoFormateado . ' (calculado desde: ' . ($siguienteNudo - 1) . ')');
             
             // Calcular fecha de vencimiento (30 días desde hoy)
             $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
@@ -288,7 +289,7 @@ class AprobacionController extends Controller
             $nombreVendedor = $cotizacion->user->name ?? 'Vendedor Sistema';
             
             // Obtener sucursal del cliente desde SQL Server
-            $querySucursal = "SELECT SUEN FROM MAEEN WHERE KOEN = '{$cotizacion->cliente_codigo}'";
+            $querySucursal = "SELECT LTRIM(RTRIM(SUEN)) as SUCURSAL FROM MAEEN WHERE KOEN = '{$cotizacion->cliente_codigo}'";
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $querySucursal . "\ngo\nquit");
             
@@ -297,23 +298,27 @@ class AprobacionController extends Controller
             unlink($tempFile);
             
             // Parsear sucursal del cliente
-            $sucursalCliente = '001'; // Valor por defecto
+            $sucursalCliente = '';
             if ($result && !str_contains($result, 'error')) {
                 $lines = explode("\n", $result);
+                $foundHeader = false;
                 foreach ($lines as $line) {
                     $line = trim($line);
-                    // Buscar línea que no sea header ni separador
-                    if (!empty($line) && $line !== 'SUEN' && !str_contains($line, '---') && !str_contains($line, 'locale') && !str_contains($line, 'charset') && !str_contains($line, 'Setting') && !str_contains($line, 'row')) {
+                    // Primero encontrar el header "SUCURSAL"
+                    if ($line === 'SUCURSAL') {
+                        $foundHeader = true;
+                        continue;
+                    }
+                    // Después del header, la siguiente línea con contenido es el valor
+                    if ($foundHeader && !empty($line) && !str_contains($line, 'row') && !str_contains($line, '---') && !str_contains($line, '>')) {
                         $sucursalCliente = $line;
                         break;
                     }
                 }
             }
             
-            // Si la sucursal está vacía, usar valor por defecto
-            if (empty(trim($sucursalCliente))) {
-                $sucursalCliente = '001';
-            }
+            // Si la sucursal está vacía o no se encontró, dejar vacío (no usar '001' como fallback)
+            Log::info("Sucursal del cliente '{$cotizacion->cliente_codigo}': '{$sucursalCliente}' " . (empty($sucursalCliente) ? "(vacía - correcto)" : ""));
             
             Log::info("=== DATOS PARA INSERT NVV ===");
             Log::info("Cotización ID: {$cotizacion->id}");
