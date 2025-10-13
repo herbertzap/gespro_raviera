@@ -99,8 +99,8 @@ class AprobarPickingManual extends Command
             
             Log::info("Siguiente IDMAEEDO: {$siguienteId}");
             
-            // Obtener siguiente NUDO (número correlativo visible)
-            $queryNudo = "SELECT TOP 1 LTRIM(RTRIM(NUDO)) as ULTIMO_NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND LEN(LTRIM(RTRIM(NUDO))) > 0 ORDER BY IDMAEEDO DESC";
+            // Obtener siguiente NUDO - buscar el MÁXIMO numérico
+            $queryNudo = "SELECT MAX(CAST(NUDO AS INT)) as MAX_NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1";
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
             
@@ -108,21 +108,23 @@ class AprobarPickingManual extends Command
             $result = shell_exec($command);
             unlink($tempFile);
             
-            $siguienteNudo = 37549; // Valor por defecto basado en el último conocido
+            $maxNudo = 37555; // Valor por defecto
             if ($result && !str_contains($result, 'error')) {
                 $lines = explode("\n", $result);
                 foreach ($lines as $line) {
                     $line = trim($line);
-                    // Buscar línea con el número (debe ser numérico y de 10 dígitos aproximadamente)
-                    if (preg_match('/^\d{6,10}$/', $line)) {
-                        $siguienteNudo = (int)$line + 1;
+                    if (is_numeric($line) && $line > 0) {
+                        $maxNudo = (int)$line;
                         break;
                     }
                 }
             }
             
+            $siguienteNudo = $maxNudo + 1;
             $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
-            Log::info("Siguiente NUDO: {$nudoFormateado} (calculado desde: " . ($siguienteNudo - 1) . ")");
+            
+            Log::info("Máximo NUDO actual: {$maxNudo}");
+            Log::info("Siguiente NUDO: {$nudoFormateado}");
             
             // Obtener sucursal del cliente
             $querySucursal = "SELECT LTRIM(RTRIM(SUEN)) as SUCURSAL FROM MAEEN WHERE KOEN = '{$cotizacion->cliente_codigo}'";

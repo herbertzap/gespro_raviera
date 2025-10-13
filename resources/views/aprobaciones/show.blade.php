@@ -263,10 +263,9 @@
                                             <div class="alert alert-success" style="padding: 10px; margin-top: 10px;">
                                                 <strong><i class="material-icons" style="font-size: 18px; vertical-align: middle;">assignment</i> NVV Generada</strong>
                                                 <br>
-                                                <h4 style="margin: 5px 0;">N° {{ str_pad($cotizacion->numero_nvv, 10, '0', STR_PAD_LEFT) }}</h4>
-                                                <small>ID Interno: {{ $cotizacion->numero_nvv }}</small>
+                                                <h4 style="margin: 5px 0;">N° {{ $cotizacion->numero_nvv }}</h4>
                                                 <br>
-                                                <a href="#" onclick="verDetalleNVV({{ $cotizacion->numero_nvv }}); return false;" class="btn btn-sm btn-info mt-2">
+                                                <a href="{{ route('nvv-pendientes.ver', $cotizacion->numero_nvv) }}" class="btn btn-sm btn-info mt-2" target="_blank">
                                                     <i class="material-icons">visibility</i> Ver NVV en Sistema
                                                 </a>
                                             </div>

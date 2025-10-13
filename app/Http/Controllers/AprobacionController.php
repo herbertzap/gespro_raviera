@@ -286,8 +286,8 @@ class AprobacionController extends Controller
             
             Log::info('Siguiente ID para MAEEDO: ' . $siguienteId);
             
-            // Obtener siguiente número correlativo (NUDO) para NVV
-            $queryNudo = "SELECT TOP 1 LTRIM(RTRIM(NUDO)) as ULTIMO_NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND LEN(LTRIM(RTRIM(NUDO))) > 0 ORDER BY IDMAEEDO DESC";
+            // Obtener siguiente número correlativo (NUDO) para NVV - buscar el MÁXIMO numérico
+            $queryNudo = "SELECT MAX(CAST(NUDO AS INT)) as MAX_NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1";
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
@@ -297,24 +297,28 @@ class AprobacionController extends Controller
             
             unlink($tempFile);
             
-            // Parsear el resultado para obtener el siguiente NUDO
-            $siguienteNudo = 37549; // Valor por defecto basado en el último conocido
+            // Parsear el resultado para obtener el máximo NUDO
+            $maxNudo = 37555; // Valor por defecto basado en el último conocido
             if ($result && !str_contains($result, 'error')) {
                 $lines = explode("\n", $result);
                 foreach ($lines as $line) {
                     $line = trim($line);
-                    // Buscar línea con el número (debe ser numérico y de 6-10 dígitos)
-                    if (preg_match('/^\d{6,10}$/', $line)) {
-                        $siguienteNudo = (int)$line + 1;
+                    // Buscar línea con el número (debe ser numérico)
+                    if (is_numeric($line) && $line > 0) {
+                        $maxNudo = (int)$line;
                         break;
                     }
                 }
             }
             
+            // El siguiente número es el máximo + 1
+            $siguienteNudo = $maxNudo + 1;
+            
             // Formatear NUDO con ceros a la izquierda (10 dígitos)
             $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
             
-            Log::info('Siguiente número correlativo NVV (NUDO): ' . $nudoFormateado . ' (calculado desde: ' . ($siguienteNudo - 1) . ')');
+            Log::info('Máximo NUDO actual: ' . $maxNudo);
+            Log::info('Siguiente número correlativo NVV (NUDO): ' . $nudoFormateado);
             
             // Calcular fecha de vencimiento (30 días desde hoy)
             $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
@@ -592,14 +596,17 @@ class AprobacionController extends Controller
             
             Log::info("NVV {$siguienteId} verificada exitosamente en SQL Server");
             
-            // Guardar el número de NVV en la cotización SOLO si se verificó
-            $cotizacion->numero_nvv = $siguienteId;
+            // Guardar el número correlativo (NUDO) en la cotización
+            $cotizacion->numero_nvv = $nudoFormateado;
             $cotizacion->save();
+            
+            Log::info("✅ Número NVV guardado en cotización: {$nudoFormateado}");
             
             return [
                 'success' => true,
                 'nota_venta_id' => $siguienteId,
-                'message' => "NVV #{$siguienteId} insertada y verificada correctamente en SQL Server"
+                'numero_correlativo' => $nudoFormateado,
+                'message' => "NVV #{$nudoFormateado} (ID: {$siguienteId}) insertada y verificada correctamente en SQL Server"
             ];
             
         } catch (\Exception $e) {
