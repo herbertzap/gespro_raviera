@@ -148,6 +148,15 @@ class AprobacionController extends Controller
      */
     public function aprobarPicking(Request $request, $id)
     {
+        Log::info("========================================");
+        Log::info("🚀 INICIO APROBAR PICKING");
+        Log::info("========================================");
+        Log::info("Cotización ID: {$id}");
+        Log::info("Usuario ID: " . auth()->id());
+        Log::info("Usuario Email: " . auth()->user()->email);
+        Log::info("Request data: " . json_encode($request->all()));
+        Log::info("========================================");
+        
         $request->validate([
             'comentarios' => 'nullable|string|max:500',
             'validar_stock_real' => 'nullable|boolean'
@@ -155,6 +164,10 @@ class AprobacionController extends Controller
 
         $cotizacion = Cotizacion::findOrFail($id);
         $user = Auth::user();
+        
+        Log::info("Cotización encontrada: #{$cotizacion->id}");
+        Log::info("Estado actual: {$cotizacion->estado_aprobacion}");
+        Log::info("Usuario tiene rol Picking: " . ($user->hasRole('Picking') ? 'SI' : 'NO'));
 
         if (!$user->hasRole('Picking')) {
             return redirect()->route('aprobaciones.show', $id)
