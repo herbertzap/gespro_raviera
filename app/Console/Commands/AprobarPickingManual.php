@@ -263,13 +263,13 @@ class AprobarPickingManual extends Command
                     INSERT INTO MAEDDO (
                         IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
                         LILG, KOPRCT, NOKOPR, CAPRCO1, PPPRNE, VANELI, VABRLI,
-                        FEEMLI
+                        FEEMLI, KOFULIDO
                     ) VALUES (
                         {$siguienteId}, '01', 'NVV', '{$nudoFormateado}',
                         '{$cotizacion->cliente_codigo}', '{$sucursalCliente}', 'SI', '{$producto->codigo_producto}', 
                         '{$producto->nombre_producto}', {$producto->cantidad}, 
                         {$producto->precio_unitario}, {$subtotal}, {$subtotal},
-                        GETDATE()
+                        GETDATE(), '{$codigoVendedor}'
                     )
                 ";
                 
