@@ -329,9 +329,10 @@ class AprobacionController extends Controller
             
             Log::info('Siguiente ID para MAEEDO: ' . $siguienteId);
             
-            // Obtener el último NUDO insertado (ordenar por IDMAEEDO DESC para obtener el último registro)
-            // Importante: NO ordenar por NUDO numérico, sino por ID de inserción
-            $queryNudo = "SELECT TOP 1 CAST(NUDO AS INT) as ULTIMO_NUDO FROM MAEEDO WHERE ISNUMERIC(NUDO) = 1 ORDER BY IDMAEEDO DESC";
+            // Obtener el último NUDO de NVV específicamente (cada tipo de documento tiene su propia secuencia)
+            // IMPORTANTE: Filtrar por TIDO = 'NVV' porque MAEEDO contiene todos los tipos de documentos
+            // (FCV, NVV, OCC, GDV, etc.) y cada uno tiene su propia numeración
+            $queryNudo = "SELECT TOP 1 CAST(NUDO AS INT) as ULTIMO_NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1 ORDER BY IDMAEEDO DESC";
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $queryNudo . "\ngo\nquit");

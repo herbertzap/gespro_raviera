@@ -108,8 +108,9 @@ class AprobarPickingManual extends Command
             while ($intento < $maxIntentos && !$nudoFormateado) {
                 $intento++;
                 
-                // Obtener último NUDO de CUALQUIER documento (NVV, FCV, etc comparten numeración)
-                $queryNudo = "SELECT TOP 1 CAST(NUDO AS INT) as ULTIMO_NUDO FROM MAEEDO WHERE ISNUMERIC(NUDO) = 1 ORDER BY IDMAEEDO DESC";
+                // Obtener último NUDO de NVV específicamente (cada tipo tiene su propia secuencia)
+                // IMPORTANTE: Filtrar por TIDO = 'NVV' porque cada tipo de documento tiene numeración independiente
+                $queryNudo = "SELECT TOP 1 CAST(NUDO AS INT) as ULTIMO_NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1 ORDER BY IDMAEEDO DESC";
                 $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
                 file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
                 
