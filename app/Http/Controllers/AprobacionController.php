@@ -826,6 +826,8 @@ class AprobacionController extends Controller
             ";
             
             Log::info("🧪 Ejecutando INSERT MAEEDO...");
+            Log::info("🧪 SQL COMPLETO:");
+            Log::info($insertMAEEDO);
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $insertMAEEDO . "\ngo\nquit");
