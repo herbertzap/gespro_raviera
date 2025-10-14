@@ -785,6 +785,12 @@ class AprobacionController extends Controller
                 }
             }
             
+            // Si sucursal está vacía, usar valor por defecto
+            if (empty($sucursalCliente)) {
+                $sucursalCliente = '1';
+                Log::info("🧪 Sucursal vacía, usando valor por defecto: '1'");
+            }
+            
             Log::info("🧪 Sucursal Cliente: '{$sucursalCliente}'");
             Log::info("🧪 Vendedor: {$codigoVendedor}");
             
