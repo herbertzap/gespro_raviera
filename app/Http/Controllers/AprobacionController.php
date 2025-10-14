@@ -160,6 +160,9 @@ class AprobacionController extends Controller
         // Establecer timeout de 30 segundos para evitar cuelgues
         set_time_limit(30);
         
+        // IMPORTANTE: Cerrar la sesión inmediatamente para no bloquear otras peticiones
+        session()->save();
+        
         Log::info("📝 PASO 1: Validando request...");
         $request->validate([
             'comentarios' => 'nullable|string|max:500',
