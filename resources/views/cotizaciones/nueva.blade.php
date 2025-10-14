@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Nueva Nota de Venta')
+@section('title', 'Nueva Nota de Venta / Cotización')
 
 @section('content')
 <div class="container-fluid">
@@ -10,10 +10,48 @@
                 <div class="card-header card-header-warning">
                     <h4 class="card-title">
                         <i class="material-icons">add_shopping_cart</i>
-                        Nueva Nota de Venta
+                        <span id="titulo-documento">Nueva Nota de Venta</span>
                     </h4>
                 </div>
                 <div class="card-body">
+                    <!-- Selector de Tipo de Documento -->
+                    <div class="row mb-4">
+                        <div class="col-md-12">
+                            <div class="card card-header-info">
+                                <div class="card-header">
+                                    <h4 class="card-title">
+                                        <i class="material-icons">description</i>
+                                        Tipo de Documento
+                                    </h4>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="form-check form-check-radio">
+                                                <label class="form-check-label">
+                                                    <input class="form-check-input" type="radio" name="tipo_documento" id="tipo_nota_venta" value="nota_venta" checked>
+                                                    <span class="circle"></span>
+                                                    <span class="check"></span>
+                                                    <strong>Nota de Venta</strong> - Requiere aprobaciones (Supervisor, Compras, Picking) y genera documento en el sistema
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-check form-check-radio">
+                                                <label class="form-check-label">
+                                                    <input class="form-check-input" type="radio" name="tipo_documento" id="tipo_cotizacion" value="cotizacion">
+                                                    <span class="circle"></span>
+                                                    <span class="check"></span>
+                                                    <strong>Cotización</strong> - Para enviar al cliente, sin aprobaciones. Se puede convertir a Nota de Venta luego
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Información del Cliente -->
                     @if($cliente)
                     <div class="row mb-4">
@@ -180,6 +218,20 @@
                                             <div class="form-group">
                                                 <label class="bmd-label-floating">Observaciones</label>
                                                 <textarea class="form-control" id="observaciones" rows="3" placeholder="Observaciones adicionales..."></textarea>
+                                            </div>
+                                            
+                                            <div class="form-group">
+                                                <label for="fecha_despacho">Fecha de Despacho <span class="text-danger">*</span></label>
+                                                <input type="date" 
+                                                       class="form-control" 
+                                                       id="fecha_despacho" 
+                                                       name="fecha_despacho" 
+                                                       required
+                                                       min="{{ date('Y-m-d', strtotime('+2 days')) }}">
+                                                <small class="form-text text-muted">
+                                                    <i class="material-icons" style="font-size: 14px; vertical-align: middle;">info</i>
+                                                    La fecha de despacho debe ser al menos 2 días después de hoy
+                                                </small>
                                             </div>
                                         </div>
                                         <div class="col-md-6">
@@ -897,12 +949,12 @@ let guardandoNotaVenta = false;
 function guardarNotaVenta() {
     // Verificar si ya se está procesando
     if (guardandoNotaVenta) {
-        alert('Ya se está procesando la nota de venta, por favor espere...');
+        alert('Ya se está procesando el documento, por favor espere...');
         return;
     }
 
     if (productosCotizacion.length === 0) {
-        alert('Debes agregar al menos un producto a la nota de venta');
+        alert('Debes agregar al menos un producto');
         return;
     }
 
@@ -911,6 +963,10 @@ function guardarNotaVenta() {
         return;
     }
 
+    // Obtener tipo de documento seleccionado
+    const tipoDocumento = document.querySelector('input[name="tipo_documento"]:checked').value;
+    const esCotizacion = (tipoDocumento === 'cotizacion');
+    
     // Marcar como procesando y deshabilitar botón
     guardandoNotaVenta = true;
     const btn = document.getElementById('btnGuardarNotaVenta');
@@ -919,12 +975,24 @@ function guardarNotaVenta() {
     btn.innerHTML = '<i class="material-icons">hourglass_empty</i> Guardando...';
 
     const observaciones = document.getElementById('observaciones').value;
+    const fechaDespacho = document.getElementById('fecha_despacho').value;
+    
+    // Validar fecha de despacho
+    if (!fechaDespacho) {
+        alert('Por favor, selecciona una fecha de despacho');
+        guardandoNotaVenta = false;
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        return;
+    }
     
     const cotizacionData = {
+        tipo_documento: tipoDocumento,
         cliente_codigo: clienteData.codigo,
         cliente_nombre: clienteData.nombre,
         productos: productosCotizacion,
         observaciones: observaciones,
+        fecha_despacho: fechaDespacho,
         _token: document.querySelector('meta[name="csrf-token"]').getAttribute('content')
     };
 
@@ -939,7 +1007,10 @@ function guardarNotaVenta() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            alert('Nota de venta guardada exitosamente');
+            const mensaje = esCotizacion 
+                ? 'Cotización guardada exitosamente' 
+                : 'Nota de venta guardada exitosamente';
+            alert(mensaje);
             window.location.href = '/cotizaciones';
         } else {
             alert('Error: ' + data.message);
@@ -951,7 +1022,7 @@ function guardarNotaVenta() {
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('Error al guardar la nota de venta');
+        alert('Error al guardar el documento');
         // Restaurar botón en caso de error
         guardandoNotaVenta = false;
         btn.disabled = false;
@@ -977,6 +1048,28 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     console.log('🔍 Lista de precios final:', clienteData?.lista_precios_codigo);
+    
+    // Configurar cambio de tipo de documento
+    const radioNotaVenta = document.getElementById('tipo_nota_venta');
+    const radioCotizacion = document.getElementById('tipo_cotizacion');
+    const tituloDocumento = document.getElementById('titulo-documento');
+    const btnGuardar = document.getElementById('btnGuardarNotaVenta');
+    
+    if (radioNotaVenta && radioCotizacion && tituloDocumento) {
+        radioNotaVenta.addEventListener('change', function() {
+            if (this.checked) {
+                tituloDocumento.textContent = 'Nueva Nota de Venta';
+                if (btnGuardar) btnGuardar.innerHTML = '<i class="material-icons">save</i> Guardar Nota de Venta';
+            }
+        });
+        
+        radioCotizacion.addEventListener('change', function() {
+            if (this.checked) {
+                tituloDocumento.textContent = 'Nueva Cotización';
+                if (btnGuardar) btnGuardar.innerHTML = '<i class="material-icons">save</i> Guardar Cotización';
+            }
+        });
+    }
     
     // Configurar input de búsqueda
     const buscarInput = document.getElementById('buscarProducto');

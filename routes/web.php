@@ -46,6 +46,7 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::post('/cotizacion/guardar', [App\Http\Controllers\CotizacionController::class, 'guardar'])->name('cotizacion.guardar');
     Route::put('/cotizacion/actualizar/{id}', [App\Http\Controllers\CotizacionController::class, 'actualizar'])->name('cotizacion.actualizar');
     Route::post('/cotizacion/generar-nota-venta/{id}', [App\Http\Controllers\CotizacionController::class, 'generarNotaVenta'])->name('cotizacion.generar-nota-venta');
+    Route::post('/cotizacion/convertir-a-nota-venta/{id}', [App\Http\Controllers\CotizacionController::class, 'convertirANotaVenta'])->name('cotizacion.convertir-a-nota-venta');
     
     // Rutas de Stock Comprometido
     Route::post('/cotizacion/{id}/liberar-stock', [App\Http\Controllers\CotizacionController::class, 'liberarStockComprometido'])->name('cotizacion.liberar-stock');

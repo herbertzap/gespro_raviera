@@ -47,10 +47,17 @@
                         </li>
                         @endcan
                         
-                        <li @if ($pageSlug == 'cotizaciones') class="active " @endif>
-                            <a href="{{ route('cotizaciones.index') }}">
-                                <i class="tim-icons icon-notes"></i>
+                        <li @if ($pageSlug == 'cotizaciones' && request('tipo_documento') == 'cotizacion') class="active " @endif>
+                            <a href="{{ route('cotizaciones.index') }}?tipo_documento=cotizacion">
+                                <i class="tim-icons icon-paper"></i>
                                 <p>{{ __('Cotizaciones') }}</p>
+                            </a>
+                        </li>
+                        
+                        <li @if ($pageSlug == 'cotizaciones' && request('tipo_documento') == 'nota_venta') class="active " @endif>
+                            <a href="{{ route('cotizaciones.index') }}?tipo_documento=nota_venta">
+                                <i class="tim-icons icon-notes"></i>
+                                <p>{{ __('Notas de Venta') }}</p>
                             </a>
                         </li>
                     </ul>
@@ -127,14 +134,6 @@
                                 <p>{{ __('Estado de Facturas') }}</p>
                             </a>
                         </li>
-                        @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin'))
-                        <li @if ($pageSlug == 'cotizaciones') class="active " @endif>
-                            <a href="{{ route('cotizaciones.index') }}">
-                                <i class="tim-icons icon-notes"></i>
-                                <p>{{ __('Notas de Ventas Generadas') }}</p>
-                            </a>
-                        </li>
-                        @endif
                     </ul>
                 </div>
             </li>

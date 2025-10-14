@@ -252,24 +252,43 @@ class AprobarPickingManual extends Command
                 $lineaId = $index + 1;
                 $subtotal = $producto->cantidad * $producto->precio_unitario;
                 
+                // Obtener datos del producto desde MySQL
+                $productoDB = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
+                
+                $udtrpr = 1;
+                $rludpr = 1;
+                $ud01pr = 'UN';
+                $ud02pr = 'CJ';
+                
+                if ($productoDB) {
+                    $rludpr = $productoDB->RLUD ?? 1;
+                    $ud01pr = trim($productoDB->UD01PR ?? 'UN');
+                    $ud02pr = trim($productoDB->UD02PR ?? 'CJ');
+                    $udtrpr = ($rludpr > 1) ? 2 : 1;
+                }
+                
                 Log::info("=== PRODUCTO #{$lineaId} ===");
                 Log::info("KOPRCT: {$producto->codigo_producto}");
                 Log::info("NOKOPR: {$producto->nombre_producto}");
                 Log::info("CAPRCO1: {$producto->cantidad}");
                 Log::info("PPPRNE: {$producto->precio_unitario}");
                 Log::info("VANELI: {$subtotal}");
+                Log::info("UDTRPR: {$udtrpr}, RLUDPR: {$rludpr}, UD01PR: {$ud01pr}, UD02PR: {$ud02pr}");
                 
                 $insertMAEDDO = "
                     INSERT INTO MAEDDO (
                         IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
-                        LILG, KOPRCT, NOKOPR, CAPRCO1, PPPRNE, VANELI, VABRLI,
-                        FEEMLI, KOFULIDO
+                        LILG, NULIDO, KOPRCT, NOKOPR, 
+                        CAPRCO1, PPPRNE, VANELI, VABRLI,
+                        KOFULIDO, UDTRPR, RLUDPR, UD01PR, UD02PR,
+                        FEEMLI, FEERLI
                     ) VALUES (
                         {$siguienteId}, '01', 'NVV', '{$nudoFormateado}',
-                        '{$cotizacion->cliente_codigo}', '{$sucursalCliente}', 'SI', '{$producto->codigo_producto}', 
-                        '{$producto->nombre_producto}', {$producto->cantidad}, 
-                        {$producto->precio_unitario}, {$subtotal}, {$subtotal},
-                        GETDATE(), '{$codigoVendedor}'
+                        '{$cotizacion->cliente_codigo}', '{$sucursalCliente}',
+                        'SI', '{$lineaId}', '{$producto->codigo_producto}', '{$producto->nombre_producto}',
+                        {$producto->cantidad}, {$producto->precio_unitario}, {$subtotal}, {$subtotal},
+                        '{$codigoVendedor}', {$udtrpr}, {$rludpr}, '{$ud01pr}', '{$ud02pr}',
+                        GETDATE(), '{$cotizacion->fecha_despacho->format('Y-m-d H:i:s')}'
                     )
                 ";
                 

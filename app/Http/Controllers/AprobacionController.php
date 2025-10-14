@@ -157,27 +157,49 @@ class AprobacionController extends Controller
         Log::info("Request data: " . json_encode($request->all()));
         Log::info("========================================");
         
+        // Establecer timeout de 30 segundos para evitar cuelgues
+        set_time_limit(30);
+        
+        Log::info("📝 PASO 1: Validando request...");
         $request->validate([
             'comentarios' => 'nullable|string|max:500',
             'validar_stock_real' => 'nullable|boolean'
         ]);
+        Log::info("✅ PASO 1: Validación OK");
 
+        Log::info("📝 PASO 2: Buscando cotización...");
         $cotizacion = Cotizacion::findOrFail($id);
+        Log::info("✅ PASO 2: Cotización encontrada - Cliente: {$cotizacion->cliente_nombre}");
+        
+        Log::info("📝 PASO 2.1: Obteniendo usuario autenticado...");
         $user = Auth::user();
+        Log::info("✅ PASO 2.1: Usuario obtenido - ID: {$user->id}, Email: {$user->email}");
         
         Log::info("Cotización encontrada: #{$cotizacion->id}");
         Log::info("Estado actual: {$cotizacion->estado_aprobacion}");
         Log::info("Usuario tiene rol Picking: " . ($user->hasRole('Picking') ? 'SI' : 'NO'));
+        
+        Log::info("📝 PASO 3: Validando permisos...");
+        Log::info("Usuario ID: {$user->id}");
+        Log::info("Usuario roles: " . json_encode($user->getRoleNames()));
 
         if (!$user->hasRole('Picking')) {
+            Log::error("❌ ERROR: Usuario no tiene rol Picking");
             return redirect()->route('aprobaciones.show', $id)
                 ->with('error', 'No tienes permisos para aprobar como picking');
         }
+        Log::info("✅ PASO 3: Permisos validados correctamente");
+        
+        Log::info("📝 PASO 4: Validando estado de la cotización...");
+        Log::info("Estado actual: {$cotizacion->estado_aprobacion}");
+        Log::info("Puede aprobar picking: " . ($cotizacion->puedeAprobarPicking() ? 'SI' : 'NO'));
 
         if (!$cotizacion->puedeAprobarPicking() && $cotizacion->estado_aprobacion !== 'pendiente_picking') {
+            Log::error("❌ ERROR: La cotización no puede ser aprobada por picking");
             return redirect()->route('aprobaciones.show', $id)
                 ->with('error', 'La nota de venta no puede ser aprobada por picking');
         }
+        Log::info("✅ PASO 4: Estado validado correctamente");
 
         try {
             // Si se requiere validar stock real
@@ -207,8 +229,20 @@ class AprobacionController extends Controller
             
             Log::info("Cotización aprobada en MySQL, iniciando insert en SQL Server");
             
-            // Insertar en SQL Server
-            $resultado = $this->insertarEnSQLServer($cotizacion);
+            // Insertar en SQL Server de forma asíncrona
+            Log::info("📝 PASO CRÍTICO: Iniciando insert en SQL Server...");
+            $startTime = microtime(true);
+            
+            try {
+                $resultado = $this->insertarEnSQLServer($cotizacion);
+                $endTime = microtime(true);
+                $duration = $endTime - $startTime;
+                Log::info("⏱️ PASO CRÍTICO: Insert completado en " . round($duration, 2) . " segundos");
+            } catch (Exception $e) {
+                Log::error("❌ ERROR en insert SQL Server: " . $e->getMessage());
+                // Continuar sin fallar - la NVV ya está aprobada en MySQL
+                $resultado = ['success' => false, 'message' => 'Error en SQL Server: ' . $e->getMessage()];
+            }
             
             if ($resultado['success']) {
                 Log::info("Nota de venta {$cotizacion->id} aprobada por picking {$user->id} y insertada en SQL Server con ID {$resultado['nota_venta_id']}");
@@ -274,87 +308,50 @@ class AprobacionController extends Controller
             // Parsear el resultado para obtener el siguiente ID
             $siguienteId = 1; // Valor por defecto
             if ($result && !str_contains($result, 'error')) {
-                $lines = explode("\n", $result);
-                foreach ($lines as $line) {
-                    $line = trim($line);
-                    if (is_numeric($line) && $line > 0) {
-                        $siguienteId = (int)$line;
-                        break;
+                // Buscar el patrón específico: número grande después de "siguiente_id"
+                if (preg_match('/siguiente_id\s*\n\s*(\d+)/', $result, $matches)) {
+                    $siguienteId = (int)$matches[1];
+                } else {
+                    // Fallback: buscar el número más grande en las líneas
+                    $lines = explode("\n", $result);
+                    $maxNumber = 0;
+                    foreach ($lines as $line) {
+                        $line = trim($line);
+                        if (is_numeric($line) && (int)$line > $maxNumber && (int)$line > 1000) {
+                            $maxNumber = (int)$line;
+                        }
+                    }
+                    if ($maxNumber > 0) {
+                        $siguienteId = $maxNumber;
                     }
                 }
             }
             
             Log::info('Siguiente ID para MAEEDO: ' . $siguienteId);
             
-            // Obtener siguiente número correlativo (NUDO) con reintentos en caso de colisión
-            $maxIntentos = 5;
-            $intento = 0;
-            $nudoFormateado = null;
-            $siguienteNudo = null;
+            // Obtener el último NUDO de NVV y sumarle 1 (consulta simplificada, excluyendo valores anómalos)
+            $queryNudo = "SELECT TOP 1 CAST(NUDO AS INT) as ULTIMO_NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1 AND CAST(NUDO AS INT) < 99999 ORDER BY CAST(NUDO AS INT) DESC";
             
-            while ($intento < $maxIntentos && !$nudoFormateado) {
-                $intento++;
-                
-                // Obtener último NUDO insertado (considerando NVV y FCV que comparten numeración)
-                $queryNudo = "SELECT TOP 1 CAST(NUDO AS INT) as ULTIMO_NUDO FROM MAEEDO WHERE ISNUMERIC(NUDO) = 1 ORDER BY IDMAEEDO DESC";
-                
-                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
-                
-                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                $result = shell_exec($command);
-                unlink($tempFile);
-                
-                $ultimoNudo = 37559; // Valor por defecto
-                if ($result && !str_contains($result, 'error')) {
-                    $lines = explode("\n", $result);
-                    foreach ($lines as $line) {
-                        $line = trim($line);
-                        if (is_numeric($line) && $line > 0) {
-                            $ultimoNudo = (int)$line;
-                            break;
-                        }
-                    }
-                }
-                
-                $siguienteNudo = $ultimoNudo + 1;
-                $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
-                
-                Log::info("Intento {$intento}: Último NUDO: {$ultimoNudo}, Siguiente: {$nudoFormateado}");
-                
-                // Verificar que el número no esté siendo usado (por si se insertó entre medio)
-                $queryVerificar = "SELECT COUNT(*) as EXISTE FROM MAEEDO WHERE LTRIM(RTRIM(NUDO)) = '{$nudoFormateado}'";
-                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $queryVerificar . "\ngo\nquit");
-                
-                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                $result = shell_exec($command);
-                unlink($tempFile);
-                
-                $existe = false;
-                if ($result && !str_contains($result, 'error')) {
-                    $lines = explode("\n", $result);
-                    foreach ($lines as $line) {
-                        $line = trim($line);
-                        if (is_numeric($line)) {
-                            $existe = ((int)$line > 0);
-                            break;
-                        }
-                    }
-                }
-                
-                if ($existe) {
-                    Log::warning("⚠️ NUDO {$nudoFormateado} ya existe, reintentando...");
-                    $nudoFormateado = null; // Reintentar
-                    sleep(1); // Esperar 1 segundo antes de reintentar
-                } else {
-                    Log::info("✓ NUDO {$nudoFormateado} disponible");
-                }
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            unlink($tempFile);
+            
+            // Parsear el resultado
+            $ultimoNudo = 40000; // Valor por defecto
+            if (preg_match('/ULTIMO_NUDO\s+(\d+)/', $result, $matches)) {
+                $ultimoNudo = (int)$matches[1];
             }
             
-            if (!$nudoFormateado) {
-                throw new \Exception("No se pudo obtener un número correlativo único después de {$maxIntentos} intentos");
-            }
+            Log::info("Último NUDO encontrado: {$ultimoNudo}");
+            
+            // Generar el siguiente NUDO
+            $siguienteNudo = $ultimoNudo + 1;
+            $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
+            
+            Log::info("✓ NUDO asignado: {$nudoFormateado}");
             
             Log::info('Número correlativo NVV asignado: ' . $nudoFormateado);
             
@@ -408,20 +405,28 @@ class AprobacionController extends Controller
             Log::info("Fecha Vencimiento: {$fechaVencimiento}");
             
             // Insertar encabezado en MAEEDO con campos requeridos por el sistema interno
-            $insertMAEEDO = "
+                $insertMAEEDO = "
                 SET IDENTITY_INSERT MAEEDO ON
                 
                 INSERT INTO MAEEDO (
-                    IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO, SUDO,
-                    TIGEDO, LUVTDO, MEARDO,
-                    FEEMDO, FE01VEDO, FEULVEDO, 
-                    VABRDO, VANEDO, VAABDO, ESDO, KOFUDO
+                    IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO, ENDOFI, SUDO,
+                    TIGEDO, LUVTDO, MEARDO, ESPGDO,
+                    FEEMDO, FE01VEDO, FEULVEDO, FEER,
+                    CAPRCO, CAPRAD, CAPREX, CAPRNC,
+                    MODO, TIMODO, TAMODO,
+                    VAIVDO, VANEDO, VABRDO, VAABDO,
+                    ESDO, KOFUDO, KOTU, LAHORA, DESPACHO, HORAGRAB,
+                    CUOGASDIF, BODESTI, PROYECTO, FLIQUIFCV, LISACTIVA
                 ) VALUES (
                     {$siguienteId}, '01', 'NVV', '{$nudoFormateado}', '{$cotizacion->cliente_codigo}', 
-                    '{$sucursalCliente}', '001',
-                    'I', 'LIB', 'S',
-                    GETDATE(), '{$fechaVencimiento}', '{$fechaVencimiento}', 
-                    {$cotizacion->total}, {$cotizacion->total}, 0, 'N', '{$codigoVendedor}'
+                    '{$sucursalCliente}', '{$cotizacion->cliente_codigo}', 'LIB',
+                    'I', 'LIB', 'N', 'S',
+                    GETDATE(), GETDATE(), GETDATE(), '{$cotizacion->fecha_despacho->format('Y-m-d H:i:s')}',
+                    {$cotizacion->subtotal_neto}, 0, 0, 0,
+                    '$', 'N', 1,
+                    {$cotizacion->iva}, {$cotizacion->subtotal_neto}, {$cotizacion->total}, 0,
+                    '', '{$codigoVendedor}', 1, GETDATE(), 1, 0,
+                    0, '', '', GETDATE(), 'TABPP01P'
                 )
                 
                 SET IDENTITY_INSERT MAEEDO OFF
@@ -447,27 +452,70 @@ class AprobacionController extends Controller
             // Insertar detalles en MAEDDO
             foreach ($cotizacion->productos as $index => $producto) {
                 $lineaId = $index + 1;
-                $subtotal = $producto->cantidad * $producto->precio_unitario;
+                
+                // Obtener datos del producto desde la tabla productos en MySQL
+                $productoDB = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
+                
+                // Valores por defecto si no existe el producto
+                $udtrpr = 1; // Por defecto venta por unidad
+                $rludpr = 1; // Por defecto 1 unidad por caja
+                $ud01pr = 'UN'; // Primera unidad
+                $ud02pr = 'CJ'; // Segunda unidad
+                
+                if ($productoDB) {
+                    // Si el producto existe, usar sus datos
+                    $rludpr = $productoDB->RLUD ?? 1;
+                    $ud01pr = trim($productoDB->UD01PR ?? 'UN');
+                    $ud02pr = trim($productoDB->UD02PR ?? 'CJ');
+                    // Si RLUD > 1, probablemente se vende por caja
+                    $udtrpr = ($rludpr > 1) ? 2 : 1;
+                }
+                
+                // Calcular valores con descuento e IVA
+                $subtotalBruto = $producto->cantidad * $producto->precio_unitario;
+                $porcentajeDescuento = $producto->descuento_porcentaje ?? 0;
+                $valorDescuento = $producto->descuento_valor ?? 0;
+                $subtotalConDescuento = $producto->subtotal_con_descuento ?? $subtotalBruto;
+                
+                // IVA (19%)
+                $porcentajeIVA = 19;
+                $valorIVA = $producto->iva_valor ?? ($subtotalConDescuento * 0.19);
+                
+                // Precios con IVA
+                $precioConIVA = $producto->precio_unitario * 1.19;
+                $precioConIVARedondeado = round($precioConIVA, 2);
                 
                 Log::info("=== PRODUCTO #{$lineaId} ===");
                 Log::info("Código: {$producto->codigo_producto}");
                 Log::info("Nombre: {$producto->nombre_producto}");
                 Log::info("Cantidad: {$producto->cantidad}");
-                Log::info("Precio: {$producto->precio_unitario}");
-                Log::info("Subtotal: {$subtotal}");
+                Log::info("Precio Unitario: {$producto->precio_unitario}");
+                Log::info("UDTRPR (1=UN, 2=CJ): {$udtrpr}");
+                Log::info("RLUDPR (unidades por caja): {$rludpr}");
+                Log::info("UD01PR: {$ud01pr}");
+                Log::info("UD02PR: {$ud02pr}");
+                Log::info("Descuento %: {$porcentajeDescuento}");
+                Log::info("Descuento $: {$valorDescuento}");
+                Log::info("Subtotal con descuento: {$subtotalConDescuento}");
+                Log::info("IVA %: {$porcentajeIVA}");
+                Log::info("IVA $: {$valorIVA}");
+                Log::info("Precio con IVA: {$precioConIVARedondeado}");
                 
+                // INSERT simplificado con solo los campos esenciales
                 $insertMAEDDO = "
                     INSERT INTO MAEDDO (
                         IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
-                        LILG, KOPRCT, NOKOPR, CAPRCO1, PPPRNE, VANELI, VABRLI,
-                        FEEMLI, KOFULIDO
+                        LILG, NULIDO, KOPRCT, NOKOPR, 
+                        CAPRCO1, PPPRNE, VANELI, VABRLI,
+                        KOFULIDO, UDTRPR, RLUDPR, UD01PR, UD02PR,
+                        FEEMLI, FEERLI
                     ) VALUES (
                         {$siguienteId}, '01', 'NVV', '{$nudoFormateado}',
-                        '{$cotizacion->cliente_codigo}', '{$sucursalCliente}', 'SI', '{$producto->codigo_producto}', 
-                        '{$producto->nombre_producto}', {$producto->cantidad}, 
-                        {$producto->precio_unitario}, 
-                        {$subtotal}, {$subtotal},
-                        GETDATE(), '{$codigoVendedor}'
+                        '{$cotizacion->cliente_codigo}', '{$sucursalCliente}',
+                        'SI', '{$lineaId}', '{$producto->codigo_producto}', '{$producto->nombre_producto}',
+                        {$producto->cantidad}, {$producto->precio_unitario}, {$subtotalBruto}, {$subtotalBruto},
+                        '{$codigoVendedor}', {$udtrpr}, {$rludpr}, '{$ud01pr}', '{$ud02pr}',
+                        GETDATE(), '{$cotizacion->fecha_despacho->format('Y-m-d H:i:s')}'
                     )
                 ";
                 

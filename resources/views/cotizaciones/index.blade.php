@@ -26,6 +26,16 @@
                 <div class="card-body">
                     <form method="GET" action="{{ route('cotizaciones.index') }}" class="mb-4">
                         <div class="row">
+                            <div class="col-md-2">
+                                <div class="form-group">
+                                    <label for="tipo_documento">Tipo:</label>
+                                    <select name="tipo_documento" id="tipo_documento" class="form-control">
+                                        <option value="">Todos</option>
+                                        <option value="cotizacion" {{ request('tipo_documento') == 'cotizacion' ? 'selected' : '' }}>Cotizaciones</option>
+                                        <option value="nota_venta" {{ request('tipo_documento') == 'nota_venta' ? 'selected' : '' }}>Notas de Venta</option>
+                                    </select>
+                                </div>
+                            </div>
                             <div class="col-md-3">
                                 <div class="form-group">
                                     <label for="estado">Estado:</label>
@@ -117,6 +127,7 @@
                             <table class="table">
                                 <thead>
                                     <tr>
+                                        <th>Tipo</th>
                                         <th>N° NV</th>
                                         <th>Cliente</th>
                                         <th>Fecha</th>
@@ -134,6 +145,21 @@
                                         $cotizacion = is_object($cotizacion) ? (array)$cotizacion : $cotizacion;
                                     @endphp
                                     <tr>
+                                        <td>
+                                            @if(isset($cotizacion['tipo_documento']))
+                                                @if($cotizacion['tipo_documento'] === 'cotizacion')
+                                                    <span class="badge badge-info">
+                                                        <i class="material-icons" style="font-size: 14px;">description</i> Cotización
+                                                    </span>
+                                                @else
+                                                    <span class="badge badge-success">
+                                                        <i class="material-icons" style="font-size: 14px;">receipt</i> Nota Venta
+                                                    </span>
+                                                @endif
+                                            @else
+                                                <span class="badge badge-secondary">N/A</span>
+                                            @endif
+                                        </td>
                                         <td>
                                             <strong>
                                                 @if(isset($cotizacion['fuente']) && $cotizacion['fuente'] === 'local')
@@ -216,7 +242,17 @@
                                                 @php
                                                     // Estados editables: solo borrador (pendiente) o rechazada
                                                     $estadoAprobacion = $cotizacion['estado_aprobacion'] ?? 'pendiente';
-                                                    $esEditable = in_array($estadoAprobacion, ['pendiente', 'rechazada']);
+                                                    $tipoDocumento = $cotizacion['tipo_documento'] ?? 'nota_venta';
+                                                    
+                                                    // Para Cotizaciones: siempre editable si no fue convertida
+                                                    // Para Notas de Venta: solo editable si está pendiente o rechazada
+                                                    if ($tipoDocumento === 'cotizacion') {
+                                                        $esEditable = in_array($estadoAprobacion, ['pendiente', 'rechazada']);
+                                                    } else {
+                                                        // Nota de venta: SOLO editable si está pendiente o rechazada
+                                                        // NO editable si ya fue aprobada por alguien
+                                                        $esEditable = in_array($estadoAprobacion, ['pendiente', 'rechazada']);
+                                                    }
                                                 @endphp
                                                 @if($esEditable)
                                                     <!-- Botones para cotizaciones editables (borrador o rechazadas) -->
@@ -233,6 +269,16 @@
                                                            class="btn btn-sm btn-secondary" title="Historial">
                                                             <i class="material-icons">history</i>
                                                         </a>
+                                                        
+                                                        @if(isset($cotizacion['tipo_documento']) && $cotizacion['tipo_documento'] === 'cotizacion')
+                                                            <!-- Botón para convertir cotización a nota de venta -->
+                                                            <button type="button" class="btn btn-sm btn-success" 
+                                                                    onclick="convertirANotaVenta({{ $cotizacion['id'] }})" 
+                                                                    title="Convertir a Nota de Venta">
+                                                                <i class="material-icons">transform</i>
+                                                            </button>
+                                                        @endif
+                                                        
                                                         <button type="button" class="btn btn-sm btn-danger" 
                                                                 onclick="eliminarCotizacion({{ $cotizacion['id'] }})" title="Eliminar">
                                                             <i class="material-icons">delete</i>
@@ -269,6 +315,11 @@
                                                             <span class="badge badge-success ml-2">
                                                                 <i class="material-icons" style="font-size: 14px;">check_circle</i>
                                                                 Procesada
+                                                            </span>
+                                                        @elseif(in_array($estadoAprobacion, ['pendiente_picking', 'aprobada_supervisor', 'aprobada_compras']))
+                                                            <span class="badge badge-warning ml-2" title="No se puede editar - En proceso de aprobación">
+                                                                <i class="material-icons" style="font-size: 14px;">lock</i>
+                                                                En aprobación
                                                             </span>
                                                         @endif
                                                     </div>
@@ -377,6 +428,28 @@ function generarNotaVenta(cotizacionId) {
 function eliminarCotizacion(cotizacionId) {
     cotizacionIdEliminar = cotizacionId;
     $('#modalEliminar').modal('show');
+}
+
+function convertirANotaVenta(cotizacionId) {
+    if (!confirm('¿Estás seguro de convertir esta cotización a Nota de Venta?\n\nUna vez convertida, entrará al flujo de aprobaciones (Supervisor, Compras, Picking).')) {
+        return;
+    }
+    
+    $.ajax({
+        url: `/cotizacion/convertir-a-nota-venta/${cotizacionId}`,
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+        },
+        success: function(response) {
+            alert('Cotización convertida exitosamente a Nota de Venta');
+            location.reload();
+        },
+        error: function(xhr) {
+            const errorMsg = xhr.responseJSON?.message || 'Error al convertir la cotización';
+            alert('Error: ' + errorMsg);
+        }
+    });
 }
 
 $('#btnConfirmarGenerar').click(function() {

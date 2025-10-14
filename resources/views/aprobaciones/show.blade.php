@@ -263,7 +263,7 @@
                                             <div class="alert alert-success" style="padding: 10px; margin-top: 10px;">
                                                 <strong><i class="material-icons" style="font-size: 18px; vertical-align: middle;">assignment</i> NVV Generada</strong>
                                                 <br>
-                                                <h4 style="margin: 5px 0;">N° {{ $cotizacion->numero_nvv }}</h4>
+                                                <h4 style="margin: 5px 0;">N° {{ str_pad($cotizacion->numero_nvv, 10, '0', STR_PAD_LEFT) }}</h4>
                                                 <br>
                                                 <a href="{{ route('nvv-pendientes.ver', $cotizacion->numero_nvv) }}" class="btn btn-sm btn-info mt-2" target="_blank">
                                                     <i class="material-icons">visibility</i> Ver NVV en Sistema
@@ -701,6 +701,27 @@ function aprobarNota(notaId, tipo) {
         form.appendChild(comentarios);
         
         document.body.appendChild(form);
+        
+        // Mostrar mensaje de procesamiento
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-info';
+        alert.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 9999; padding: 20px; text-align: center;';
+        alert.innerHTML = '<i class="material-icons">hourglass_empty</i> Procesando aprobación e insertando en SQL Server. Por favor espera...';
+        document.body.appendChild(alert);
+        
+        // Timeout de 30 segundos
+        setTimeout(() => {
+            if (alert.parentNode) {
+                alert.remove();
+                const errorAlert = document.createElement('div');
+                errorAlert.className = 'alert alert-warning';
+                errorAlert.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 9999; padding: 20px; text-align: center;';
+                errorAlert.innerHTML = '<i class="material-icons">warning</i> El proceso está tomando más tiempo del esperado. Recarga la página para verificar el estado.';
+                document.body.appendChild(errorAlert);
+                setTimeout(() => errorAlert.remove(), 5000);
+            }
+        }, 30000);
+        
         form.submit();
     }
 }

@@ -153,6 +153,21 @@
                                                 <label class="bmd-label-floating">Observaciones</label>
                                                 <textarea class="form-control" id="observaciones" rows="3" placeholder="Observaciones adicionales..."></textarea>
                                             </div>
+                                            
+                                            <div class="form-group">
+                                                <label for="fecha_despacho">Fecha de Despacho <span class="text-danger">*</span></label>
+                                                <input type="date" 
+                                                       class="form-control" 
+                                                       id="fecha_despacho" 
+                                                       name="fecha_despacho" 
+                                                       value="{{ $cotizacion->fecha_despacho ? $cotizacion->fecha_despacho->format('Y-m-d') : '' }}"
+                                                       required
+                                                       min="{{ $cotizacion->created_at->addDays(2)->format('Y-m-d') }}">
+                                                <small class="form-text text-muted">
+                                                    <i class="material-icons" style="font-size: 14px; vertical-align: middle;">info</i>
+                                                    La fecha de despacho debe ser al menos 2 días después de la creación ({{ $cotizacion->created_at->format('d/m/Y') }})
+                                                </small>
+                                            </div>
                                         </div>
                                         <div class="col-md-6">
                                             <div class="card card-header-info">
@@ -892,12 +907,23 @@ function guardarNotaVenta() {
     btn.innerHTML = '<i class="material-icons">hourglass_empty</i> Guardando...';
 
     const observaciones = document.getElementById('observaciones').value;
+    const fechaDespacho = document.getElementById('fecha_despacho').value;
+    
+    // Validar fecha de despacho
+    if (!fechaDespacho) {
+        alert('Por favor, selecciona una fecha de despacho');
+        guardandoNotaVenta = false;
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        return;
+    }
     
     const cotizacionData = {
         cliente_codigo: clienteData.codigo,
         cliente_nombre: clienteData.nombre,
         productos: productosCotizacion,
         observaciones: observaciones,
+        fecha_despacho: fechaDespacho,
         _token: document.querySelector('meta[name="csrf-token"]').getAttribute('content')
     };
 

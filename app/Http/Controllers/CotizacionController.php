@@ -855,7 +855,8 @@ class CotizacionController extends Controller
             'productos' => 'required|array|min:1',
             'productos.*.codigo' => 'required',
             'productos.*.cantidad' => 'required|numeric|min:0.01',
-            'productos.*.precio' => 'required|numeric|min:0'
+            'productos.*.precio' => 'required|numeric|min:0',
+            'fecha_despacho' => 'required|date|after_or_equal:' . now()->addDays(2)->format('Y-m-d')
         ]);
         
         \Log::info('✅ Validación de datos completada');
@@ -899,7 +900,13 @@ class CotizacionController extends Controller
             
             // 3. Crear cotización en base de datos local
             \Log::info('📝 CREANDO COTIZACIÓN EN TABLA cotizaciones');
+            
+            // Determinar tipo de documento según parámetro
+            $tipoDocumento = $request->input('tipo_documento', 'nota_venta');
+            $esCotizacion = ($tipoDocumento === 'cotizacion');
+            
             $cotizacionData = [
+                'tipo_documento' => $tipoDocumento,
                 'user_id' => auth()->id(),
                 'cliente_codigo' => $request->cliente_codigo,
                 'cliente_nombre' => $request->cliente_nombre,
@@ -913,13 +920,15 @@ class CotizacionController extends Controller
                 'iva' => $ivaTotal,
                 'total' => $total,
                 'observaciones' => $request->observaciones,
+                'fecha_despacho' => $request->fecha_despacho ? \Carbon\Carbon::parse($request->fecha_despacho)->startOfDay() : null,
                 'estado' => 'borrador',
-                'requiere_aprobacion' => false
+                'requiere_aprobacion' => !$esCotizacion // Solo requiere aprobación si es nota_venta
             ];
             \Log::info('📝 Datos de cotización a crear:', $cotizacionData);
+            \Log::info('📋 Tipo de documento: ' . $tipoDocumento . ' - Es cotización: ' . ($esCotizacion ? 'SÍ' : 'NO'));
             
             $cotizacion = Cotizacion::create($cotizacionData);
-            \Log::info("✅ Cotización creada exitosamente - ID: {$cotizacion->id}");
+            \Log::info("✅ " . ($esCotizacion ? 'Cotización' : 'Nota de Venta') . " creada exitosamente - ID: {$cotizacion->id}");
             
             // 4. Verificar stock y crear detalles de cotización
             \Log::info('📦 VERIFICANDO STOCK Y CREANDO PRODUCTOS DE COTIZACIÓN');
@@ -1266,6 +1275,7 @@ class CotizacionController extends Controller
         $buscar = $request->get('buscar', ''); // Nuevo filtro de búsqueda general
         $montoMin = $request->get('monto_min', '');
         $montoMax = $request->get('monto_max', '');
+        $tipoDocumento = $request->get('tipo_documento', ''); // Nuevo filtro: cotizacion | nota_venta
         
         // Si es Supervisor, puede ver todas las cotizaciones
         if ($user->hasRole('Supervisor') || $user->hasRole('Super Admin')) {
@@ -1273,7 +1283,7 @@ class CotizacionController extends Controller
             $cotizacionesSQL = $this->obtenerCotizacionesDesdeSQLServer($estado, $cliente, $fechaInicio, $fechaFin, '', $buscar, $montoMin, $montoMax);
             
             // Obtener cotizaciones locales (todas)
-            $cotizacionesLocales = $this->obtenerCotizacionesLocales($estado, $cliente, $fechaInicio, $fechaFin, $buscar, $montoMin, $montoMax, true);
+            $cotizacionesLocales = $this->obtenerCotizacionesLocales($estado, $cliente, $fechaInicio, $fechaFin, $buscar, $montoMin, $montoMax, true, $tipoDocumento);
         } else {
             // Si es Vendedor, solo sus cotizaciones
             $codigoVendedor = $user->codigo_vendedor ?? '';
@@ -1282,7 +1292,7 @@ class CotizacionController extends Controller
             $cotizacionesSQL = $this->obtenerCotizacionesDesdeSQLServer($estado, $cliente, $fechaInicio, $fechaFin, $codigoVendedor, $buscar, $montoMin, $montoMax);
             
             // Obtener cotizaciones locales del vendedor
-            $cotizacionesLocales = $this->obtenerCotizacionesLocales($estado, $cliente, $fechaInicio, $fechaFin, $buscar, $montoMin, $montoMax);
+            $cotizacionesLocales = $this->obtenerCotizacionesLocales($estado, $cliente, $fechaInicio, $fechaFin, $buscar, $montoMin, $montoMax, false, $tipoDocumento);
         }
         
         // Combinar ambas listas
@@ -1306,7 +1316,7 @@ class CotizacionController extends Controller
     /**
      * Obtener cotizaciones locales del vendedor
      */
-    private function obtenerCotizacionesLocales($estado = '', $cliente = '', $fechaInicio = '', $fechaFin = '', $buscar = '', $montoMin = '', $montoMax = '', $verTodas = false)
+    private function obtenerCotizacionesLocales($estado = '', $cliente = '', $fechaInicio = '', $fechaFin = '', $buscar = '', $montoMin = '', $montoMax = '', $verTodas = false, $tipoDocumento = '')
     {
         try {
             $query = Cotizacion::with(['user', 'productos']);
@@ -1314,6 +1324,11 @@ class CotizacionController extends Controller
             // Si no es para ver todas, filtrar por usuario actual
             if (!$verTodas) {
                 $query->where('user_id', auth()->id());
+            }
+            
+            // Filtro por tipo de documento
+            if ($tipoDocumento) {
+                $query->where('tipo_documento', $tipoDocumento);
             }
             
             // Filtro por estado
@@ -2768,6 +2783,7 @@ class CotizacionController extends Controller
             // Actualizar cotización
             $cotizacion->update([
                 'observaciones' => $request->input('observaciones', ''),
+                'fecha_despacho' => $request->fecha_despacho ? \Carbon\Carbon::parse($request->fecha_despacho)->startOfDay() : null,
                 'subtotal' => $subtotalSinDescuentos,
                 'descuento_global' => $descuentoTotal,
                 'subtotal_neto' => $subtotalNeto,
@@ -2986,5 +3002,40 @@ class CotizacionController extends Controller
             'success' => true,
             'data' => $chequesProtestados
         ]);
+    }
+    
+    /**
+     * Convertir cotización a nota de venta
+     */
+    public function convertirANotaVenta($id)
+    {
+        try {
+            $cotizacion = Cotizacion::findOrFail($id);
+            
+            // Verificar permisos
+            if (!auth()->user()->hasRole(['Super Admin', 'Vendedor']) && auth()->id() !== $cotizacion->user_id) {
+                return redirect()->back()->with('error', 'No tienes permiso para convertir esta cotización');
+            }
+            
+            // Verificar que sea una cotización
+            if ($cotizacion->tipo_documento !== 'cotizacion') {
+                return redirect()->back()->with('error', 'Este documento ya es una Nota de Venta');
+            }
+            
+            DB::beginTransaction();
+            
+            // Convertir a nota de venta
+            $cotizacion->convertirANotaVenta(auth()->id());
+            
+            DB::commit();
+            
+            return redirect()->route('cotizaciones.index')
+                ->with('success', 'Cotización convertida exitosamente a Nota de Venta. Ahora entrará al flujo de aprobaciones.');
+                
+        } catch (\Exception $e) {
+            DB::rollback();
+            \Log::error('Error convirtiendo cotización a nota de venta: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Error al convertir cotización: ' . $e->getMessage());
+        }
     }
 } 

@@ -12,6 +12,7 @@ class Cotizacion extends Model
     protected $table = 'cotizaciones';
 
     protected $fillable = [
+        'tipo_documento',
         'user_id',
         'cliente_codigo',
         'cliente_nombre',
@@ -24,6 +25,7 @@ class Cotizacion extends Model
         'descuento_global',
         'total',
         'observaciones',
+        'fecha_despacho',
         'motivo_rechazo',
         'requiere_aprobacion',
         'nota_venta_id',
@@ -55,6 +57,7 @@ class Cotizacion extends Model
         'fecha' => 'datetime',
         'fecha_aprobacion' => 'datetime',
         'fecha_cancelacion' => 'datetime',
+        'fecha_despacho' => 'datetime',
         'subtotal' => 'decimal:2',
         'descuento_global' => 'decimal:2',
         'total' => 'decimal:2',
@@ -190,11 +193,59 @@ class Cotizacion extends Model
     {
         return $query->where('tiene_problemas_credito', true);
     }
+    
+    // Scopes para tipo de documento
+    public function scopeCotizaciones($query)
+    {
+        return $query->where('tipo_documento', 'cotizacion');
+    }
+    
+    public function scopeNotasVenta($query)
+    {
+        return $query->where('tipo_documento', 'nota_venta');
+    }
 
     // Métodos
     public function puedeAprobar()
     {
         return in_array($this->estado, ['borrador', 'enviada']) && $this->requiere_aprobacion;
+    }
+    
+    /**
+     * Convierte una cotización en nota de venta
+     * Inicia el flujo de aprobaciones
+     */
+    public function convertirANotaVenta($userId = null)
+    {
+        if ($this->tipo_documento !== 'cotizacion') {
+            throw new \Exception('Solo se pueden convertir cotizaciones a notas de venta');
+        }
+        
+        $this->tipo_documento = 'nota_venta';
+        $this->estado_aprobacion = 'pendiente';
+        $this->requiere_aprobacion = true;
+        
+        // Resetear aprobaciones previas si existían
+        $this->aprobado_por_supervisor = null;
+        $this->aprobado_por_compras = null;
+        $this->aprobado_por_picking = null;
+        $this->fecha_aprobacion_supervisor = null;
+        $this->fecha_aprobacion_compras = null;
+        $this->fecha_aprobacion_picking = null;
+        
+        $this->save();
+        
+        // Registrar en historial
+        \App\Models\CotizacionHistorial::crearRegistro(
+            $this->id,
+            'pendiente',
+            'creacion',
+            'pendiente',
+            'Cotización convertida a Nota de Venta - Iniciando flujo de aprobaciones',
+            ['convertido_por' => $userId ?? auth()->id()]
+        );
+        
+        return $this;
     }
 
     public function puedeCancelar()

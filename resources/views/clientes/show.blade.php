@@ -21,6 +21,10 @@
                                 </a>
                                 @if($validacion['puede'] && auth()->user()->hasRole('Vendedor'))
                                     <a href="{{ url('/cotizacion/nueva?cliente=' . $cliente->codigo_cliente . '&nombre=' . urlencode($cliente->nombre_cliente)) }}" 
+                                       class="btn btn-info">
+                                        <i class="material-icons">description</i> Nueva Cotización
+                                    </a>
+                                    <a href="{{ url('/cotizacion/nueva?cliente=' . $cliente->codigo_cliente . '&nombre=' . urlencode($cliente->nombre_cliente)) }}" 
                                        class="btn btn-primary">
                                         <i class="material-icons">add_shopping_cart</i> Nueva Nota De Venta
                                     </a>
@@ -355,6 +359,82 @@
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cotizaciones del Cliente (MySQL) -->
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header card-header-info">
+                        <h4 class="card-title">Cotizaciones</h4>
+                        <p class="card-category">Cotizaciones enviadas al cliente (sin aprobaciones)</p>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead class="text-info">
+                                    <tr>
+                                        <th>N° Cotización</th>
+                                        <th>Fecha</th>
+                                        <th>Total</th>
+                                        <th>Productos</th>
+                                        <th>Estado</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @php
+                                        $cotizacionesCliente = \App\Models\Cotizacion::where('cliente_codigo', $cliente->codigo_cliente)
+                                            ->where('tipo_documento', 'cotizacion')
+                                            ->with('productos')
+                                            ->orderBy('created_at', 'desc')
+                                            ->limit(10)
+                                            ->get();
+                                    @endphp
+                                    @forelse($cotizacionesCliente as $cotizacion)
+                                    <tr>
+                                        <td><strong>COT#{{ $cotizacion->id }}</strong></td>
+                                        <td>{{ $cotizacion->created_at->format('d/m/Y') }}</td>
+                                        <td><strong>${{ number_format($cotizacion->total, 0) }}</strong></td>
+                                        <td>
+                                            <span class="badge badge-primary">{{ $cotizacion->productos->count() }} producto(s)</span>
+                                        </td>
+                                        <td>
+                                            @if($cotizacion->estado_aprobacion === 'pendiente' || $cotizacion->estado_aprobacion === 'rechazada')
+                                                <span class="badge badge-info">Cotización</span>
+                                            @else
+                                                <span class="badge badge-success">Convertida a NVV</span>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            <a href="{{ route('cotizacion.ver', $cotizacion->id) }}" class="btn btn-sm btn-info" title="Ver">
+                                                <i class="material-icons">visibility</i>
+                                            </a>
+                                            @if(in_array($cotizacion->estado_aprobacion, ['pendiente', 'rechazada']))
+                                                <a href="{{ route('cotizacion.editar', $cotizacion->id) }}" class="btn btn-sm btn-warning" title="Editar">
+                                                    <i class="material-icons">edit</i>
+                                                </a>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                    @empty
+                                    <tr>
+                                        <td colspan="6" class="text-center">No hay cotizaciones para este cliente</td>
+                                    </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                        @if($cotizacionesCliente->count() > 0)
+                        <div class="text-right mt-3">
+                            <a href="{{ route('cotizaciones.index') }}?cliente={{ $cliente->codigo_cliente }}&tipo_documento=cotizacion" class="btn btn-sm btn-info">
+                                <i class="material-icons">list</i> Ver todas las cotizaciones
+                            </a>
+                        </div>
+                        @endif
                     </div>
                 </div>
             </div>
