@@ -234,10 +234,11 @@ class AprobacionController extends Controller
             
             // Insertar en SQL Server de forma asíncrona
             Log::info("📝 PASO CRÍTICO: Iniciando insert en SQL Server...");
+            Log::info("🧪 USANDO FUNCIÓN DE PRUEBA CON NUDO FIJO");
             $startTime = microtime(true);
             
             try {
-                $resultado = $this->insertarEnSQLServer($cotizacion);
+                $resultado = $this->insertarEnSQLServerTest($cotizacion);
                 $endTime = microtime(true);
                 $duration = $endTime - $startTime;
                 Log::info("⏱️ PASO CRÍTICO: Insert completado en " . round($duration, 2) . " segundos");
@@ -706,6 +707,202 @@ class AprobacionController extends Controller
             
         } catch (\Exception $e) {
             Log::error('Error en insertarEnSQLServer: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * FUNCIÓN DE PRUEBA: Insertar con NUDO fijo para debugging
+     */
+    private function insertarEnSQLServerTest($cotizacion)
+    {
+        try {
+            Log::info("🧪 === INICIO FUNCIÓN DE PRUEBA ===");
+            
+            // NUDO FIJO PARA PRUEBAS
+            $nudoFormateado = '9999999991';
+            Log::info("🧪 NUDO FIJO: {$nudoFormateado}");
+            
+            // Obtener siguiente correlativo para IDMAEEDO
+            $queryCorrelativo = "SELECT TOP 1 ISNULL(MAX(IDMAEEDO), 0) + 1 AS siguiente_id FROM MAEEDO WHERE EMPRESA = '01'";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $queryCorrelativo . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            unlink($tempFile);
+            
+            // Parsear el resultado
+            $siguienteId = 1;
+            if ($result && !str_contains($result, 'error')) {
+                if (preg_match('/siguiente_id\s*\n\s*(\d+)/', $result, $matches)) {
+                    $siguienteId = (int)$matches[1];
+                } else {
+                    $lines = explode("\n", $result);
+                    $maxNumber = 0;
+                    foreach ($lines as $line) {
+                        $line = trim($line);
+                        if (is_numeric($line) && (int)$line > $maxNumber && (int)$line > 1000) {
+                            $maxNumber = (int)$line;
+                        }
+                    }
+                    if ($maxNumber > 0) {
+                        $siguienteId = $maxNumber;
+                    }
+                }
+            }
+            
+            Log::info("🧪 Siguiente ID para MAEEDO: {$siguienteId}");
+            
+            // Obtener información del vendedor
+            $codigoVendedor = $cotizacion->user->codigo_vendedor ?? '001';
+            $nombreVendedor = $cotizacion->user->name ?? 'Vendedor Sistema';
+            
+            // Obtener sucursal del cliente
+            $querySucursal = "SELECT LTRIM(RTRIM(SUEN)) as SUCURSAL FROM MAEEN WHERE KOEN = '{$cotizacion->cliente_codigo}'";
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $querySucursal . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            unlink($tempFile);
+            
+            $sucursalCliente = '';
+            if ($result && !str_contains($result, 'error')) {
+                $lines = explode("\n", $result);
+                $foundHeader = false;
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if ($line === 'SUCURSAL') {
+                        $foundHeader = true;
+                        continue;
+                    }
+                    if ($foundHeader && !empty($line) && !str_contains($line, 'row') && !str_contains($line, '---') && !str_contains($line, '>')) {
+                        $sucursalCliente = $line;
+                        break;
+                    }
+                }
+            }
+            
+            Log::info("🧪 Sucursal Cliente: '{$sucursalCliente}'");
+            Log::info("🧪 Vendedor: {$codigoVendedor}");
+            
+            // Fecha de vencimiento
+            $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
+            
+            // INSERT SIMPLIFICADO DE MAEEDO
+            $insertMAEEDO = "
+                SET IDENTITY_INSERT MAEEDO ON
+                
+                INSERT INTO MAEEDO (
+                    IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO, ENDOFI, SUDO,
+                    TIGEDO, LUVTDO, MEARDO, ESPGDO,
+                    FEEMDO, FE01VEDO, FEULVEDO, FEER,
+                    CAPRCO, CAPRAD, CAPREX, CAPRNC,
+                    MODO, TIMODO, TAMODO,
+                    VAIVDO, VANEDO, VABRDO, VAABDO,
+                    ESDO, KOFUDO, KOTU, LAHORA, DESPACHO, HORAGRAB,
+                    CUOGASDIF, BODESTI, PROYECTO, FLIQUIFCV, LISACTIVA
+                ) VALUES (
+                    {$siguienteId}, '01', 'NVV', '{$nudoFormateado}', '{$cotizacion->cliente_codigo}', 
+                    '{$sucursalCliente}', '{$cotizacion->cliente_codigo}', 'LIB',
+                    'I', 'LIB', 'N', 'S',
+                    GETDATE(), GETDATE(), GETDATE(), '{$cotizacion->fecha_despacho->format('Y-m-d H:i:s')}',
+                    {$cotizacion->subtotal_neto}, 0, 0, 0,
+                    '$', 'N', 1,
+                    {$cotizacion->iva}, {$cotizacion->subtotal_neto}, {$cotizacion->total}, 0,
+                    '', '{$codigoVendedor}', 1, GETDATE(), 1, 0,
+                    0, '', '', GETDATE(), 'TABPP01P'
+                )
+                
+                SET IDENTITY_INSERT MAEEDO OFF
+            ";
+            
+            Log::info("🧪 Ejecutando INSERT MAEEDO...");
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $insertMAEEDO . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            unlink($tempFile);
+            
+            if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
+                Log::error("🧪 ERROR en MAEEDO: " . $result);
+                throw new \Exception('Error insertando encabezado: ' . $result);
+            }
+            
+            Log::info("🧪 ✅ MAEEDO insertado correctamente");
+            
+            // INSERT SIMPLIFICADO DE MAEDDO (solo primer producto para prueba)
+            $producto = $cotizacion->productos->first();
+            if ($producto) {
+                $productoDB = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
+                
+                $udtrpr = 1;
+                $rludpr = 1;
+                $ud01pr = 'UN';
+                $ud02pr = 'CJ';
+                
+                if ($productoDB) {
+                    $rludpr = $productoDB->RLUD ?? 1;
+                    $ud01pr = trim($productoDB->UD01PR ?? 'UN');
+                    $ud02pr = trim($productoDB->UD02PR ?? 'CJ');
+                    $udtrpr = ($rludpr > 1) ? 2 : 1;
+                }
+                
+                $subtotal = $producto->cantidad * $producto->precio_unitario;
+                
+                $insertMAEDDO = "
+                    INSERT INTO MAEDDO (
+                        IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
+                        LILG, NULIDO, KOPRCT, NOKOPR, 
+                        CAPRCO1, PPPRNE, VANELI, VABRLI,
+                        KOFULIDO, UDTRPR, RLUDPR, UD01PR, UD02PR,
+                        FEEMLI, FEERLI
+                    ) VALUES (
+                        {$siguienteId}, '01', 'NVV', '{$nudoFormateado}',
+                        '{$cotizacion->cliente_codigo}', '{$sucursalCliente}',
+                        'SI', '1', '{$producto->codigo_producto}', '{$producto->nombre_producto}',
+                        {$producto->cantidad}, {$producto->precio_unitario}, {$subtotal}, {$subtotal},
+                        '{$codigoVendedor}', {$udtrpr}, {$rludpr}, '{$ud01pr}', '{$ud02pr}',
+                        GETDATE(), '{$cotizacion->fecha_despacho->format('Y-m-d H:i:s')}'
+                    )
+                ";
+                
+                Log::info("🧪 Ejecutando INSERT MAEDDO...");
+                
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $insertMAEDDO . "\ngo\nquit");
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+                unlink($tempFile);
+                
+                if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
+                    Log::error("🧪 ERROR en MAEDDO: " . $result);
+                    throw new \Exception('Error insertando detalle: ' . $result);
+                }
+                
+                Log::info("🧪 ✅ MAEDDO insertado correctamente");
+            }
+            
+            // Guardar el NUDO en MySQL
+            $cotizacion->numero_nvv = $nudoFormateado;
+            $cotizacion->save();
+            
+            Log::info("🧪 === FIN FUNCIÓN DE PRUEBA - ÉXITO ===");
+            
+            return [
+                'success' => true,
+                'nota_venta_id' => $siguienteId,
+                'numero_correlativo' => $nudoFormateado,
+                'message' => "🧪 NVV DE PRUEBA #{$nudoFormateado} insertada correctamente"
+            ];
+            
+        } catch (\Exception $e) {
+            Log::error('🧪 ERROR en insertarEnSQLServerTest: ' . $e->getMessage());
             throw $e;
         }
     }
