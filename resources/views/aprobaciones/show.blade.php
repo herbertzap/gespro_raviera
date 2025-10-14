@@ -757,9 +757,10 @@ function confirmarAprobacionPicking(event) {
     console.log('🔵 INICIO: confirmarAprobacionPicking llamado');
     console.log('Event:', event);
     
+    event.preventDefault(); // Prevenir el envío automático primero
+    
     if (!confirm('¿Estás seguro de aprobar esta nota de venta? Se insertará en la base de datos de producción.')) {
         console.log('🔴 Usuario canceló la confirmación');
-        event.preventDefault();
         return false;
     }
     
@@ -768,9 +769,11 @@ function confirmarAprobacionPicking(event) {
     // Bloquear el botón para evitar doble clic
     const btn = document.getElementById('btnAprobarPicking');
     const texto = document.getElementById('textoBotonAprobar');
+    const form = document.getElementById('formAprobarPicking');
     
     console.log('Botón encontrado:', btn);
     console.log('Texto encontrado:', texto);
+    console.log('Formulario encontrado:', form);
     
     if (btn) {
         btn.disabled = true;
@@ -789,8 +792,16 @@ function confirmarAprobacionPicking(event) {
         console.log('✅ Mensaje de espera mostrado');
     }
     
-    console.log('🟢 Retornando true - el formulario se enviará');
-    return true;
+    // Enviar el formulario manualmente
+    if (form) {
+        console.log('🟢 Enviando formulario manualmente...');
+        form.submit();
+        console.log('✅ Formulario enviado');
+    } else {
+        console.error('❌ ERROR: Formulario no encontrado');
+    }
+    
+    return false; // Prevenir el envío automático ya que lo hacemos manualmente
 }
 
 // Ver detalle de NVV en sistema SQL Server
