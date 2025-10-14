@@ -754,14 +754,23 @@ function rechazarNota(notaId) {
 
 // Confirmar y bloquear botón de aprobación Picking
 function confirmarAprobacionPicking(event) {
+    console.log('🔵 INICIO: confirmarAprobacionPicking llamado');
+    console.log('Event:', event);
+    
     if (!confirm('¿Estás seguro de aprobar esta nota de venta? Se insertará en la base de datos de producción.')) {
+        console.log('🔴 Usuario canceló la confirmación');
         event.preventDefault();
         return false;
     }
     
+    console.log('✅ Usuario confirmó la aprobación');
+    
     // Bloquear el botón para evitar doble clic
     const btn = document.getElementById('btnAprobarPicking');
     const texto = document.getElementById('textoBotonAprobar');
+    
+    console.log('Botón encontrado:', btn);
+    console.log('Texto encontrado:', texto);
     
     if (btn) {
         btn.disabled = true;
@@ -769,13 +778,18 @@ function confirmarAprobacionPicking(event) {
         btn.classList.add('btn-secondary');
         texto.innerHTML = 'Procesando...';
         
+        console.log('✅ Botón bloqueado y texto cambiado');
+        
         // Mostrar mensaje de espera
         const alert = document.createElement('div');
         alert.className = 'alert alert-info mt-3';
         alert.innerHTML = '<i class="material-icons">hourglass_empty</i> Procesando aprobación e insertando en SQL Server. Por favor espera...';
         btn.parentElement.parentElement.appendChild(alert);
+        
+        console.log('✅ Mensaje de espera mostrado');
     }
     
+    console.log('🟢 Retornando true - el formulario se enviará');
     return true;
 }
 
