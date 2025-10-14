@@ -99,75 +99,34 @@ class AprobarPickingManual extends Command
             
             Log::info("Siguiente IDMAEEDO: {$siguienteId}");
             
-            // Obtener siguiente NUDO con verificación anti-colisión
-            $maxIntentos = 5;
-            $intento = 0;
-            $nudoFormateado = null;
-            $siguienteNudo = null;
+            // Obtener el último NUDO de NVV y sumarle 1 (consulta simple y directa)
+            $queryNudo = "SELECT TOP 1 NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1 ORDER BY IDMAEEDO DESC";
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
             
-            while ($intento < $maxIntentos && !$nudoFormateado) {
-                $intento++;
-                
-                // Obtener último NUDO de NVV específicamente (cada tipo tiene su propia secuencia)
-                // IMPORTANTE: Filtrar por TIDO = 'NVV' porque cada tipo de documento tiene numeración independiente
-                $queryNudo = "SELECT TOP 1 CAST(NUDO AS INT) as ULTIMO_NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1 ORDER BY IDMAEEDO DESC";
-                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
-                
-                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                $result = shell_exec($command);
-                unlink($tempFile);
-                
-                $ultimoNudo = 37559;
-                if ($result && !str_contains($result, 'error')) {
-                    $lines = explode("\n", $result);
-                    foreach ($lines as $line) {
-                        $line = trim($line);
-                        if (is_numeric($line) && $line > 0) {
-                            $ultimoNudo = (int)$line;
-                            break;
-                        }
-                    }
-                }
-                
-                $siguienteNudo = $ultimoNudo + 1;
-                $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
-                
-                Log::info("Intento {$intento}: Último NUDO: {$ultimoNudo}, Siguiente: {$nudoFormateado}");
-                
-                // Verificar que no exista (anti-colisión)
-                $queryVerificar = "SELECT COUNT(*) as EXISTE FROM MAEEDO WHERE LTRIM(RTRIM(NUDO)) = '{$nudoFormateado}'";
-                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $queryVerificar . "\ngo\nquit");
-                
-                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                $result = shell_exec($command);
-                unlink($tempFile);
-                
-                $existe = false;
-                if ($result && !str_contains($result, 'error')) {
-                    $lines = explode("\n", $result);
-                    foreach ($lines as $line) {
-                        $line = trim($line);
-                        if (is_numeric($line)) {
-                            $existe = ((int)$line > 0);
-                            break;
-                        }
-                    }
-                }
-                
-                if ($existe) {
-                    Log::warning("⚠️ NUDO {$nudoFormateado} ya existe (colisión detectada), reintentando...");
-                    $nudoFormateado = null;
-                    sleep(1);
-                } else {
-                    Log::info("✓ NUDO {$nudoFormateado} disponible y único");
-                }
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            unlink($tempFile);
+            
+            Log::info("Resultado query último NUDO: " . $result);
+            
+            // Parsear el resultado - buscar el NUDO en el formato 0000037566
+            $ultimoNudoStr = '';
+            if (preg_match('/(\d{10})/', $result, $matches)) {
+                $ultimoNudoStr = $matches[1];
             }
             
-            if (!$nudoFormateado) {
-                throw new \Exception("No se pudo obtener un número correlativo único después de {$maxIntentos} intentos");
+            if (empty($ultimoNudoStr)) {
+                throw new \Exception("No se pudo obtener el último NUDO de NVV");
             }
+            
+            // Convertir a entero, sumar 1, y formatear de vuelta
+            $ultimoNudo = (int)$ultimoNudoStr;
+            $siguienteNudo = $ultimoNudo + 1;
+            $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
+            
+            Log::info("Último NUDO de NVV: {$ultimoNudoStr}");
+            Log::info("Siguiente NUDO asignado: {$nudoFormateado}");
             
             // Obtener sucursal del cliente
             $querySucursal = "SELECT LTRIM(RTRIM(SUEN)) as SUCURSAL FROM MAEEN WHERE KOEN = '{$cotizacion->cliente_codigo}'";
