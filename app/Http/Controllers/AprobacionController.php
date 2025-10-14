@@ -329,8 +329,9 @@ class AprobacionController extends Controller
             
             Log::info('Siguiente ID para MAEEDO: ' . $siguienteId);
             
-            // Obtener el último NUDO de NVV y sumarle 1 (consulta simplificada, excluyendo valores anómalos)
-            $queryNudo = "SELECT TOP 1 CAST(NUDO AS INT) as ULTIMO_NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1 AND CAST(NUDO AS INT) < 99999 ORDER BY CAST(NUDO AS INT) DESC";
+            // Obtener el último NUDO insertado (ordenar por IDMAEEDO DESC para obtener el último registro)
+            // Importante: NO ordenar por NUDO numérico, sino por ID de inserción
+            $queryNudo = "SELECT TOP 1 CAST(NUDO AS INT) as ULTIMO_NUDO FROM MAEEDO WHERE ISNUMERIC(NUDO) = 1 ORDER BY IDMAEEDO DESC";
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
@@ -340,18 +341,53 @@ class AprobacionController extends Controller
             unlink($tempFile);
             
             // Parsear el resultado
-            $ultimoNudo = 40000; // Valor por defecto
+            $ultimoNudo = 0;
             if (preg_match('/ULTIMO_NUDO\s+(\d+)/', $result, $matches)) {
                 $ultimoNudo = (int)$matches[1];
             }
             
-            Log::info("Último NUDO encontrado: {$ultimoNudo}");
+            if ($ultimoNudo == 0) {
+                Log::error("No se pudo obtener el último NUDO. Resultado de tsql: " . $result);
+                throw new \Exception("No se pudo obtener el último número correlativo");
+            }
             
-            // Generar el siguiente NUDO
-            $siguienteNudo = $ultimoNudo + 1;
-            $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
+            Log::info("Último NUDO encontrado (último insertado): {$ultimoNudo}");
             
-            Log::info("✓ NUDO asignado: {$nudoFormateado}");
+            // Generar el siguiente NUDO con verificación anti-colisión
+            $maxIntentos = 10;
+            $intento = 0;
+            $nudoFormateado = null;
+            
+            while ($intento < $maxIntentos && !$nudoFormateado) {
+                $intento++;
+                $siguienteNudo = $ultimoNudo + $intento;
+                $nudoTemporal = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
+                
+                // Verificar que el NUDO no exista
+                $queryVerificar = "SELECT COUNT(*) as EXISTE FROM MAEEDO WHERE NUDO = '{$nudoTemporal}'";
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $queryVerificar . "\ngo\nquit");
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+                unlink($tempFile);
+                
+                $existe = false;
+                if (preg_match('/EXISTE\s+(\d+)/', $result, $matches)) {
+                    $existe = ((int)$matches[1] > 0);
+                }
+                
+                if (!$existe) {
+                    $nudoFormateado = $nudoTemporal;
+                    Log::info("✓ NUDO {$nudoFormateado} disponible (intento {$intento})");
+                } else {
+                    Log::info("NUDO {$nudoTemporal} ya existe, probando siguiente...");
+                }
+            }
+            
+            if (!$nudoFormateado) {
+                throw new \Exception("No se pudo obtener un número correlativo único después de {$maxIntentos} intentos");
+            }
             
             Log::info('Número correlativo NVV asignado: ' . $nudoFormateado);
             
