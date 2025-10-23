@@ -291,14 +291,6 @@
 
 
 
-            @can('view_stock')
-            <li @if ($pageSlug == 'stock') class="active " @endif>
-                <a href="{{ route('stock.index') }}">
-                    <i class="tim-icons icon-box-2"></i>
-                    <p>{{ __('Gestión de Stock') }}</p>
-                </a>
-            </li>
-            @endcan
 
             @can('ver logs')
             <li @if ($pageSlug == 'log') class="active " @endif>

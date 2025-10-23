@@ -17,8 +17,7 @@ class ProductoController extends Controller
         try {
             $estadisticas = $this->obtenerEstadisticasProductos();
             $productosBajoStock = $this->obtenerProductosBajoStock();
-            $productosVendidos = $this->obtenerProductosMasVendidos();
-            $stockCategorias = $this->obtenerStockPorCategorias();
+            $productosVendidos = $this->obtenerProductosMasVendidos(50); // Top 50
             
             return view('productos.index', [
                 'productosBajoStock' => $estadisticas['productos_bajo_stock'],
@@ -27,7 +26,6 @@ class ProductoController extends Controller
                 'valorTotalStock' => $estadisticas['valor_total_stock'],
                 'productosBajoStockLista' => $productosBajoStock,
                 'productosVendidos' => $productosVendidos,
-                'stockCategorias' => $stockCategorias,
                 'pageSlug' => 'productos'
             ]);
             
@@ -57,20 +55,25 @@ class ProductoController extends Controller
                 return response()->json([]);
             }
             
-            $productos = CotizacionProducto::where('codigo_producto', 'LIKE', "%{$termino}%")
-                ->orWhere('nombre_producto', 'LIKE', "%{$termino}%")
-                ->select('codigo_producto', 'nombre_producto', 'precio_unitario')
-                ->distinct()
-                ->limit(10)
+            // Buscar en la tabla productos (MySQL) que tiene los datos sincronizados
+            $productos = \App\Models\Producto::where(function($query) use ($termino) {
+                    $query->where('KOPR', 'LIKE', "%{$termino}%")
+                          ->orWhere('NOKOPR', 'LIKE', "%{$termino}%");
+                })
+                ->where('activo', true)
+                ->limit(20)
                 ->get()
                 ->map(function ($producto) {
+                    // Usar precio_01p como predeterminado
+                    $precio = $producto->precio_01p ?? 0;
+                    
                     return [
-                        'codigo' => $producto->codigo_producto,
-                        'nombre' => $producto->nombre_producto,
-                        'precio' => $producto->precio_unitario,
-                        'stock_actual' => rand(0, 50),
-                        'stock_minimo' => 10,
-                        'activo' => true
+                        'codigo' => $producto->KOPR,
+                        'nombre' => $producto->NOKOPR,
+                        'precio' => $precio,
+                        'stock_actual' => $producto->stock_disponible ?? 0,
+                        'stock_minimo' => 10, // Valor predeterminado
+                        'activo' => $producto->activo
                     ];
                 });
             
@@ -136,20 +139,29 @@ class ProductoController extends Controller
         }
     }
     
-    private function obtenerProductosMasVendidos()
+    private function obtenerProductosMasVendidos($limit = 50)
     {
         try {
+            // Obtener productos más vendidos de cotizaciones aprobadas (últimos 3 meses)
             $productos = CotizacionProducto::select('codigo_producto', 'nombre_producto')
                 ->selectRaw('SUM(cantidad) as total_vendido')
+                ->selectRaw('COUNT(DISTINCT cotizacion_id) as total_ventas')
+                ->selectRaw('AVG(precio_unitario) as precio_promedio')
+                ->whereHas('cotizacion', function($query) {
+                    $query->where('estado_aprobacion', 'aprobada_picking')
+                          ->where('created_at', '>=', now()->subMonths(3));
+                })
                 ->groupBy('codigo_producto', 'nombre_producto')
                 ->orderBy('total_vendido', 'desc')
-                ->limit(5)
+                ->limit($limit)
                 ->get()
                 ->map(function ($producto) {
                     return [
                         'codigo' => $producto->codigo_producto,
                         'nombre' => $producto->nombre_producto,
-                        'cantidad' => $producto->total_vendido
+                        'cantidad' => $producto->total_vendido,
+                        'total_ventas' => $producto->total_ventas,
+                        'precio_promedio' => $producto->precio_promedio
                     ];
                 });
             
@@ -270,6 +282,81 @@ class ProductoController extends Controller
                 'success' => false,
                 'message' => 'Error al sincronizar productos: ' . $e->getMessage()
             ], 500);
+        }
+    }
+    
+    /**
+     * Ver detalle de un producto con estadísticas de ventas
+     */
+    public function ver($codigoProducto)
+    {
+        try {
+            // Obtener información del producto desde MySQL
+            $producto = \App\Models\Producto::where('KOPR', $codigoProducto)->first();
+            
+            if (!$producto) {
+                abort(404, 'Producto no encontrado');
+            }
+            
+            // Obtener estadísticas de ventas (últimos 6 meses)
+            $estadisticasVentas = CotizacionProducto::where('codigo_producto', $codigoProducto)
+                ->whereHas('cotizacion', function($query) {
+                    $query->where('estado_aprobacion', 'aprobada_picking')
+                          ->where('created_at', '>=', now()->subMonths(6));
+                })
+                ->selectRaw('COUNT(DISTINCT cotizacion_id) as total_nvv')
+                ->selectRaw('SUM(cantidad) as total_unidades')
+                ->selectRaw('AVG(precio_unitario) as precio_promedio')
+                ->selectRaw('MAX(precio_unitario) as precio_maximo')
+                ->selectRaw('MIN(precio_unitario) as precio_minimo')
+                ->first();
+            
+            // Obtener NVV donde se vendió este producto (últimas 20)
+            $nvvConProducto = CotizacionProducto::where('codigo_producto', $codigoProducto)
+                ->with('cotizacion.user')
+                ->whereHas('cotizacion', function($query) {
+                    $query->where('estado_aprobacion', 'aprobada_picking');
+                })
+                ->orderBy('created_at', 'desc')
+                ->limit(20)
+                ->get()
+                ->map(function($item) {
+                    return [
+                        'nvv_id' => $item->cotizacion->id,
+                        'nvv_numero' => $item->cotizacion->numero_nvv ?? 'N/A',
+                        'cliente' => $item->cotizacion->cliente_nombre,
+                        'vendedor' => $item->cotizacion->user->name ?? 'N/A',
+                        'cantidad' => $item->cantidad,
+                        'precio' => $item->precio_unitario,
+                        'subtotal' => $item->subtotal_con_descuento,
+                        'fecha' => $item->created_at->format('d/m/Y'),
+                        'facturada' => $item->cotizacion->facturada ?? false
+                    ];
+                });
+            
+            // Ventas por mes (últimos 6 meses)
+            $ventasPorMes = CotizacionProducto::where('codigo_producto', $codigoProducto)
+                ->whereHas('cotizacion', function($query) {
+                    $query->where('estado_aprobacion', 'aprobada_picking')
+                          ->where('created_at', '>=', now()->subMonths(6));
+                })
+                ->selectRaw('DATE_FORMAT(created_at, "%Y-%m") as mes')
+                ->selectRaw('SUM(cantidad) as cantidad')
+                ->groupBy('mes')
+                ->orderBy('mes', 'asc')
+                ->get();
+            
+            return view('productos.ver', [
+                'producto' => $producto,
+                'estadisticas' => $estadisticasVentas,
+                'nvvConProducto' => $nvvConProducto,
+                'ventasPorMes' => $ventasPorMes,
+                'pageSlug' => 'productos'
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error("Error en ProductoController@ver: " . $e->getMessage());
+            abort(500, 'Error al cargar detalles del producto');
         }
     }
 }

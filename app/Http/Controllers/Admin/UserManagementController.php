@@ -43,6 +43,8 @@ class UserManagementController extends Controller
      */
     public function vendedoresDisponibles()
     {
+        \Log::info('🔍 Cargando vendedores disponibles desde SQL Server');
+        
         // Consultar directamente desde SQL Server para obtener todos los empleados
         $host = env('SQLSRV_EXTERNAL_HOST');
         $username = env('SQLSRV_EXTERNAL_USERNAME');
@@ -51,35 +53,68 @@ class UserManagementController extends Controller
         
         $query = "SELECT KOFU, NOKOFU, EMAIL, RTFU FROM TABFU WHERE KOFU IS NOT NULL ORDER BY NOKOFU";
         
-        $command = "echo \"{$query}\" | tsql -S {$host} -U {$username} -P {$password} -D {$database}";
+        // Usar codificación UTF-8 para manejar acentos y ñ correctamente
+        $command = "echo \"{$query}\" | LANG=es_ES.UTF-8 LC_ALL=es_ES.UTF-8 tsql -S {$host} -U {$username} -P {$password} -D {$database}";
         
         $output = shell_exec($command);
+        \Log::info('📊 Resultado de consulta SQL Server:', ['output_length' => strlen($output)]);
         
         $vendedores = collect();
         
         if ($output) {
             $lines = explode("\n", trim($output));
-            foreach ($lines as $line) {
+            \Log::info('📋 Líneas de resultado:', ['total_lines' => count($lines)]);
+            
+            foreach ($lines as $index => $line) {
                 $line = trim($line);
-                if (empty($line) || strpos($line, 'KOFU') === 0 || strpos($line, 'locale') === 0 || strpos($line, 'using') === 0 || strpos($line, 'rows affected') !== false) continue;
+                \Log::info("📄 Línea {$index}:", ['content' => $line]);
                 
-                // El formato es con tabs, separar por tabs
-                $parts = explode("\t", $line);
-                if (count($parts) >= 4) {
+                // Filtrar líneas vacías, de configuración y cabeceras
+                if (empty($line) || 
+                    strpos($line, 'locale') === 0 || 
+                    strpos($line, 'using') === 0 || 
+                    strpos($line, 'rows affected') !== false ||
+                    strpos($line, '1> 2> KOFU') === 0 ||  // Cabecera con prefijos tsql
+                    strpos($line, 'KOFU') === 0) {  // Cualquier línea que empiece con KOFU
+                    continue;
+                }
+                
+                // El formato es con espacios múltiples, usar regex para separar
+                // Patrón: código (3 chars) + espacios + nombre + espacios + email + espacios + rut
+                // Usar regex más flexible para nombres con acentos y caracteres especiales
+                if (preg_match('/^([A-Z]{3})\s+(.+?)\s+([^\s]*)\s+([0-9-]+)$/u', $line, $matches)) {
+                    $kofu = trim($matches[1]);
+                    $nombre = trim($matches[2]);
+                    $email = trim($matches[3]);
+                    $rut = trim($matches[4]);
+                    
+                    // Limpiar email si está vacío o solo espacios
+                    if (empty($email) || $email === '') {
+                        $email = '';
+                    }
+                    
+                    // Asegurar codificación UTF-8 para nombres con acentos
+                    $nombre = mb_convert_encoding($nombre, 'UTF-8', 'auto');
+                    
                     $vendedores->push((object)[
-                        'id' => trim($parts[0]), // KOFU como ID
-                        'KOFU' => trim($parts[0]),
-                        'NOKOFU' => trim($parts[1]),
-                        'EMAIL' => trim($parts[2]),
-                        'RTFU' => trim($parts[3]),
-                        'tiene_usuario' => false // Por ahora asumimos que no tienen usuario
+                        'id' => $kofu,
+                        'KOFU' => $kofu,
+                        'NOKOFU' => $nombre,
+                        'EMAIL' => $email,
+                        'RTFU' => $rut,
+                        'tiene_usuario' => false
                     ]);
+                    \Log::info("✅ Vendedor agregado:", ['kofu' => $kofu, 'nombre' => $nombre, 'rut' => $rut]);
+                } else {
+                    \Log::info("❌ Línea no coincide con patrón:", ['line' => $line]);
                 }
             }
         }
         
         $roles = Role::all();
         $pageSlug = 'admin-users-create';
+        
+        \Log::info('✅ Vendedores cargados:', ['count' => $vendedores->count(), 'roles_count' => $roles->count()]);
         
         return view('admin.users.create-from-vendedor', compact('vendedores', 'roles', 'pageSlug'));
     }
@@ -107,9 +142,11 @@ class UserManagementController extends Controller
         
         $query = "SELECT KOFU, NOKOFU, EMAIL, RTFU FROM TABFU WHERE KOFU = '{$request->vendedor_id}'";
         
-        $command = "echo \"{$query}\" | tsql -S {$host} -U {$username} -P {$password} -D {$database}";
+        // Usar la misma codificación UTF-8 que en vendedoresDisponibles
+        $command = "echo \"{$query}\" | LANG=es_ES.UTF-8 LC_ALL=es_ES.UTF-8 tsql -S {$host} -U {$username} -P {$password} -D {$database}";
         
         $output = shell_exec($command);
+        \Log::info('🔍 Consultando vendedor específico:', ['vendedor_id' => $request->vendedor_id, 'output_length' => strlen($output)]);
         
         if (!$output) {
             return back()->withErrors(['vendedor_id' => 'No se pudo obtener la información del empleado.'])->withInput();
@@ -118,20 +155,45 @@ class UserManagementController extends Controller
         $lines = explode("\n", trim($output));
         $vendedorData = null;
         
-        foreach ($lines as $line) {
+        foreach ($lines as $index => $line) {
             $line = trim($line);
-            if (empty($line) || strpos($line, 'KOFU') === 0 || strpos($line, 'locale') === 0 || strpos($line, 'using') === 0 || strpos($line, 'rows affected') !== false) continue;
+            \Log::info("📄 Línea {$index} (createFromVendedor):", ['content' => $line]);
             
-            // El formato es con tabs, separar por tabs
-            $parts = explode("\t", $line);
-            if (count($parts) >= 4) {
+            // Filtrar líneas vacías, de configuración y cabeceras
+            if (empty($line) || 
+                strpos($line, 'locale') === 0 || 
+                strpos($line, 'using') === 0 || 
+                strpos($line, 'rows affected') !== false ||
+                strpos($line, '1> 2> KOFU') === 0 ||
+                strpos($line, 'KOFU') === 0) {
+                continue;
+            }
+            
+            // Usar el mismo regex que en vendedoresDisponibles
+            if (preg_match('/^([A-Z]{3})\s+(.+?)\s+([^\s]*)\s+([0-9-]+)$/u', $line, $matches)) {
+                $kofu = trim($matches[1]);
+                $nombre = trim($matches[2]);
+                $email = trim($matches[3]);
+                $rut = trim($matches[4]);
+                
+                // Limpiar email si está vacío
+                if (empty($email) || $email === '') {
+                    $email = '';
+                }
+                
+                // Asegurar codificación UTF-8
+                $nombre = mb_convert_encoding($nombre, 'UTF-8', 'auto');
+                
                 $vendedorData = (object)[
-                    'KOFU' => trim($parts[0]),
-                    'NOKOFU' => trim($parts[1]),
-                    'EMAIL' => trim($parts[2]),
-                    'RTFU' => trim($parts[3])
+                    'KOFU' => $kofu,
+                    'NOKOFU' => $nombre,
+                    'EMAIL' => $email,
+                    'RTFU' => $rut
                 ];
+                \Log::info("✅ Datos del vendedor encontrados:", ['kofu' => $kofu, 'nombre' => $nombre, 'rut' => $rut]);
                 break;
+            } else {
+                \Log::info("❌ Línea no coincide con patrón (createFromVendedor):", ['line' => $line]);
             }
         }
         
@@ -173,16 +235,13 @@ class UserManagementController extends Controller
                 }
             }
 
-            // Marcar vendedor como que tiene usuario
-            $vendedor->marcarConUsuario($user->id);
-
             // Enviar email con datos de acceso
             $this->enviarEmailAcceso($user, $request->password);
 
             DB::commit();
 
             return redirect()->route('admin.users.index')
-                ->with('success', "Usuario creado exitosamente para {$vendedor->NOKOFU}");
+                ->with('success', "Usuario creado exitosamente para {$vendedorData->NOKOFU}");
 
         } catch (\Exception $e) {
             DB::rollBack();

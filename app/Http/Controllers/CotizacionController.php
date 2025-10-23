@@ -921,6 +921,8 @@ class CotizacionController extends Controller
                 'total' => $total,
                 'observaciones' => $request->observaciones,
                 'fecha_despacho' => $request->fecha_despacho ? \Carbon\Carbon::parse($request->fecha_despacho)->startOfDay() : null,
+                'numero_orden_compra' => $request->numero_orden_compra,
+                'observacion_vendedor' => $request->observacion_vendedor,
                 'estado' => 'borrador',
                 'requiere_aprobacion' => !$esCotizacion // Solo requiere aprobación si es nota_venta
             ];

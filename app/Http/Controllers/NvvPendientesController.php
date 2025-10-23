@@ -123,8 +123,14 @@ class NvvPendientesController extends Controller
             abort(404, 'NVV no encontrada.');
         }
         
+        // Buscar si hay una cotización en MySQL asociada a esta NVV
+        $cotizacionAsociada = \App\Models\Cotizacion::where('numero_nvv', ltrim($numeroNvv, '0'))
+            ->orWhere('numero_nvv', $numeroNvv)
+            ->first();
+        
         return view('nvv-pendientes.ver', [
             'nvv' => $nvvDetalle,
+            'cotizacion' => $cotizacionAsociada,
             'pageSlug' => 'nvv-pendientes'
         ]);
     }

@@ -727,35 +727,36 @@ class DashboardController extends Controller
     private function getPickingDashboard($user)
     {
         try {
-            // Obtener facturas pendientes (limitado a 10)
-            $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 10);
+            // Obtener facturas pendientes (limitado a 5 para dashboard)
+            $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 5);
             $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes(null);
 
-            // Obtener NVV del sistema SQL (limitado a 10)
-            $nvvSistema = $this->cobranzaService->getNotasVentaSQL(10);
+            // Obtener NVV del sistema SQL - TODAS con límite de 5 para tabla
+            $nvvSistema = $this->cobranzaService->getNotasVentaSQL(5);
             $totalNvvSistema = $this->cobranzaService->getTotalNotasVentaSQL();
 
-            // Obtener NVV pendientes de aprobación por Picking
+            // Obtener NVV pendientes de aprobación por Picking (limitado a 5)
             $nvvPendientes = $this->getNvvPendientesPicking();
 
             // Crear resumen de cobranza para las tarjetas del dashboard
             $resumenCobranza = [
                 'TOTAL_FACTURAS_PENDIENTES' => $resumenFacturasPendientes['total_facturas'] ?? 0,
-                'TOTAL_NOTAS_VENTA_SQL' => $totalNvvSistema,
+                'TOTAL_NOTAS_VENTA_SQL' => $totalNvvSistema, // Este es el TOTAL correcto de todas las NVV
                 'TOTAL_NOTAS_PENDIENTES_VALIDAR' => count($nvvPendientes)
             ];
 
             return [
                 'facturasPendientes' => $facturasPendientes,
                 'resumenFacturasPendientes' => $resumenFacturasPendientes,
-                'nvvSistema' => $nvvSistema,
-                'totalNvvSistema' => $totalNvvSistema,
+                'nvvSistema' => $nvvSistema, // Solo 5 para la tabla
+                'totalNvvSistema' => $totalNvvSistema, // Total real de todas las NVV
                 'notasPendientes' => $nvvPendientes,
                 'resumenCobranza' => $resumenCobranza,
                 'tipoUsuario' => 'Picking'
             ];
         } catch (\Exception $e) {
             \Log::error("Error en dashboard de Picking: " . $e->getMessage());
+            \Log::error("Stack trace: " . $e->getTraceAsString());
             
             // Retornar datos básicos en caso de error
             return [
@@ -781,26 +782,27 @@ class DashboardController extends Controller
     private function getNvvPendientesPicking()
     {
         try {
-            // Obtener NVV que están aprobadas por Compras y pendientes de Picking
+            // Obtener NVV pendientes de Picking:
+            // 1. Estado 'pendiente_picking' (sin problemas)
+            // 2. Estado 'aprobada_compras' (con problemas resueltos por Compras)
             $nvvPendientes = Cotizacion::with(['user', 'cliente'])
-                ->where('estado_aprobacion', 'aprobada_compras')
+                ->where(function($query) {
+                    $query->where('estado_aprobacion', 'pendiente_picking')
+                          ->orWhere('estado_aprobacion', 'aprobada_compras');
+                })
                 ->whereNull('aprobado_por_picking')
+                ->where('tipo_documento', 'nota_venta') // Solo notas de venta
                 ->orderBy('created_at', 'desc')
                 ->limit(10)
                 ->get();
 
+            // No mapear, devolver la colección directamente con las relaciones cargadas
             return $nvvPendientes->map(function($cotizacion) {
-                return [
-                    'id' => $cotizacion->id,
-                    'numero_nota_venta' => 'N°' . $cotizacion->id,
-                    'user' => $cotizacion->user,
-                    'cliente' => $cotizacion->cliente,
-                    'nombre_cliente' => $cotizacion->cliente ? $cotizacion->cliente->nombre : 'N/A',
-                    'total' => $cotizacion->total,
-                    'estado_aprobacion' => $cotizacion->estado_aprobacion,
-                    'created_at' => $cotizacion->created_at
-                ];
-            })->toArray();
+                // Agregar campos adicionales como atributos temporales
+                $cotizacion->numero_nota_venta = 'N°' . $cotizacion->id;
+                $cotizacion->nombre_cliente = $cotizacion->cliente_nombre; // Ya viene de la tabla cotizaciones
+                return $cotizacion;
+            });
         } catch (\Exception $e) {
             \Log::error("Error al obtener NVV pendientes de Picking: " . $e->getMessage());
             return [];

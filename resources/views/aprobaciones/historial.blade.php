@@ -134,6 +134,69 @@
                                                         <p><strong>Motivo de Rechazo:</strong></p>
                                                         <p class="text-danger">{{ $registro->motivo_rechazo }}</p>
                                                         @endif
+                                                        
+                                                        @if(str_contains($registro->comentarios ?? '', 'NVV N°') || ($registro->estado_nuevo === 'aprobada' && $cotizacion->numero_nvv))
+                                                        <!-- Información de NVV Generada -->
+                                                        <div class="alert alert-success mt-3">
+                                                            <h6><i class="material-icons">assignment_turned_in</i> NVV Generada en Sistema (SQL)</h6>
+                                                            @php
+                                                                // Extraer número de NVV del comentario o usar el de la cotización
+                                                                $numeroNvv = '';
+                                                                if (preg_match('/NVV N[°º]\s*(\d+)/', $registro->comentarios ?? '', $matches)) {
+                                                                    $numeroNvv = $matches[1];
+                                                                } elseif ($cotizacion->numero_nvv) {
+                                                                    $numeroNvv = $cotizacion->numero_nvv;
+                                                                }
+                                                            @endphp
+                                                            @if($numeroNvv)
+                                                            <p class="mb-2"><strong>📋 Número NVV:</strong> <span class="badge badge-success">{{ $numeroNvv }}</span></p>
+                                                            @endif
+                                                            <p class="mb-2"><strong>📅 Fecha de Generación:</strong> {{ \Carbon\Carbon::parse($registro->fecha_accion)->format('d/m/Y H:i:s') }}</p>
+                                                            <p class="mb-2"><strong>👤 Aprobado por:</strong> {{ $registro->usuario_nombre ?? 'Sistema' }}</p>
+                                                            @if($cotizacion->total)
+                                                            <p class="mb-2"><strong>💰 Total:</strong> ${{ number_format($cotizacion->total, 0, ',', '.') }}</p>
+                                                            @endif
+                                                            @if($numeroNvv)
+                                                            <a href="{{ route('nvv-pendientes.ver', str_pad($numeroNvv, 10, '0', STR_PAD_LEFT)) }}" class="btn btn-sm btn-success mt-2" target="_blank">
+                                                                <i class="material-icons">search</i> Ver NVV en Sistema
+                                                            </a>
+                                                            @endif
+                                                        </div>
+                                                        @endif
+                                                        
+                                                        @if(str_contains($registro->comentarios ?? '', 'facturada como FCV') || $registro->estado_nuevo === 'facturada')
+                                                        <!-- Información de Facturación -->
+                                                        <div class="alert alert-primary mt-3">
+                                                            <h6><i class="material-icons">receipt</i> NVV Facturada en Sistema (SQL)</h6>
+                                                            @php
+                                                                // Extraer número de factura del comentario
+                                                                $numeroFactura = '';
+                                                                if (preg_match('/FCV N[°º]\s*(\d+)/', $registro->comentarios ?? '', $matches)) {
+                                                                    $numeroFactura = $matches[1];
+                                                                } elseif ($cotizacion->numero_factura) {
+                                                                    $numeroFactura = $cotizacion->numero_factura;
+                                                                }
+                                                                
+                                                                $detalles = is_string($registro->detalles_adicionales) 
+                                                                    ? json_decode($registro->detalles_adicionales, true) 
+                                                                    : $registro->detalles_adicionales;
+                                                            @endphp
+                                                            @if($numeroFactura)
+                                                            <p class="mb-2"><strong>🧾 Número Factura:</strong> <span class="badge badge-primary">FCV-{{ $numeroFactura }}</span></p>
+                                                            @endif
+                                                            <p class="mb-2"><strong>📅 Fecha de Facturación:</strong> 
+                                                                @if(isset($detalles['fecha_facturacion']))
+                                                                    {{ $detalles['fecha_facturacion'] }}
+                                                                @elseif($cotizacion->fecha_facturacion)
+                                                                    {{ $cotizacion->fecha_facturacion->format('d/m/Y H:i:s') }}
+                                                                @else
+                                                                    {{ \Carbon\Carbon::parse($registro->fecha_accion)->format('d/m/Y H:i:s') }}
+                                                                @endif
+                                                            </p>
+                                                            <p class="mb-2"><strong>✅ Estado:</strong> <span class="badge badge-success">Facturada</span></p>
+                                                            <p class="mb-0"><small class="text-muted"><i class="material-icons" style="font-size: 14px;">info</i> Verificación automática del sistema</small></p>
+                                                        </div>
+                                                        @endif
                                                     </div>
                                                 </div>
                                                 

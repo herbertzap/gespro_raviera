@@ -2176,13 +2176,14 @@ class CobranzaService
                 AND (dbo.MAEDDO.LILG = 'SI') 
                 AND (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1 <> 0) 
                 AND (dbo.MAEDDO.KOPRCT <> 'D') 
-                AND (dbo.MAEDDO.KOPRCT <> 'FLETE')";
+                AND (dbo.MAEDDO.KOPRCT <> 'FLETE')
+                AND (dbo.MAEDDO.FEEMLI >= DATEADD(MONTH, -12, GETDATE()))";
             
             if ($codigoVendedor) {
                 $query .= " AND dbo.TABFU.KOFU = '{$codigoVendedor}'";
             }
             
-            $query .= " ORDER BY dbo.MAEDDO.FEEMLI DESC";
+            $query .= " ORDER BY dbo.MAEDDO.NUDO DESC";
             
             // Crear archivo temporal con la consulta
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
@@ -2696,7 +2697,8 @@ class CobranzaService
                 'KOFU' => trim($campos[21])
             ];
             
-            \Log::info('Factura detalle extraída correctamente: ' . $facturaData['TIPO_DOCTO'] . '-' . $facturaData['NRO_DOCTO'] . ' - ' . $facturaData['CLIENTE']);
+            // Log comentado para no llenar el log - se registra un resumen al final
+            // \Log::info('Factura detalle extraída correctamente: ' . $facturaData['TIPO_DOCTO'] . '-' . $facturaData['NRO_DOCTO'] . ' - ' . $facturaData['CLIENTE']);
             
             return $facturaData;
             
@@ -2718,7 +2720,7 @@ class CobranzaService
             $username = env('SQLSRV_EXTERNAL_USERNAME');
             $password = env('SQLSRV_EXTERNAL_PASSWORD');
             
-            // Consulta para obtener detalles de una NVV específica
+            // Consulta mejorada para obtener detalles completos de una NVV específica
             $query = "
                 SELECT 
                     CAST(dbo.MAEDDO.TIDO AS VARCHAR(10)) + '|' +
@@ -2743,7 +2745,15 @@ class CobranzaService
                     CAST(((dbo.MAEDDO.VANELI / NULLIF(dbo.MAEDDO.CAPRCO1, 0)) * (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1)) AS VARCHAR(20)) + '|' +
                     CAST(CASE WHEN MAEDDO_1.TIDO IS NULL THEN '' ELSE MAEDDO_1.TIDO END AS VARCHAR(10)) + '|' +
                     CAST(CASE WHEN MAEDDO_1.NUDO IS NULL THEN '' ELSE MAEDDO_1.NUDO END AS VARCHAR(20)) + '|' +
-                    CAST(dbo.TABFU.KOFU AS VARCHAR(10)) AS DATOS
+                    CAST(dbo.TABFU.KOFU AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEDDO.PODTGLLI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.VADTNELI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.VANELI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.POIVLI AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEDDO.VAIVLI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.VABRLI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.PPPRNE AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.PPPRBR AS VARCHAR(20)) AS DATOS
                 FROM dbo.MAEDDO 
                 INNER JOIN dbo.MAEEN ON dbo.MAEDDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEDDO.SUENDO = dbo.MAEEN.SUEN 
                 INNER JOIN dbo.TABFU ON dbo.MAEDDO.KOFULIDO = dbo.TABFU.KOFU 
@@ -2864,7 +2874,7 @@ class CobranzaService
                 $nvvAgrupada['TOTAL_VALOR_PENDIENTE'] += (float)($nvv['PEND_VAL'] ?? 0);
                 $nvvAgrupada['CANTIDAD_PRODUCTOS']++;
                 
-                // Agregar el producto a la lista
+                // Agregar el producto a la lista con todos los campos
                 $productos[] = [
                     'KOPRCT' => $nvv['KOPRCT'],
                     'NOKOPR' => $nvv['NOKOPR'],
@@ -2872,7 +2882,16 @@ class CobranzaService
                     'FACT' => $nvv['FACT'],
                     'PEND' => $nvv['PEND'],
                     'PUNIT' => $nvv['PUNIT'],
-                    'PEND_VAL' => $nvv['PEND_VAL']
+                    'PEND_VAL' => $nvv['PEND_VAL'],
+                    // Campos adicionales de valores y descuentos
+                    'PODTGLLI' => $nvv['PODTGLLI'] ?? 0,
+                    'VADTNELI' => $nvv['VADTNELI'] ?? 0,
+                    'VANELI' => $nvv['VANELI'] ?? 0,
+                    'POIVLI' => $nvv['POIVLI'] ?? 0,
+                    'VAIVLI' => $nvv['VAIVLI'] ?? 0,
+                    'VABRLI' => $nvv['VABRLI'] ?? 0,
+                    'PPPRNE' => $nvv['PPPRNE'] ?? 0,
+                    'PPPRBR' => $nvv['PPPRBR'] ?? 0
                 ];
             }
             
@@ -3332,7 +3351,8 @@ class CobranzaService
                 'KOFUEN' => trim($campos[22])
             ];
             
-            \Log::info('Factura extraída correctamente: ' . $facturaData['TIPO_DOCTO'] . '-' . $facturaData['NRO_DOCTO'] . ' - ' . $facturaData['CLIENTE']);
+            // Log comentado para no llenar el log - se registra un resumen al final
+            // \Log::info('Factura extraída correctamente: ' . $facturaData['TIPO_DOCTO'] . '-' . $facturaData['NRO_DOCTO'] . ' - ' . $facturaData['CLIENTE']);
             
             return $facturaData;
             
@@ -3745,11 +3765,14 @@ class CobranzaService
             // Usar el mismo patrón que procesarLineaClienteCompleto
             $fields = explode('|', $line);
             
-            // Verificar que tenemos suficientes campos
-            if (count($fields) < 15) {
-                \Log::warning("Línea {$lineNumber} tiene menos de 15 campos: " . $line);
+            // Verificar que tenemos suficientes campos mínimos (20 campos esperados)
+            if (count($fields) < 20) {
+                \Log::warning("Línea {$lineNumber} tiene menos de 20 campos: " . $line);
                 return null;
             }
+            
+            // Log para ver cuántos campos tenemos
+            \Log::info("Procesando NVV línea {$lineNumber} con " . count($fields) . " campos");
             
             // Función helper para convertir a float de forma segura
             $safeFloat = function($value) {
@@ -3757,7 +3780,7 @@ class CobranzaService
                 return is_numeric($value) ? (float)$value : 0.0;
             };
             
-            // Extraer campos según la consulta SQL
+            // Extraer campos según la consulta SQL (20 campos)
             $nvv = [
                 'TD' => trim($fields[0] ?? ''), // TIDO
                 'NUM' => trim($fields[1] ?? ''), // NUDO
@@ -3779,6 +3802,16 @@ class CobranzaService
                 'TD_R' => trim($fields[17] ?? ''), // TD_R
                 'N_FCV' => trim($fields[18] ?? ''), // N_FCV
                 'KOFU' => trim($fields[19] ?? ''), // KOFU
+                
+                // Campos adicionales no disponibles en esta consulta (se llenan con valores por defecto)
+                'PODTGLLI' => 0, // No disponible en esta consulta
+                'VADTNELI' => 0, // No disponible en esta consulta
+                'VANELI' => 0, // No disponible en esta consulta
+                'POIVLI' => 0, // No disponible en esta consulta
+                'VAIVLI' => 0, // No disponible en esta consulta
+                'VABRLI' => 0, // No disponible en esta consulta
+                'PPPRNE' => $safeFloat($fields[26] ?? 0), // Precio neto
+                'PPPRBR' => $safeFloat($fields[27] ?? 0), // Precio bruto
                 
                 // Campos adicionales para compatibilidad con la vista
                 'TIPO_DOCTO' => 'NVV',
@@ -3904,22 +3937,61 @@ class CobranzaService
             $username = env('SQLSRV_EXTERNAL_USERNAME');
             $password = env('SQLSRV_EXTERNAL_PASSWORD');
             
-            $dsn = "sqlsrv:Server={$host},{$port};Database={$database};Encrypt=no;TrustServerCertificate=yes;ConnectionPooling=0;";
-            $pdo = new PDO($dsn, $username, $password);
-            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            // Verificar que las credenciales estén configuradas
+            if (!$host || !$database || !$username || !$password) {
+                throw new \Exception('Credenciales SQL Server no configuradas en .env');
+            }
             
             $query = "
                 SELECT COUNT(*) as total
                 FROM dbo.MAEEDO 
                 WHERE TIDO = 'NVV' 
-                AND FEEMDO > CONVERT(DATETIME, '2024-01-01 00:00:00', 102)
+                AND FEEMDO >= DATEADD(MONTH, -12, GETDATE())
             ";
             
-            $stmt = $pdo->prepare($query);
-            $stmt->execute();
-            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            // Crear archivo temporal con la consulta
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
             
-            return $result['total'] ?? 0;
+            // Ejecutar consulta usando tsql
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+            
+            // Limpiar archivo temporal
+            unlink($tempFile);
+            
+            if ($output === null) {
+                throw new \Exception('Error ejecutando consulta tsql');
+            }
+            
+            // Procesar la salida
+            $lines = explode("\n", $output);
+            $total = 0;
+            
+            foreach ($lines as $line) {
+                $line = trim($line);
+                
+                // Saltar líneas de configuración
+                if (empty($line) || 
+                    strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || 
+                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'Warning:') !== false ||
+                    preg_match('/^\d+>$/', $line) ||
+                    preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
+                    strpos($line, 'rows affected') !== false ||
+                    strpos($line, 'total') !== false) {
+                    continue;
+                }
+                
+                // Procesar línea con el total
+                if (is_numeric($line)) {
+                    $total = (int)$line;
+                    break;
+                }
+            }
+            
+            return $total;
             
         } catch (\Exception $e) {
             \Log::error('Error obteniendo total notas de venta SQL: ' . $e->getMessage());
@@ -3939,35 +4011,33 @@ class CobranzaService
             $username = env('SQLSRV_EXTERNAL_USERNAME');
             $password = env('SQLSRV_EXTERNAL_PASSWORD');
             
-            // Consulta mejorada para obtener NVV con detalles usando tsql
+            // Consulta para obtener encabezados únicos de NVV con resumen
             $query = "
                 SELECT TOP {$limit}
-                    CAST(dbo.MAEDDO.TIDO AS VARCHAR(10)) + '|' +
-                    CAST(dbo.MAEDDO.NUDO AS VARCHAR(20)) + '|' +
-                    CAST(dbo.MAEDDO.FEEMLI AS VARCHAR(20)) + '|' +
-                    CAST(dbo.MAEDDO.ENDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEEDO.TIDO AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEEDO.NUDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEEDO.FEEMDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEEDO.ENDO AS VARCHAR(20)) + '|' +
                     CAST(dbo.MAEEN.NOKOEN AS VARCHAR(100)) + '|' +
-                    CAST(dbo.MAEDDO.KOPRCT AS VARCHAR(20)) + '|' +
-                    CAST(dbo.MAEDDO.CAPRCO1 AS VARCHAR(20)) + '|' +
-                    CAST(dbo.MAEDDO.NOKOPR AS VARCHAR(100)) + '|' +
+                    CAST(SUM(dbo.MAEDDO.CAPRCO1) AS VARCHAR(20)) + '|' +
                     CAST(dbo.TABFU.NOKOFU AS VARCHAR(50)) + '|' +
                     CAST(dbo.TABCI.NOKOCI AS VARCHAR(50)) + '|' +
                     CAST(dbo.TABCM.NOKOCM AS VARCHAR(50)) + '|' +
-                    CAST(CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) AS VARCHAR(10)) + '|' +
-                    CAST(dbo.MAEDDO.VANELI / dbo.MAEDDO.CAPRCO1 AS VARCHAR(20)) + '|' +
-                    CAST((dbo.MAEDDO.VANELI / dbo.MAEDDO.CAPRCO1) * (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1) AS VARCHAR(20)) + '|' +
+                    CAST(CAST(GETDATE() - dbo.MAEEDO.FEEMDO AS INT) AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEEDO.VABRDO AS VARCHAR(20)) + '|' +
                     CAST(dbo.TABFU.KOFU AS VARCHAR(10)) AS DATOS
-                FROM dbo.MAEDDO 
-                INNER JOIN dbo.MAEEN ON dbo.MAEDDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEDDO.SUENDO = dbo.MAEEN.SUEN 
+                FROM dbo.MAEEDO 
+                INNER JOIN dbo.MAEEN ON dbo.MAEEDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEEDO.SUENDO = dbo.MAEEN.SUEN 
+                INNER JOIN dbo.MAEDDO ON dbo.MAEEDO.IDMAEEDO = dbo.MAEDDO.IDMAEEDO
                 INNER JOIN dbo.TABFU ON dbo.MAEDDO.KOFULIDO = dbo.TABFU.KOFU 
                 INNER JOIN dbo.TABCI ON dbo.MAEEN.PAEN = dbo.TABCI.KOPA AND dbo.MAEEN.CIEN = dbo.TABCI.KOCI 
                 INNER JOIN dbo.TABCM ON dbo.MAEEN.PAEN = dbo.TABCM.KOPA AND dbo.MAEEN.CIEN = dbo.TABCM.KOCI AND dbo.MAEEN.CMEN = dbo.TABCM.KOCM
-                WHERE (dbo.MAEDDO.TIDO = 'NVV') 
-                AND (dbo.MAEDDO.LILG = 'SI') 
-                AND (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1 <> 0) 
-                AND (dbo.MAEDDO.KOPRCT <> 'D') 
-                AND (dbo.MAEDDO.KOPRCT <> 'FLETE')
-                ORDER BY dbo.MAEDDO.NUDO DESC
+                WHERE (dbo.MAEEDO.TIDO = 'NVV') 
+                AND (dbo.MAEEDO.FEEMDO >= DATEADD(MONTH, -12, GETDATE()))
+                GROUP BY dbo.MAEEDO.TIDO, dbo.MAEEDO.NUDO, dbo.MAEEDO.FEEMDO, dbo.MAEEDO.ENDO, 
+                         dbo.MAEEN.NOKOEN, dbo.TABFU.NOKOFU, dbo.TABCI.NOKOCI, dbo.TABCM.NOKOCM, 
+                         dbo.MAEEDO.VABRDO, dbo.TABFU.KOFU
+                ORDER BY dbo.MAEEDO.NUDO DESC
             ";
             
             // Crear archivo temporal con la consulta
@@ -4014,68 +4084,31 @@ class CobranzaService
                 // Procesar líneas de datos
                 if ($inDataSection && $headerFound && strpos($line, '|') !== false) {
                     $fields = explode('|', $line);
-                    if (count($fields) >= 15) {
+                    if (count($fields) >= 12) {
                         $result[] = [
                             'TIPO_DOCTO' => trim($fields[0]),
                             'NRO_DOCTO' => trim($fields[1]),
                             'FECHA_EMISION' => trim($fields[2]),
                             'CODIGO_CLIENTE' => trim($fields[3]),
                             'CLIENTE' => trim($fields[4]),
-                            'CODIGO_PRODUCTO' => trim($fields[5]),
-                            'CANTIDAD' => trim($fields[6]),
-                            'NOMBRE_PRODUCTO' => trim($fields[7]),
-                            'VENDEDOR' => trim($fields[8]),
-                            'REGION' => trim($fields[9]),
-                            'COMUNA' => trim($fields[10]),
-                            'DIAS' => trim($fields[11]),
-                            'PRECIO_UNITARIO' => trim($fields[12]),
-                            'VALOR_PENDIENTE' => trim($fields[13]),
-                            'CODIGO_VENDEDOR' => trim($fields[14])
+                            'CANTIDAD_TOTAL' => trim($fields[5]),
+                            'VENDEDOR' => trim($fields[6]),
+                            'REGION' => trim($fields[7]),
+                            'COMUNA' => trim($fields[8]),
+                            'DIAS' => trim($fields[9]),
+                            'VALOR_PENDIENTE' => trim($fields[10]),
+                            'CODIGO_VENDEDOR' => trim($fields[11])
                         ];
                     }
                 }
             }
             
-            // Agrupar por número de documento y sumar valores
-            $agrupados = [];
-            foreach ($result as $item) {
-                $key = $item['TIPO_DOCTO'] . '-' . $item['NRO_DOCTO'];
-                
-                if (!isset($agrupados[$key])) {
-                    $agrupados[$key] = [
-                        'TIPO_DOCTO' => $item['TIPO_DOCTO'],
-                        'NRO_DOCTO' => $item['NRO_DOCTO'],
-                        'FECHA_EMISION' => $item['FECHA_EMISION'],
-                        'CODIGO_CLIENTE' => $item['CODIGO_CLIENTE'],
-                        'CLIENTE' => $item['CLIENTE'],
-                        'VENDEDOR' => $item['VENDEDOR'],
-                        'REGION' => $item['REGION'],
-                        'COMUNA' => $item['COMUNA'],
-                        'DIAS' => $item['DIAS'],
-                        'CODIGO_VENDEDOR' => $item['CODIGO_VENDEDOR'],
-                        'VALOR_PENDIENTE' => 0,
-                        'CANTIDAD_TOTAL' => 0,
-                        'PRODUCTOS' => []
-                    ];
-                }
-                
-                $agrupados[$key]['VALOR_PENDIENTE'] += (float) $item['VALOR_PENDIENTE'];
-                $agrupados[$key]['CANTIDAD_TOTAL'] += (float) $item['CANTIDAD'];
-                $agrupados[$key]['PRODUCTOS'][] = [
-                    'CODIGO_PRODUCTO' => $item['CODIGO_PRODUCTO'],
-                    'NOMBRE_PRODUCTO' => $item['NOMBRE_PRODUCTO'],
-                    'CANTIDAD' => $item['CANTIDAD'],
-                    'PRECIO_UNITARIO' => $item['PRECIO_UNITARIO']
-                ];
-            }
-            
-            // Convertir a array indexado y ordenar por fecha más reciente
-            $resultadoFinal = array_values($agrupados);
-            usort($resultadoFinal, function($a, $b) {
+            // Los datos ya vienen agrupados por la consulta, solo necesitamos ordenarlos
+            usort($result, function($a, $b) {
                 return strtotime($b['FECHA_EMISION']) - strtotime($a['FECHA_EMISION']);
             });
             
-            return $resultadoFinal;
+            return $result;
             
         } catch (\Exception $e) {
             \Log::error('Error obteniendo notas de venta SQL: ' . $e->getMessage());

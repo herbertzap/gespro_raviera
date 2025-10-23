@@ -159,30 +159,83 @@
             </div>
         </div>
 
-        <!-- Gráficos y Estadísticas -->
+        <!-- Productos Más Vendidos -->
         <div class="row">
-            <!-- Productos Más Vendidos (Gráfico) -->
-            <div class="col-md-6">
+            <div class="col-md-12">
                 <div class="card">
                     <div class="card-header card-header-success">
-                        <h4 class="card-title">Productos Más Vendidos</h4>
-                        <p class="card-category">Últimos 3 meses</p>
+                        <h4 class="card-title">
+                            <i class="material-icons">trending_up</i> Productos Más Vendidos
+                        </h4>
+                        <p class="card-category">Top 50 - Últimos 3 meses (paginación de 5)</p>
                     </div>
                     <div class="card-body">
-                        <canvas id="graficoProductosVendidos" width="400" height="200"></canvas>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Stock por Categorías -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header card-header-info">
-                        <h4 class="card-title">Stock por Categorías</h4>
-                        <p class="card-category">Distribución de inventario</p>
-                    </div>
-                    <div class="card-body">
-                        <canvas id="graficoStockCategorias" width="400" height="200"></canvas>
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="tablaProductosVendidos">
+                                <thead class="text-success">
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Código</th>
+                                        <th>Producto</th>
+                                        <th>Cantidad Vendida</th>
+                                        <th>N° Ventas</th>
+                                        <th>Precio Promedio</th>
+                                        <th>Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @php
+                                        $paginaActual = request()->get('pagina_vendidos', 1);
+                                        $porPagina = 5;
+                                        $inicio = ($paginaActual - 1) * $porPagina;
+                                        $productosVendidosPaginados = array_slice($productosVendidos->toArray(), $inicio, $porPagina);
+                                        $totalPaginas = ceil(count($productosVendidos) / $porPagina);
+                                    @endphp
+                                    @forelse($productosVendidosPaginados as $index => $producto)
+                                    <tr>
+                                        <td>{{ $inicio + $index + 1 }}</td>
+                                        <td><strong>{{ $producto['codigo'] }}</strong></td>
+                                        <td>{{ $producto['nombre'] }}</td>
+                                        <td>
+                                            <span class="badge badge-success">{{ number_format($producto['cantidad'], 0) }}</span>
+                                        </td>
+                                        <td>{{ $producto['total_ventas'] }}</td>
+                                        <td>${{ number_format($producto['precio_promedio'], 0) }}</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-info" onclick="verDetalleProducto('{{ $producto['codigo'] }}')">
+                                                <i class="material-icons">visibility</i> Ver
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    @empty
+                                    <tr>
+                                        <td colspan="7" class="text-center">No hay datos de productos vendidos</td>
+                                    </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Paginación manual -->
+                        @if(count($productosVendidos) > $porPagina)
+                        <div class="card-footer">
+                            <nav aria-label="Paginación productos vendidos">
+                                <ul class="pagination justify-content-center">
+                                    <li class="page-item {{ $paginaActual == 1 ? 'disabled' : '' }}">
+                                        <a class="page-link" href="?pagina_vendidos={{ $paginaActual - 1 }}">Anterior</a>
+                                    </li>
+                                    @for($i = 1; $i <= $totalPaginas; $i++)
+                                        <li class="page-item {{ $paginaActual == $i ? 'active' : '' }}">
+                                            <a class="page-link" href="?pagina_vendidos={{ $i }}">{{ $i }}</a>
+                                        </li>
+                                    @endfor
+                                    <li class="page-item {{ $paginaActual == $totalPaginas ? 'disabled' : '' }}">
+                                        <a class="page-link" href="?pagina_vendidos={{ $paginaActual + 1 }}">Siguiente</a>
+                                    </li>
+                                </ul>
+                            </nav>
+                        </div>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -307,58 +360,7 @@
 @endsection
 
 @section('scripts')
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-// Datos para los gráficos (estos vendrían del controlador)
-const productosVendidos = @json($productosVendidos ?? []);
-const stockCategorias = @json($stockCategorias ?? []);
-
-// Gráfico de productos más vendidos
-const ctxVendidos = document.getElementById('graficoProductosVendidos').getContext('2d');
-new Chart(ctxVendidos, {
-    type: 'bar',
-    data: {
-        labels: productosVendidos.map(p => p.nombre),
-        datasets: [{
-            label: 'Cantidad Vendida',
-            data: productosVendidos.map(p => p.cantidad),
-            backgroundColor: 'rgba(76, 175, 80, 0.6)',
-            borderColor: 'rgba(76, 175, 80, 1)',
-            borderWidth: 1
-        }]
-    },
-    options: {
-        responsive: true,
-        scales: {
-            y: {
-                beginAtZero: true
-            }
-        }
-    }
-});
-
-// Gráfico de stock por categorías
-const ctxCategorias = document.getElementById('graficoStockCategorias').getContext('2d');
-new Chart(ctxCategorias, {
-    type: 'doughnut',
-    data: {
-        labels: stockCategorias.map(c => c.categoria),
-        datasets: [{
-            data: stockCategorias.map(c => c.stock),
-            backgroundColor: [
-                'rgba(255, 99, 132, 0.6)',
-                'rgba(54, 162, 235, 0.6)',
-                'rgba(255, 205, 86, 0.6)',
-                'rgba(75, 192, 192, 0.6)',
-                'rgba(153, 102, 255, 0.6)'
-            ]
-        }]
-    },
-    options: {
-        responsive: true
-    }
-});
-
 // Función para buscar productos
 function buscarProducto() {
     const termino = document.getElementById('buscarProducto').value;
@@ -405,36 +407,8 @@ function mostrarResultados(productos) {
 
 // Función para ver detalle de producto
 function verDetalleProducto(codigo) {
-    // Simular carga de detalle
-    document.getElementById('contenidoDetalleProducto').innerHTML = `
-        <div class="text-center">
-            <div class="spinner-border" role="status">
-                <span class="sr-only">Cargando...</span>
-            </div>
-        </div>
-    `;
-    
-    $('#modalDetalleProducto').modal('show');
-    
-    // Aquí harías la llamada AJAX real
-    setTimeout(() => {
-        document.getElementById('contenidoDetalleProducto').innerHTML = `
-            <div class="row">
-                <div class="col-md-6">
-                    <h6>Código: ${codigo}</h6>
-                    <h6>Nombre: Producto de Ejemplo</h6>
-                    <h6>Stock Actual: 5</h6>
-                    <h6>Stock Mínimo: 10</h6>
-                </div>
-                <div class="col-md-6">
-                    <h6>Precio: $50,000</h6>
-                    <h6>Categoría: Categoría A</h6>
-                    <h6>Estado: Activo</h6>
-                    <h6>Última Venta: 15/01/2025</h6>
-                </div>
-            </div>
-        `;
-    }, 1000);
+    // Redirigir a la página de detalle del producto
+    window.location.href = `/productos/ver/${codigo}`;
 }
 
 // Función para crear NVV con producto

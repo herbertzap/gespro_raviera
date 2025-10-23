@@ -19,6 +19,12 @@ class Kernel extends ConsoleKernel
                 ->dailyAt('02:00')
                 ->withoutOverlapping()
                 ->runInBackground();
+        
+        // Verificar cada hora si las NVV han sido facturadas
+        $schedule->command('nvv:verificar-facturadas')
+                ->hourly()
+                ->withoutOverlapping()
+                ->runInBackground();
     }
 
     /**

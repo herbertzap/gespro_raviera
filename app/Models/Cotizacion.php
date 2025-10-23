@@ -30,6 +30,9 @@ class Cotizacion extends Model
         'requiere_aprobacion',
         'nota_venta_id',
         'numero_nvv',
+        'facturada',
+        'numero_factura',
+        'fecha_facturacion',
         'fecha_aprobacion',
         'aprobado_por',
         'fecha_cancelacion',
@@ -50,7 +53,9 @@ class Cotizacion extends Model
         'tiene_problemas_credito',
         'detalle_problemas_credito',
         'nota_original_id',
-        'productos_separados'
+        'productos_separados',
+        'observacion_vendedor',
+        'numero_orden_compra'
     ];
 
     protected $casts = [
@@ -58,10 +63,12 @@ class Cotizacion extends Model
         'fecha_aprobacion' => 'datetime',
         'fecha_cancelacion' => 'datetime',
         'fecha_despacho' => 'datetime',
+        'fecha_facturacion' => 'datetime',
         'subtotal' => 'decimal:2',
         'descuento_global' => 'decimal:2',
         'total' => 'decimal:2',
         'requiere_aprobacion' => 'boolean',
+        'facturada' => 'boolean',
         // Nuevos casts para el flujo de aprobaciones
         'fecha_aprobacion_supervisor' => 'datetime',
         'fecha_aprobacion_compras' => 'datetime',

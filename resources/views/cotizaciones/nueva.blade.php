@@ -233,6 +233,34 @@
                                                     La fecha de despacho debe ser al menos 2 días después de hoy
                                                 </small>
                                             </div>
+                                            
+                                            <div class="form-group">
+                                                <label for="numero_orden_compra">Número de Orden de Compra</label>
+                                                <input type="text" 
+                                                       class="form-control" 
+                                                       id="numero_orden_compra" 
+                                                       name="numero_orden_compra" 
+                                                       maxlength="40"
+                                                       placeholder="Número de orden de compra del cliente (opcional)">
+                                                <small class="form-text text-muted">
+                                                    <i class="material-icons" style="font-size: 14px; vertical-align: middle;">info</i>
+                                                    Campo opcional - Máximo 40 caracteres
+                                                </small>
+                                            </div>
+                                            
+                                            <div class="form-group">
+                                                <label for="observacion_vendedor">Observación del Vendedor</label>
+                                                <textarea class="form-control" 
+                                                          id="observacion_vendedor" 
+                                                          name="observacion_vendedor" 
+                                                          rows="3" 
+                                                          maxlength="250"
+                                                          placeholder="Observación personal del vendedor (opcional)"></textarea>
+                                                <small class="form-text text-muted">
+                                                    <i class="material-icons" style="font-size: 14px; vertical-align: middle;">info</i>
+                                                    Campo opcional - Máximo 250 caracteres
+                                                </small>
+                                            </div>
                                         </div>
                                         <div class="col-md-6">
                                             <div class="card card-header-info">
@@ -570,6 +598,95 @@ function mostrarResultadosProductos(productos) {
     console.log('🔍 Mostrar resultados ahora se hace con PHP directamente');
 }
 
+// ========================================
+// SISTEMA DE AUTO-GUARDADO EN LOCALSTORAGE
+// ========================================
+const STORAGE_KEY = 'nvv_borrador_cliente_{{ $clienteData['CODIGO_CLIENTE'] ?? 'temp' }}';
+
+// Guardar productos en LocalStorage
+function guardarBorradorLocal() {
+    try {
+        const borrador = {
+            productos: productosCotizacion,
+            observaciones: document.getElementById('observaciones')?.value || '',
+            fecha_despacho: document.getElementById('fecha_despacho')?.value || '',
+            numero_orden_compra: document.getElementById('numero_orden_compra')?.value || '',
+            observacion_vendedor: document.getElementById('observacion_vendedor')?.value || '',
+            tipo_documento: document.querySelector('input[name="tipo_documento"]:checked')?.value || 'nota_venta',
+            timestamp: new Date().toISOString(),
+            cliente_codigo: '{{ $clienteData['CODIGO_CLIENTE'] ?? '' }}',
+            cliente_nombre: '{{ $clienteData['NOMBRE_CLIENTE'] ?? '' }}'
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(borrador));
+        console.log('💾 Borrador guardado automáticamente');
+    } catch (error) {
+        console.error('Error guardando borrador:', error);
+    }
+}
+
+// Cargar productos desde LocalStorage
+function cargarBorradorLocal() {
+    try {
+        const borradorStr = localStorage.getItem(STORAGE_KEY);
+        if (borradorStr) {
+            const borrador = JSON.parse(borradorStr);
+            
+            // Verificar que sea del mismo cliente
+            if (borrador.cliente_codigo === '{{ $clienteData['CODIGO_CLIENTE'] ?? '' }}') {
+                // Preguntar al usuario si desea recuperar el borrador
+                const fechaBorrador = new Date(borrador.timestamp).toLocaleString('es-CL');
+                if (confirm(`📋 Se encontró un borrador guardado el ${fechaBorrador}\n\n¿Deseas recuperarlo?\n\nProductos: ${borrador.productos.length}`)) {
+                    productosCotizacion = borrador.productos;
+                    
+                    // Restaurar observaciones y fecha
+                    if (borrador.observaciones) {
+                        document.getElementById('observaciones').value = borrador.observaciones;
+                    }
+                    if (borrador.fecha_despacho) {
+                        document.getElementById('fecha_despacho').value = borrador.fecha_despacho;
+                    }
+                    if (borrador.numero_orden_compra) {
+                        document.getElementById('numero_orden_compra').value = borrador.numero_orden_compra;
+                    }
+                    if (borrador.observacion_vendedor) {
+                        document.getElementById('observacion_vendedor').value = borrador.observacion_vendedor;
+                    }
+                    if (borrador.tipo_documento) {
+                        document.getElementById(`tipo_${borrador.tipo_documento}`).checked = true;
+                        actualizarTituloDocumento();
+                    }
+                    
+                    actualizarTablaProductos();
+                    calcularTotales();
+                    console.log('✅ Borrador recuperado correctamente');
+                } else {
+                    // Si no quiere recuperarlo, limpiarlo
+                    limpiarBorradorLocal();
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error cargando borrador:', error);
+    }
+}
+
+// Limpiar borrador de LocalStorage
+function limpiarBorradorLocal() {
+    try {
+        localStorage.removeItem(STORAGE_KEY);
+        console.log('🗑️ Borrador eliminado');
+    } catch (error) {
+        console.error('Error limpiando borrador:', error);
+    }
+}
+
+// Auto-guardar cada 30 segundos
+setInterval(function() {
+    if (productosCotizacion.length > 0) {
+        guardarBorradorLocal();
+    }
+}, 30000);
+
 // Función para agregar producto a la cotización desde PHP
 function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuentoMaximo = 0, multiplo = 1) {
     console.log('Agregando producto desde PHP:', { codigo, nombre, precio, stock, unidad, descuentoMaximo, multiplo });
@@ -608,6 +725,7 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
     
     actualizarTablaProductos();
     calcularTotales();
+    guardarBorradorLocal(); // Auto-guardar después de agregar producto
     
     // Limpiar búsqueda después de agregar el producto
     limpiarBusqueda();
@@ -743,6 +861,7 @@ function actualizarCantidad(index, nuevaCantidad) {
         actualizarSubtotal(index);
         actualizarTablaProductos();
         calcularTotales();
+        guardarBorradorLocal(); // Auto-guardar después de actualizar cantidad
     }
 }
 
@@ -770,6 +889,7 @@ function actualizarDescuento(index, nuevoDescuento) {
     actualizarSubtotal(index);
     actualizarTablaProductos();
     calcularTotales();
+    guardarBorradorLocal(); // Auto-guardar después de actualizar descuento
 }
 
 // Función para actualizar subtotal considerando descuento
@@ -785,6 +905,7 @@ function eliminarProducto(index) {
     productosCotizacion.splice(index, 1);
     actualizarTablaProductos();
     calcularTotales();
+    guardarBorradorLocal(); // Auto-guardar después de eliminar producto
 }
 
 // Funciones para selección múltiple de productos
@@ -976,6 +1097,8 @@ function guardarNotaVenta() {
 
     const observaciones = document.getElementById('observaciones').value;
     const fechaDespacho = document.getElementById('fecha_despacho').value;
+    const numeroOrdenCompra = document.getElementById('numero_orden_compra').value;
+    const observacionVendedor = document.getElementById('observacion_vendedor').value;
     
     // Validar fecha de despacho
     if (!fechaDespacho) {
@@ -993,6 +1116,8 @@ function guardarNotaVenta() {
         productos: productosCotizacion,
         observaciones: observaciones,
         fecha_despacho: fechaDespacho,
+        numero_orden_compra: numeroOrdenCompra,
+        observacion_vendedor: observacionVendedor,
         _token: document.querySelector('meta[name="csrf-token"]').getAttribute('content')
     };
 
@@ -1004,12 +1129,23 @@ function guardarNotaVenta() {
         },
         body: JSON.stringify(cotizacionData)
     })
-    .then(response => response.json())
+    .then(response => {
+        // Detectar error 419 (CSRF token expirado)
+        if (response.status === 419) {
+            alert('⚠️ Tu sesión ha expirado. La página se recargará automáticamente.');
+            window.location.reload();
+            return;
+        }
+        return response.json();
+    })
     .then(data => {
+        if (!data) return; // Si hubo error 419, ya se manejó arriba
+        
         if (data.success) {
             const mensaje = esCotizacion 
                 ? 'Cotización guardada exitosamente' 
                 : 'Nota de venta guardada exitosamente';
+            limpiarBorradorLocal(); // Limpiar borrador después de guardar exitosamente
             alert(mensaje);
             window.location.href = '/cotizaciones';
         } else {
@@ -1022,7 +1158,7 @@ function guardarNotaVenta() {
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('Error al guardar el documento');
+        alert('Error al guardar el documento. Por favor, recarga la página e intenta nuevamente.');
         // Restaurar botón en caso de error
         guardandoNotaVenta = false;
         btn.disabled = false;
@@ -1038,6 +1174,9 @@ function guardarCotizacion() {
 // Configurar input de búsqueda cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🔍 DOM cargado, configurando input de búsqueda...');
+    
+    // Cargar borrador guardado si existe
+    cargarBorradorLocal();
     
     // Verificar si el cliente tiene lista de precios
     if (clienteData && (!clienteData.lista_precios_codigo || clienteData.lista_precios_codigo === '00' || clienteData.lista_precios_codigo === '0')) {

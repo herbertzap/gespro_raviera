@@ -227,86 +227,91 @@ class AprobacionController extends Controller
 
             Log::info("Iniciando aprobación por picking para cotización {$cotizacion->id}");
             
-            // ==================================================================
-            // MODO REAL: Insert en SQL Server (HABILITADO)
-            // IMPORTANTE: Primero insertamos en SQL Server, si falla NO cambiamos el estado
-            // ==================================================================
+            // Insertar en SQL Server PRIMERO - si falla, no cambiar estado
             Log::info("📝 PASO CRÍTICO: Iniciando insert en SQL Server...");
-            Log::info("🔥 MODO REAL ACTIVADO - SE INSERTARÁ EN SQL SERVER");
+            Log::info("🔢 USANDO FUNCIÓN REAL CON NUDO CORRELATIVO");
             $startTime = microtime(true);
             
-            $resultado = $this->insertarEnSQLServer($cotizacion);
-            
-            $endTime = microtime(true);
-            $duration = $endTime - $startTime;
-            Log::info("⏱️ PASO CRÍTICO: Insert completado en " . round($duration, 2) . " segundos");
-            
-            // Solo si el insert fue exitoso, aprobamos en MySQL
-            if ($resultado['success']) {
-                Log::info("✅ Insert en SQL Server exitoso, aprobando en MySQL...");
-                $cotizacion->aprobarPorPicking($user->id, $request->comentarios);
-                Log::info("✅ Cotización aprobada en MySQL");
-            } else {
-                // Si falló el insert, lanzar excepción para que se capture en el catch
-                throw new \Exception($resultado['message'] ?? 'Error desconocido en SQL Server');
-            }
-            
             // ==================================================================
-            // MODO PREVISUALIZACIÓN (COMENTADO - USAR SOLO PARA DEBUG)
+            // MODO REAL: Insert real en SQL Server
             // ==================================================================
-            /*
-            Log::info("📝 PASO CRÍTICO: Iniciando previsualización...");
-            Log::info("👁️ MODO PREVISUALIZACIÓN ACTIVADO - REVISAR DATOS ANTES DE INSERTAR");
-            
+            try {
+                $resultado = $this->insertarEnSQLServer($cotizacion);
+                $endTime = microtime(true);
+                $duration = $endTime - $startTime;
+                Log::info("⏱️ PASO CRÍTICO: Insert completado en " . round($duration, 2) . " segundos");
+                
+            // ==================================================================
+            // MODO PREVISUALIZACIÓN: Habilitado para debugging
+            // ==================================================================
             try {
                 $resultado = $this->previsualizarInsertSQL($cotizacion);
                 
                 return redirect()->route('aprobaciones.show', $id)
                     ->with('success', '✅ Previsualización generada exitosamente')
                     ->with('info', 'NUDO que se usará: ' . $resultado['nudo'])
-                    ->with('warning', '⚠️ MODO PREVISUALIZACIÓN: Revisa los logs para ver todos los datos. No se insertó nada en SQL Server.');
-                    
-            } catch (Exception $e) {
-                Log::error("❌ ERROR en previsualización: " . $e->getMessage());
+                    ->with('warning', '⚠️ MODO PREVISUALIZACIÓN: Revisa los logs para ver todos los datos. No se insertó nada en SQL Server ni se cambió el estado de la NVV.');
+                
+            } catch (\Exception $e) {
+                Log::error('Error en previsualización: ' . $e->getMessage());
                 return redirect()->route('aprobaciones.show', $id)
                     ->with('error', 'Error generando previsualización: ' . $e->getMessage());
             }
-            */
             
-            if ($resultado['success']) {
-                Log::info("Nota de venta {$cotizacion->id} aprobada por picking {$user->id} y insertada en SQL Server con ID {$resultado['nota_venta_id']}");
+            // ==================================================================
+            // CÓDIGO REAL DE INSERCIÓN (COMENTADO MIENTRAS SE USA PREVISUALIZACIÓN)
+            // ==================================================================
+            /*
+            try {
+                $resultado = $this->insertarEnSQLServer($cotizacion);
                 
-                // Refrescar la cotización para obtener el número_nvv actualizado
-                $cotizacion->refresh();
+                // Solo si SQL Server fue exitoso, aprobar en MySQL
+                if ($resultado['success']) {
+                    Log::info("✅ SQL Server exitoso, aprobando en MySQL");
+                    $cotizacion->aprobarPorPicking($user->id, $request->comentarios);
+                    Log::info("✅ Cotización aprobada en MySQL");
+                    
+                    Log::info("Nota de venta {$cotizacion->id} aprobada por picking {$user->id} y insertada en SQL Server con ID {$resultado['nota_venta_id']}");
+                    
+                    // Refrescar la cotización para obtener el número_nvv actualizado
+                    $cotizacion->refresh();
+                    
+                    $numeroNVV = $resultado['numero_correlativo'] ?? $resultado['nota_venta_id'];
+                    
+                    Log::info("✅ Nota de venta {$cotizacion->id} aprobada por picking {$user->id}");
+                    Log::info("📋 NVV N° {$numeroNVV} (ID: {$resultado['nota_venta_id']}) insertada en SQL Server");
+                    
+                    // Registrar en el historial con el número de NVV y timestamp
+                    \App\Services\HistorialCotizacionService::registrarAprobacionPicking(
+                        $cotizacion, 
+                        $request->comentarios ?? 'Aprobado por Picking - NVV N° ' . $numeroNVV,
+                        $resultado['nota_venta_id']
+                    );
+                    
+                    // Crear mensaje de éxito detallado
+                    $mensajeExito = "✅ Nota de Venta aprobada exitosamente\n\n";
+                    $mensajeExito .= "📋 NVV N° {$numeroNVV} creada en SQL Server\n";
+                    $mensajeExito .= "🔢 ID Interno: {$resultado['nota_venta_id']}\n";
+                    $mensajeExito .= "👤 Cliente: {$cotizacion->cliente_nombre}\n";
+                    $mensajeExito .= "💰 Total: $" . number_format($cotizacion->total, 0, ',', '.') . "\n";
+                    $mensajeExito .= "📦 Productos: " . $cotizacion->productos->count() . "\n";
+                    $mensajeExito .= "⏰ Fecha: " . now()->format('d/m/Y H:i:s');
+                    
+                    return redirect()->route('aprobaciones.show', $id)
+                        ->with('success', $mensajeExito)
+                        ->with('numero_nvv', $numeroNVV)
+                        ->with('id_nvv_interno', $resultado['nota_venta_id']);
+                } else {
+                    throw new \Exception('Error al insertar en SQL Server');
+                }
                 
-                $numeroNVV = $resultado['numero_correlativo'] ?? $resultado['nota_venta_id'];
-                
-                Log::info("✅ Nota de venta {$cotizacion->id} aprobada por picking {$user->id}");
-                Log::info("📋 NVV N° {$numeroNVV} (ID: {$resultado['nota_venta_id']}) insertada en SQL Server");
-                
-                // Registrar en el historial con el número de NVV y timestamp
-                \App\Services\HistorialCotizacionService::registrarAprobacionPicking(
-                    $cotizacion, 
-                    $request->comentarios ?? 'Aprobado por Picking - NVV N° ' . $numeroNVV,
-                    $resultado['nota_venta_id']
-                );
-                
-                // Crear mensaje de éxito detallado
-                $mensajeExito = "✅ Nota de Venta aprobada exitosamente\n\n";
-                $mensajeExito .= "📋 NVV N° {$numeroNVV} creada en SQL Server\n";
-                $mensajeExito .= "🔢 ID Interno: {$resultado['nota_venta_id']}\n";
-                $mensajeExito .= "👤 Cliente: {$cotizacion->cliente_nombre}\n";
-                $mensajeExito .= "💰 Total: $" . number_format($cotizacion->total, 0, ',', '.') . "\n";
-                $mensajeExito .= "📦 Productos: " . $cotizacion->productos->count() . "\n";
-                $mensajeExito .= "⏰ Fecha: " . now()->format('d/m/Y H:i:s');
-                
+            } catch (Exception $e) {
+                Log::error("❌ ERROR en insert SQL Server: " . $e->getMessage());
+                // NO cambiar el estado - mantener pendiente_picking
                 return redirect()->route('aprobaciones.show', $id)
-                    ->with('success', $mensajeExito)
-                    ->with('numero_nvv', $numeroNVV)
-                    ->with('id_nvv_interno', $resultado['nota_venta_id']);
-            } else {
-                throw new \Exception('Error al insertar en SQL Server');
+                    ->with('error', 'Error al insertar en SQL Server: ' . $e->getMessage() . '. La NVV se mantiene pendiente de aprobación.');
             }
+            */
             
         } catch (\Exception $e) {
             Log::error("Error aprobando nota de venta por picking: " . $e->getMessage());
@@ -325,7 +330,7 @@ class AprobacionController extends Controller
         try {
             Log::info("👁️ === PREVISUALIZACIÓN DE DATOS A INSERTAR ===");
             
-            // Obtener siguiente correlativo para IDMAEEDO (COPIADO DEL MÉTODO QUE FUNCIONA)
+            // Obtener siguiente correlativo para IDMAEEDO
             $queryCorrelativo = "SELECT TOP 1 ISNULL(MAX(IDMAEEDO), 0) + 1 AS siguiente_id FROM MAEEDO WHERE EMPRESA = '01'";
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $queryCorrelativo . "\ngo\nquit");
@@ -352,71 +357,26 @@ class AprobacionController extends Controller
                 }
             }
             
-            // Obtener el último NUDO de NVV y sumarle 1 (COPIADO DEL MÉTODO QUE FUNCIONA)
-            Log::info("🔍 DEBUG: Iniciando obtención de NUDO...");
-            
-            // Obtener valores del .env
-            $hostNudo = env('SQLSRV_EXTERNAL_HOST');
-            $portNudo = env('SQLSRV_EXTERNAL_PORT');
-            $userNudo = env('SQLSRV_EXTERNAL_USERNAME');
-            $passNudo = env('SQLSRV_EXTERNAL_PASSWORD');
-            $dbNudo = env('SQLSRV_EXTERNAL_DATABASE');
-            
-            Log::info("🔍 DEBUG: Credenciales SQL:");
-            Log::info("   Host: " . ($hostNudo ?? 'NULL'));
-            Log::info("   Port: " . ($portNudo ?? 'NULL'));
-            Log::info("   User: " . ($userNudo ?? 'NULL'));
-            Log::info("   Pass: " . (empty($passNudo) ? 'VACIO' : 'OK'));
-            Log::info("   DB: " . ($dbNudo ?? 'NULL'));
-            
-            // Query para obtener el último NUDO de NVV (ordenado por NUDO DESC)
+            // Obtener el último NUDO de NVV y sumarle 1
             $queryNudo = "SELECT TOP 1 NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1 ORDER BY NUDO DESC";
-            Log::info("🔍 DEBUG: Query NUDO (último NUDO): {$queryNudo}");
-            
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
-            Log::info("🔍 DEBUG: Temp file creado: {$tempFile}");
-            
-            $command = "tsql -H {$hostNudo} -p {$portNudo} -U {$userNudo} -P {$passNudo} -D {$dbNudo} < {$tempFile} 2>&1";
-            Log::info("🔍 DEBUG: Comando tsql: " . str_replace($passNudo, '***', $command));
-            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
             $result = shell_exec($command);
             unlink($tempFile);
-            
-            Log::info("🔍 DEBUG: Resultado query NUDO:");
-            Log::info($result);
-            
-            // Debug más detallado - mostrar líneas del resultado
-            $lines = explode("\n", $result);
-            Log::info("🔍 DEBUG: Líneas del resultado:");
-            foreach ($lines as $i => $line) {
-                Log::info("   Línea {$i}: " . trim($line));
-            }
             
             $ultimoNudoStr = '';
             if (preg_match('/(\d{10})/', $result, $matches)) {
                 $ultimoNudoStr = $matches[1];
-                Log::info("🔍 DEBUG: NUDO encontrado con regex: {$ultimoNudoStr}");
-            } else {
-                Log::error("🔍 DEBUG: NO se encontró NUDO con regex");
-                // Intentar buscar cualquier número de 10 dígitos
-                if (preg_match_all('/(\d{10})/', $result, $allMatches)) {
-                    Log::info("🔍 DEBUG: Números de 10 dígitos encontrados: " . implode(', ', $allMatches[1]));
-                }
             }
             
             if (empty($ultimoNudoStr)) {
-                Log::error("❌ No se pudo obtener el último NUDO. Resultado completo de tsql:");
-                Log::error($result);
                 throw new \Exception("No se pudo obtener el último número correlativo de NVV");
             }
             
             $ultimoNudo = (int)$ultimoNudoStr;
             $siguienteNudo = $ultimoNudo + 1;
             $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
-            
-            Log::info("✅ Último NUDO de NVV: {$ultimoNudoStr}");
-            Log::info("✅ Siguiente NUDO asignado: {$nudoFormateado}");
             
             // Obtener información del vendedor
             $codigoVendedor = substr($cotizacion->user->codigo_vendedor ?? '001', 0, 3);
@@ -432,7 +392,7 @@ class AprobacionController extends Controller
             $horaDecimal = ($fechaActual->hour * 3600 + $fechaActual->minute * 60 + $fechaActual->second) / 86400;
             $horagrab = $diasDesde1900 + $horaDecimal;
             
-            // Obtener sucursal del cliente (COPIADO DEL MÉTODO QUE FUNCIONA)
+            // Obtener sucursal del cliente
             $querySucursal = "SELECT LTRIM(RTRIM(SUEN)) as SUCURSAL FROM MAEEN WHERE KOEN = '{$cotizacion->cliente_codigo}'";
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $querySucursal . "\ngo\nquit");
@@ -479,9 +439,9 @@ class AprobacionController extends Controller
                 $sumaVABRLI += $totalConIVA;
             }
             
-            $VANEDO = round($sumaVANELI, 0);
-            $VAIVDO = $sumaVAIVLI;
-            $VABRDO = round($sumaVABRLI, 0);
+            $VANEDO = round($sumaVANELI, 0); // SIN decimales
+            $VAIVDO = $sumaVAIVLI; // CON decimales (19%)
+            $VABRDO = round($sumaVABRLI, 0); // SIN decimales
             
             // ==================== PREVISUALIZACIÓN TABLA MAEEDO ====================
             $preview = "\n\n";
@@ -535,6 +495,7 @@ class AprobacionController extends Controller
             foreach ($cotizacion->productos as $index => $producto) {
                 $lineaId = $index + 1;
                 
+                // Obtener datos del producto
                 $productoDB = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
                 
                 $udtrpr = 1;
@@ -549,11 +510,13 @@ class AprobacionController extends Controller
                     $udtrpr = ($rludpr > 1) ? 2 : 1;
                 }
                 
+                // Truncar strings
                 $codigoProducto = substr($producto->codigo_producto, 0, 13);
                 $nombreProducto = substr($producto->nombre_producto, 0, 50);
                 $ud01prTruncado = substr($ud01pr, 0, 2);
                 $ud02prTruncado = substr($ud02pr, 0, 2);
                 
+                // Calcular valores
                 $precioNeto = $producto->precio_unitario;
                 $cantidad = $producto->cantidad;
                 $subtotalBruto = $precioNeto * $cantidad;
@@ -567,7 +530,7 @@ class AprobacionController extends Controller
                 $caprco2 = $rludpr > 0 ? round($cantidad / $rludpr, 2) : 0;
                 $nulidoFormateado = str_pad($lineaId, 5, '0', STR_PAD_LEFT);
                 
-                // Obtener PPPRPM (COPIADO DEL MÉTODO QUE FUNCIONA)
+                // Obtener PPPRPM
                 $ppprpm = 0;
                 try {
                     $queryPrecioMin = "SELECT ISNULL(PM, 0) as PM FROM MAEPREM WHERE KOPR = '{$codigoProducto}'";
@@ -677,12 +640,15 @@ class AprobacionController extends Controller
             $numeroOrdenCompra = $cotizacion->numero_orden_compra ?? '';
             $condicionPago = $this->obtenerCondicionPagoCliente($cotizacion->cliente_codigo);
             
+            // Truncar observación a 250 caracteres
             $observacionTruncada = substr($observacionVendedor, 0, 250);
+            
+            // Truncar orden de compra a 40 caracteres
             $ordenCompraTruncada = substr($numeroOrdenCompra, 0, 40);
             
             $previewMAEEDOOB = "\n\n";
             $previewMAEEDOOB .= "╔══════════════════════════════════════════════════════════════════════════╗\n";
-            $previewMAEEDOOB .= "║                  📊 PREVISUALIZACIÓN TABLA MAEEDOOB                      ║\n";
+            $previewMAEEDOOB .= "║                  📊 PREVISUALIZACIÓN TABLA MAEEDOOB                       ║\n";
             $previewMAEEDOOB .= "╠══════════════════════════════════════════════════════════════════════════╣\n";
             $previewMAEEDOOB .= sprintf("║ %-30s = %-39s ║\n", "IDMAEEDO", $siguienteId);
             $previewMAEEDOOB .= sprintf("║ %-30s = %-39s ║\n", "OBDO (observación vendedor)", substr($observacionTruncada, 0, 39));
@@ -753,13 +719,15 @@ class AprobacionController extends Controller
             throw $e;
         }
     }
-
+    
     /**
-     * Insertar cotización en SQL Server
+     * Insertar cotización en SQL Server con lógica real de NUDO correlativo
      */
     private function insertarEnSQLServer($cotizacion)
     {
         try {
+            Log::info("🔢 === INICIO FUNCIÓN REAL CON NUDO CORRELATIVO ===");
+            
             // Obtener siguiente correlativo para IDMAEEDO
             $queryCorrelativo = "SELECT TOP 1 ISNULL(MAX(IDMAEEDO), 0) + 1 AS siguiente_id FROM MAEEDO WHERE EMPRESA = '01'";
             
@@ -768,21 +736,18 @@ class AprobacionController extends Controller
             
             $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
             $result = shell_exec($command);
-            
             unlink($tempFile);
             
             // Parsear el resultado para obtener el siguiente ID
             $siguienteId = 1; // Valor por defecto
             if ($result && !str_contains($result, 'error')) {
-                // Buscar el patrón específico: número grande después de "siguiente_id"
                 if (preg_match('/siguiente_id\s*\n\s*(\d+)/', $result, $matches)) {
                     $siguienteId = (int)$matches[1];
                 } else {
-                    // Fallback: buscar el número más grande en las líneas
-                    $lines = explode("\n", $result);
+                $lines = explode("\n", $result);
                     $maxNumber = 0;
-                    foreach ($lines as $line) {
-                        $line = trim($line);
+                foreach ($lines as $line) {
+                    $line = trim($line);
                         if (is_numeric($line) && (int)$line > $maxNumber && (int)$line > 1000) {
                             $maxNumber = (int)$line;
                         }
@@ -793,10 +758,9 @@ class AprobacionController extends Controller
                 }
             }
             
-            Log::info('Siguiente ID para MAEEDO: ' . $siguienteId);
+            Log::info("🔢 Siguiente ID para MAEEDO: {$siguienteId}");
             
-            // Obtener el último NUDO de NVV y sumarle 1 (consulta simple y directa)
-            // IMPORTANTE: Filtrar por TIDO = 'NVV' porque cada tipo de documento tiene su propia numeración
+            // Obtener el último NUDO de NVV y sumarle 1
             $queryNudo = "SELECT TOP 1 NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1 ORDER BY NUDO DESC";
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
@@ -827,18 +791,30 @@ class AprobacionController extends Controller
             Log::info("Último NUDO de NVV: {$ultimoNudoStr}");
             Log::info("Siguiente NUDO asignado: {$nudoFormateado}");
             
-            // Calcular fecha de vencimiento (30 días desde hoy)
-            $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
-            
             // Obtener información del vendedor
-            $codigoVendedor = $cotizacion->user->codigo_vendedor ?? '001';
+            $codigoVendedor = substr($cotizacion->user->codigo_vendedor ?? '001', 0, 3); // KOFULIDO límite 3
             $nombreVendedor = $cotizacion->user->name ?? 'Vendedor Sistema';
             
             // Obtener datos adicionales del cliente
             $listaPrecios = $this->obtenerListaPreciosCliente($cotizacion->cliente_codigo);
             $diasPago = $this->obtenerDiasPagoCliente($cotizacion->cliente_codigo);
             $nuevecr = $this->obtenerNuevecrCliente($cotizacion->cliente_codigo);
-            $condicionPago = $this->obtenerCondicionPagoCliente($cotizacion->cliente_codigo);
+            
+            Log::info("🔢 Lista precios: {$listaPrecios}");
+            Log::info("🔢 Días pago: {$diasPago}");
+            Log::info("🔢 NUVECR: '{$nuevecr}'");
+            
+            // Calcular HORAGRAB (convertir fecha a número serial de Excel)
+            // En Excel, las fechas se representan como días desde 1900-01-01
+            // PHP: días desde 1970-01-01, Excel: días desde 1900-01-01 (diferencia: 25569 días)
+            $fechaActual = now();
+            $diasDesde1900 = $fechaActual->diffInDays('1900-01-01') + 2; // +2 por bug de Excel (año 1900 bisiesto)
+            $horaDecimal = ($fechaActual->hour * 3600 + $fechaActual->minute * 60 + $fechaActual->second) / 86400;
+            $horagrab = $diasDesde1900 + $horaDecimal;
+            Log::info("🔢 HORAGRAB (número serial Excel): {$horagrab}");
+            
+            // Calcular fecha de vencimiento (30 días desde hoy)
+            $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
             
             // Obtener sucursal del cliente desde SQL Server
             $querySucursal = "SELECT LTRIM(RTRIM(SUEN)) as SUCURSAL FROM MAEEN WHERE KOEN = '{$cotizacion->cliente_codigo}'";
@@ -872,47 +848,60 @@ class AprobacionController extends Controller
             // Si la sucursal está vacía o no se encontró, dejar vacío (no usar '001' como fallback)
             Log::info("Sucursal del cliente '{$cotizacion->cliente_codigo}': '{$sucursalCliente}' " . (empty($sucursalCliente) ? "(vacía - correcto)" : ""));
             
-            // CAPRCO = suma de cantidades de productos
-            $sumaCantidades = $cotizacion->productos->sum('cantidad');
-            
-            // Calcular SUMAS de MAEDDO para MAEEDO (igual que en previsualización)
-            $sumaVANELI = 0;
-            $sumaVAIVLI = 0;
-            $sumaVABRLI = 0;
-            
-            foreach ($cotizacion->productos as $producto) {
-                $precioNeto = $producto->precio_unitario;
-                $cantidad = $producto->cantidad;
-                $subtotalBruto = $precioNeto * $cantidad;
-                $valorDescuento = $producto->descuento_valor ?? 0;
-                $subtotalConDescuento = $subtotalBruto - $valorDescuento;
-                $ivaConDescuento = $subtotalConDescuento * 0.19;
-                $totalConIVA = $subtotalConDescuento + $ivaConDescuento;
-                
-                $sumaVANELI += $subtotalConDescuento;
-                $sumaVAIVLI += $ivaConDescuento;
-                $sumaVABRLI += $totalConIVA;
-            }
-            
-            $VANEDO = round($sumaVANELI, 0);
-            $VAIVDO = $sumaVAIVLI;
-            $VABRDO = round($sumaVABRLI, 0);
-            
             Log::info("=== DATOS PARA INSERT NVV ===");
             Log::info("Cotización ID: {$cotizacion->id}");
             Log::info("Cliente: {$cotizacion->cliente_codigo} - {$cotizacion->cliente_nombre}");
             Log::info("Sucursal Cliente (SUENDO): '{$sucursalCliente}'");
             Log::info("Vendedor: {$codigoVendedor} - {$nombreVendedor}");
-            Log::info("CAPRCO (suma cantidades): {$sumaCantidades}");
-            Log::info("VANEDO (suma VANELI): {$VANEDO}");
-            Log::info("VAIVDO (suma VAIVLI): {$VAIVDO}");
-            Log::info("VABRDO (suma VABRLI): {$VABRDO}");
+            Log::info("Total: {$cotizacion->total}");
             Log::info("IDMAEEDO: {$siguienteId}");
             Log::info("NUDO: {$nudoFormateado}");
             Log::info("Fecha Vencimiento: {$fechaVencimiento}");
             
-            // Insertar encabezado en MAEEDO con campos requeridos por el sistema interno
-                $insertMAEEDO = "
+            // CAPRCO = suma de cantidades de productos
+            $sumaCantidades = $cotizacion->productos->sum('cantidad');
+            
+            // Calcular SUMAS de MAEDDO para MAEEDO
+            // Estos valores deben ser las SUMAS de los detalles, no los valores de la cotización
+            $sumaVANELI = 0; // Suma de subtotales con descuento
+            $sumaVAIVLI = 0; // Suma de IVA de todos los productos
+            $sumaVABRLI = 0; // Suma de totales con IVA
+            
+            foreach ($cotizacion->productos as $producto) {
+                $precioNeto = $producto->precio_unitario;
+                $cantidad = $producto->cantidad;
+                $subtotalBruto = $precioNeto * $cantidad;
+                
+                // Calcular descuentos si existen
+                $valorDescuento = $producto->descuento_valor ?? 0;
+                
+                // VANELI = Subtotal con descuento
+                $subtotalConDescuento = $subtotalBruto - $valorDescuento;
+                
+                // VAIVLI = IVA del subtotal con descuento (19%)
+                $ivaConDescuento = $subtotalConDescuento * 0.19;
+                
+                // VABRLI = Total con IVA
+                $totalConIVA = $subtotalConDescuento + $ivaConDescuento;
+                
+                // Acumular sumas
+                $sumaVANELI += $subtotalConDescuento;
+                $sumaVAIVLI += $ivaConDescuento;
+                $sumaVABRLI += $totalConIVA;
+            }
+            
+            // MAEEDO debe usar las SUMAS de MAEDDO
+            $VANEDO = round($sumaVANELI, 0); // Suma de subtotales SIN decimales
+            $VAIVDO = $sumaVAIVLI; // Suma de IVA CON decimales (19%)
+            $VABRDO = round($sumaVABRLI, 0); // Suma de totales SIN decimales
+            
+            Log::info("🔢 CAPRCO (suma cantidades): {$sumaCantidades}");
+            Log::info("🔢 VANEDO (suma VANELI): {$VANEDO}");
+            Log::info("🔢 VAIVDO (suma VAIVLI): {$VAIVDO}");
+            Log::info("🔢 VABRDO (suma VABRLI): {$VABRDO}");
+            
+            // INSERT COMPLETO DE MAEEDO según planilla
+            $insertMAEEDO = "
                 SET IDENTITY_INSERT MAEEDO ON
                 
                 INSERT INTO MAEEDO (
@@ -923,17 +912,17 @@ class AprobacionController extends Controller
                     MODO, TIMODO, TAMODO,
                     VAIVDO, VANEDO, VABRDO, VAABDO,
                     ESDO, KOFUDO, KOTU, LAHORA, DESPACHO, HORAGRAB,
-                    CUOGASDIF, BODESTI, PROYECTO, FLIQUIFCV, LISACTIVA
+                    CUOGASDIF, BODESTI, PROYECTO, FLIQUIFCV, LISACTIVA, NUVEDO
                 ) VALUES (
                     {$siguienteId}, '01', 'NVV', '{$nudoFormateado}', '{$cotizacion->cliente_codigo}', 
-                    '{$sucursalCliente}', '{$cotizacion->cliente_codigo}', 'LIB',
-                    'I', 'LIB', 'N', 'S',
-                    GETDATE(), GETDATE(), GETDATE(), '{$cotizacion->fecha_despacho->format('Y-m-d H:i:s')}',
+                    '{$sucursalCliente}', '', 'LIB',
+                    'I', '', 'N', 'S',
+                    GETDATE(), DATEADD(day, {$diasPago}, GETDATE()), DATEADD(day, {$diasPago}, GETDATE()), '{$cotizacion->fecha_despacho->format('Y-m-d H:i:s')}',
                     {$sumaCantidades}, 0, 0, 0,
                     '$', 'N', 1,
                     {$VAIVDO}, {$VANEDO}, {$VABRDO}, 0,
-                    '', '{$codigoVendedor}', 1, GETDATE(), 1, 0,
-                    0, '', '', GETDATE(), 'TABPP01P'
+                    '', '{$codigoVendedor}', 1, GETDATE(), 1, {$horagrab},
+                    0, '', '', GETDATE(), '{$listaPrecios}', {$nuevecr}
                 )
                 
                 SET IDENTITY_INSERT MAEEDO OFF
@@ -956,44 +945,99 @@ class AprobacionController extends Controller
             
             Log::info('Encabezado MAEEDO insertado correctamente');
             
-            // Insertar detalles en MAEDDO (COPIADO EXACTO DE PREVISUALIZACIÓN)
+            // Insertar detalles en MAEDDO
             foreach ($cotizacion->productos as $index => $producto) {
                 $lineaId = $index + 1;
                 
+                // Obtener datos del producto desde la tabla productos en MySQL
                 $productoDB = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
                 
-                $udtrpr = 1;
-                $rludpr = 1;
-                $ud01pr = 'UN';
-                $ud02pr = 'UN';
+                // Valores por defecto si no existe el producto
+                $udtrpr = 1; // Por defecto venta por unidad
+                $rludpr = 1; // Por defecto 1 unidad por caja
+                $ud01pr = 'UN'; // Primera unidad
+                $ud02pr = 'CJ'; // Segunda unidad
                 
                 if ($productoDB) {
+                    // Si el producto existe, usar sus datos
                     $rludpr = $productoDB->RLUD ?? 1;
                     $ud01pr = trim($productoDB->UD01PR ?? 'UN');
                     $ud02pr = trim($productoDB->UD02PR ?? 'UN');
+                    // Si RLUD > 1, probablemente se vende por caja
                     $udtrpr = ($rludpr > 1) ? 2 : 1;
                 }
                 
-                $codigoProducto = substr($producto->codigo_producto, 0, 13);
-                $nombreProducto = substr($producto->nombre_producto, 0, 50);
-                $ud01prTruncado = substr($ud01pr, 0, 2);
-                $ud02prTruncado = substr($ud02pr, 0, 2);
+                // Calcular valores con descuento e IVA
+                $subtotalBruto = $producto->cantidad * $producto->precio_unitario;
+                $porcentajeDescuento = $producto->descuento_porcentaje ?? 0;
+                $valorDescuento = $producto->descuento_valor ?? 0;
+                $subtotalConDescuento = $producto->subtotal_con_descuento ?? $subtotalBruto;
                 
+                // IVA (19%)
+                $porcentajeIVA = 19;
+                $valorIVA = $producto->iva_valor ?? ($subtotalConDescuento * 0.19);
+                
+                // Precios con IVA
+                $precioConIVA = $producto->precio_unitario * 1.19;
+                $precioConIVARedondeado = round($precioConIVA, 2);
+                
+                Log::info("=== PRODUCTO #{$lineaId} ===");
+                Log::info("Código: {$producto->codigo_producto}");
+                Log::info("Nombre: {$producto->nombre_producto}");
+                Log::info("Cantidad: {$producto->cantidad}");
+                Log::info("Precio Unitario: {$producto->precio_unitario}");
+                Log::info("UDTRPR (1=UN, 2=CJ): {$udtrpr}");
+                Log::info("RLUDPR (unidades por caja): {$rludpr}");
+                Log::info("UD01PR: {$ud01pr}");
+                Log::info("UD02PR: {$ud02pr}");
+                Log::info("Descuento %: {$porcentajeDescuento}");
+                Log::info("Descuento $: {$valorDescuento}");
+                Log::info("Subtotal con descuento: {$subtotalConDescuento}");
+                Log::info("IVA %: {$porcentajeIVA}");
+                Log::info("IVA $: {$valorIVA}");
+                Log::info("Precio con IVA: {$precioConIVARedondeado}");
+                
+                // INSERT simplificado con solo los campos esenciales
+                // Truncar strings largos para evitar errores de truncamiento
+                $codigoProducto = substr($producto->codigo_producto, 0, 13); // KOPRCT límite 13
+                $nombreProducto = substr($producto->nombre_producto, 0, 50); // NOKOPR límite 50
+                $ud01prTruncado = substr($ud01pr, 0, 2); // UD01PR límite 2
+                $ud02prTruncado = substr($ud02pr, 0, 2); // UD02PR límite 2 (traído de BD)
+                
+                // Log de truncamiento para verificar
+                Log::info("🔢 Código original: '{$producto->codigo_producto}' -> Truncado: '{$codigoProducto}'");
+                Log::info("🔢 Nombre original: '{$producto->nombre_producto}' -> Truncado: '{$nombreProducto}'");
+                Log::info("🔢 UD01PR original: '{$ud01pr}' -> Truncado: '{$ud01prTruncado}'");
+                Log::info("🔢 UD02PR original: '{$ud02pr}' -> Truncado: '{$ud02prTruncado}'");
+                
+                // Calcular valores según planilla
                 $precioNeto = $producto->precio_unitario;
                 $cantidad = $producto->cantidad;
                 $subtotalBruto = $precioNeto * $cantidad;
+                
+                // Calcular descuentos si existen
                 $porcentajeDescuento = $producto->descuento_porcentaje ?? 0;
                 $valorDescuento = $producto->descuento_valor ?? 0;
                 $nudtli = ($porcentajeDescuento > 0 || $valorDescuento > 0) ? 1 : 0;
-                $vadtneli = $valorDescuento;
+                $vadtneli = $valorDescuento; // Valor del descuento
+                
+                // VANELI = Subtotal con descuento (precio * cantidad - descuento)
                 $subtotalConDescuento = $subtotalBruto - $valorDescuento;
+                
+                // VAIVLI = IVA del subtotal con descuento (19%)
                 $ivaConDescuento = $subtotalConDescuento * 0.19;
+                
+                // Total con IVA
                 $total = $subtotalConDescuento + $ivaConDescuento;
+                
+                // CAPRCO2 = CAPRCO1 / RLUDPR (según planilla)
                 $caprco2 = $rludpr > 0 ? round($cantidad / $rludpr, 2) : 0;
+                
+                // NULIDO debe ser correlativo con ceros a la izquierda (máximo 5 caracteres)
                 $nulidoFormateado = str_pad($lineaId, 5, '0', STR_PAD_LEFT);
                 
-                // Obtener PPPRPM (precio mínimo)
-                $ppprpm = 0;
+                // Obtener PPPRPM desde MAEPREM (precio mínimo)
+                $ppprpm = 0; // Valor por defecto
                 try {
                     $queryPrecioMin = "SELECT ISNULL(PM, 0) as PM FROM MAEPREM WHERE KOPR = '{$codigoProducto}'";
                     $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
@@ -1013,38 +1057,36 @@ class AprobacionController extends Controller
                         }
                     }
                 } catch (\Exception $e) {
-                    // Ignorar error
+                    Log::warning("Error obteniendo PPPRPM: " . $e->getMessage());
                 }
                 
+                // PPPRNERE1 y PPPRNERE2 = precio neto - descuento unitario
                 $descuentoUnitario = $cantidad > 0 ? $valorDescuento / $cantidad : 0;
                 $ppprnere1 = $precioNeto - $descuentoUnitario;
                 $ppprnere2 = $ppprnere1;
                 
+                Log::info("🔢 CAPRCO2 calculado: {$caprco2}");
+                Log::info("🔢 NULIDO formateado: {$nulidoFormateado}");
+                Log::info("🔢 PPPRPM obtenido: {$ppprpm}");
+                Log::info("🔢 Descuento %: {$porcentajeDescuento}");
+                Log::info("🔢 Descuento $: {$valorDescuento}");
+                Log::info("🔢 NUDTLI: {$nudtli}");
+                Log::info("🔢 VANELI (subtotal con descuento): {$subtotalConDescuento}");
+                Log::info("🔢 VAIVLI (IVA con descuento): {$ivaConDescuento}");
+                
                 $insertMAEDDO = "
                     INSERT INTO MAEDDO (
-                        IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
-                        LILG, NULIDO, SULIDO, BOSULIDO, LUVTLIDO, KOFULIDO, TIPR,
-                        UDTRPR, RLUDPR, UD01PR, UD02PR,
-                        KOPRCT, NOKOPR, CAPRCO1, CAPRCO2,
-                        KOLTPR, MOPPPR, TIMOPPPR, TAMOPPPR,
-                        PPPRNE, PPPRNELT, PPPRBR, PPPRBRLT,
-                        PODTGLLI, VADTNELI, VANELI, POIVLI, VAIVLI, VABRLI,
-                        TIGELI, FEEMLI, FEERLI, NUDTLI, ARCHIRST, IDRST,
-                        PPPRPM, PPPRNERE1, PPPRNERE2, TASADORIG, CUOGASDIF, PROYECTO,
-                        POTENCIA, HUMEDAD, IDTABITPRE, FEERLIMODI
+                        IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO, LILG, NULIDO, SULIDO, BOSULIDO, LUVTLIDO, KOFULIDO,
+                        TIPR, UDTRPR, RLUDPR, UD01PR, UD02PR, KOPRCT, NOKOPR, CAPRCO1, CAPRCO2,
+                        KOLTPR, MOPPPR, TIMOPPPR, TAMOPPPR, PPPRNE, PPPRNELT, PPPRBR, PPPRBRLT,
+                        PODTGLLI, VADTNELI, VANELI, POIVLI, VAIVLI, VABRLI, TIGELI, FEEMLI, FEERLI, NUDTLI,
+                        ARCHIRST, IDRST, PPPRPM, PPPRNERE1, PPPRNERE2, TASADORIG, CUOGASDIF, PROYECTO, POTENCIA, HUMEDAD, IDTABITPRE, FEERLIMODI
                     ) VALUES (
-                        {$siguienteId}, '01', 'NVV', '{$nudoFormateado}',
-                        '{$cotizacion->cliente_codigo}', '{$sucursalCliente}',
-                        'SI', '{$nulidoFormateado}', 'LIB', 'LIB', '', '{$codigoVendedor}', 'FPN',
-                        {$udtrpr}, {$rludpr}, '{$ud01prTruncado}', '{$ud02prTruncado}',
-                        '{$codigoProducto}', '{$nombreProducto}',
-                        {$cantidad}, {$caprco2},
-                        '{$listaPrecios}', '$', 'N', 1,
-                        {$precioNeto}, {$precioNeto}, " . ($precioNeto * 1.19) . ", " . ($precioNeto * 1.19) . ",
-                        {$porcentajeDescuento}, {$vadtneli}, {$subtotalConDescuento}, 19, {$ivaConDescuento}, {$total},
-                        'I', GETDATE(), '{$cotizacion->fecha_despacho->format('Y-m-d')}', {$nudtli}, '', 0,
-                        {$ppprpm}, {$ppprnere1}, {$ppprnere2}, 1, 0, 0,
-                        0, 0, 0, '{$cotizacion->fecha_despacho->format('Y-m-d')}'
+                        {$siguienteId}, '01', 'NVV', '{$nudoFormateado}', '{$cotizacion->cliente_codigo}', '{$sucursalCliente}', 'SI', '{$nulidoFormateado}', 'LIB', 'LIB', '', '{$codigoVendedor}',
+                        'FPN', {$udtrpr}, {$rludpr}, '{$ud01prTruncado}', '{$ud02prTruncado}', '{$codigoProducto}', '{$nombreProducto}', {$cantidad}, {$caprco2},
+                        '{$listaPrecios}', '$', 'N', 1, {$precioNeto}, {$precioNeto}, " . ($precioNeto * 1.19) . ", " . ($precioNeto * 1.19) . ",
+                        {$porcentajeDescuento}, {$vadtneli}, " . round($subtotalConDescuento, 0) . ", 19, {$ivaConDescuento}, " . round($total, 0) . ", 'I', GETDATE(), '{$cotizacion->fecha_despacho->format('Y-m-d H:i:s')}', {$nudtli},
+                        '', 0, {$ppprpm}, {$ppprnere1}, {$ppprnere2}, 1, 0, 0, 0, 0, 0, '{$cotizacion->fecha_despacho->format('Y-m-d H:i:s')}'
                     )
                 ";
                 
@@ -1062,9 +1104,77 @@ class AprobacionController extends Controller
                 if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
                     throw new \Exception('Error insertando detalle línea ' . $lineaId . ': ' . $result);
                 }
+                
+                // INSERT MAEDTLI - Solo para productos CON descuento
+                if ($porcentajeDescuento > 0) {
+                    $insertMAEDTLI = "
+                        INSERT INTO MAEDTLI (
+                            IDMAEEDO, NULIDO, KODT, PODT, VADT
+                ) VALUES (
+                            {$siguienteId}, '{$nulidoFormateado}', 'D_SIN_TIPO', {$porcentajeDescuento}, {$vadtneli}
+                )
+            ";
+                    
+                    Log::info("SQL INSERT MAEDTLI línea {$lineaId} (producto con descuento):");
+                    Log::info($insertMAEDTLI);
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                    file_put_contents($tempFile, $insertMAEDTLI . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+                    if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
+                        Log::warning('Error insertando MAEDTLI línea ' . $lineaId . ': ' . $result);
+            } else {
+                        Log::info("✅ MAEDTLI insertado correctamente para producto con descuento {$lineaId}");
+                    }
+                } else {
+                    Log::info("⏭️ Producto línea {$lineaId} sin descuento - NO se inserta en MAEDTLI");
+                }
             }
             
             Log::info('Detalles MAEDDO insertados correctamente');
+            
+            // INSERT MAEEDOOB - Observaciones y orden de compra
+            $observacionVendedor = $cotizacion->observacion_vendedor ?? '';
+            $numeroOrdenCompra = $cotizacion->numero_orden_compra ?? '';
+            
+            // Truncar observación a 250 caracteres
+            $observacionTruncada = substr($observacionVendedor, 0, 250);
+            
+            // Truncar orden de compra a 40 caracteres
+            $ordenCompraTruncada = substr($numeroOrdenCompra, 0, 40);
+            
+            // Obtener condición de pago del cliente
+            $condicionPago = $this->obtenerCondicionPagoCliente($cotizacion->cliente_codigo);
+            
+            $insertMAEEDOOB = "
+                INSERT INTO MAEEDOOB (
+                    IDMAEEDO, OBDO, CPDO, OCDO
+                ) VALUES (
+                    {$siguienteId}, '{$observacionTruncada}', '{$condicionPago}', '{$ordenCompraTruncada}'
+                )
+            ";
+            
+            Log::info("SQL INSERT MAEEDOOB:");
+            Log::info($insertMAEEDOOB);
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $insertMAEEDOOB . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
+                Log::warning('Error insertando MAEEDOOB: ' . $result);
+            } else {
+                Log::info("✅ MAEEDOOB insertado correctamente");
+            }
             
             // Actualizar stock comprometido en MAEST
             foreach ($cotizacion->productos as $producto) {
@@ -1181,87 +1291,6 @@ class AprobacionController extends Controller
             
             Log::info('Stock comprometido MySQL actualizado correctamente');
             
-            // INSERT MAEEDOOB - Observaciones y orden de compra
-            $observacionVendedor = $cotizacion->observacion_vendedor ?? '';
-            $numeroOrdenCompra = $cotizacion->numero_orden_compra ?? '';
-            
-            // Truncar observación a 250 caracteres
-            $observacionTruncada = substr($observacionVendedor, 0, 250);
-            
-            // Truncar orden de compra a 40 caracteres
-            $ordenCompraTruncada = substr($numeroOrdenCompra, 0, 40);
-            
-            // Obtener condición de pago del cliente
-            $condicionPago = $this->obtenerCondicionPagoCliente($cotizacion->cliente_codigo);
-            
-            $insertMAEEDOOB = "
-                INSERT INTO MAEEDOOB (
-                    IDMAEEDO, OBDO, CPDO, OCDO
-                ) VALUES (
-                    {$siguienteId}, '{$observacionTruncada}', '{$condicionPago}', '{$ordenCompraTruncada}'
-                )
-            ";
-            
-            Log::info("SQL INSERT MAEEDOOB:");
-            Log::info($insertMAEEDOOB);
-            
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $insertMAEEDOOB . "\ngo\nquit");
-            
-            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-            $result = shell_exec($command);
-            
-            unlink($tempFile);
-            
-            if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
-                Log::warning('Error insertando MAEEDOOB: ' . $result);
-            } else {
-                Log::info("✅ MAEEDOOB insertado correctamente");
-            }
-            
-            // INSERT MAEDTLI - Solo para productos CON descuento
-            $productosConDescuento = 0;
-            foreach ($cotizacion->productos as $index => $producto) {
-                $porcentajeDescuento = $producto->descuento_porcentaje ?? 0;
-                if ($porcentajeDescuento > 0) {
-                    $productosConDescuento++;
-                    $lineaId = $index + 1;
-                    $nulidoFormateado = str_pad($lineaId, 5, '0', STR_PAD_LEFT);
-                    $valorDescuento = $producto->descuento_valor ?? 0;
-                    
-                    $insertMAEDTLI = "
-                        INSERT INTO MAEDTLI (
-                            IDMAEEDO, NULIDO, KODT, PODT, VADT
-                        ) VALUES (
-                            {$siguienteId}, '{$nulidoFormateado}', 'D_SIN_TIPO', {$porcentajeDescuento}, {$valorDescuento}
-                        )
-                    ";
-                    
-                    Log::info("SQL INSERT MAEDTLI línea {$lineaId} (producto con descuento):");
-                    Log::info($insertMAEDTLI);
-                    
-                    $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                    file_put_contents($tempFile, $insertMAEDTLI . "\ngo\nquit");
-                    
-                    $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                    $result = shell_exec($command);
-                    
-                    unlink($tempFile);
-                    
-                    if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
-                        Log::warning('Error insertando MAEDTLI línea ' . $lineaId . ': ' . $result);
-                    } else {
-                        Log::info("✅ MAEDTLI insertado correctamente para producto con descuento {$lineaId}");
-                    }
-                }
-            }
-            
-            if ($productosConDescuento > 0) {
-                Log::info("✅ {$productosConDescuento} productos con descuento insertados en MAEDTLI");
-            } else {
-                Log::info("⏭️ No hay productos con descuento - NO se inserta en MAEDTLI");
-            }
-            
             // Verificar que la NVV realmente se insertó en SQL Server
             $queryVerificacion = "SELECT COUNT(*) as total FROM MAEEDO WHERE IDMAEEDO = {$siguienteId} AND EMPRESA = '01' AND TIDO = 'NVV'";
             
@@ -1312,221 +1341,6 @@ class AprobacionController extends Controller
     }
 
     /**
-     * FUNCIÓN DE PRUEBA: Insertar con NUDO fijo para debugging
-     */
-    private function insertarEnSQLServerTest($cotizacion)
-    {
-        try {
-            Log::info("🧪 === INICIO FUNCIÓN DE PRUEBA ===");
-            
-            // NUDO FIJO PARA PRUEBAS
-            $nudoFormateado = '9999999991';
-            Log::info("🧪 NUDO FIJO: {$nudoFormateado}");
-            
-            // Obtener siguiente correlativo para IDMAEEDO
-            $queryCorrelativo = "SELECT TOP 1 ISNULL(MAX(IDMAEEDO), 0) + 1 AS siguiente_id FROM MAEEDO WHERE EMPRESA = '01'";
-            
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $queryCorrelativo . "\ngo\nquit");
-            
-            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-            $result = shell_exec($command);
-            unlink($tempFile);
-            
-            // Parsear el resultado
-            $siguienteId = 1;
-            if ($result && !str_contains($result, 'error')) {
-                if (preg_match('/siguiente_id\s*\n\s*(\d+)/', $result, $matches)) {
-                    $siguienteId = (int)$matches[1];
-                } else {
-                    $lines = explode("\n", $result);
-                    $maxNumber = 0;
-                    foreach ($lines as $line) {
-                        $line = trim($line);
-                        if (is_numeric($line) && (int)$line > $maxNumber && (int)$line > 1000) {
-                            $maxNumber = (int)$line;
-                        }
-                    }
-                    if ($maxNumber > 0) {
-                        $siguienteId = $maxNumber;
-                    }
-                }
-            }
-            
-            Log::info("🧪 Siguiente ID para MAEEDO: {$siguienteId}");
-            
-            // Obtener información del vendedor
-            $codigoVendedor = $cotizacion->user->codigo_vendedor ?? '001';
-            $nombreVendedor = $cotizacion->user->name ?? 'Vendedor Sistema';
-            
-            // Obtener sucursal del cliente
-            $querySucursal = "SELECT LTRIM(RTRIM(SUEN)) as SUCURSAL FROM MAEEN WHERE KOEN = '{$cotizacion->cliente_codigo}'";
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $querySucursal . "\ngo\nquit");
-            
-            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-            $result = shell_exec($command);
-            unlink($tempFile);
-            
-            $sucursalCliente = '';
-            if ($result && !str_contains($result, 'error')) {
-                $lines = explode("\n", $result);
-                $foundHeader = false;
-                foreach ($lines as $line) {
-                    $line = trim($line);
-                    if ($line === 'SUCURSAL') {
-                        $foundHeader = true;
-                        continue;
-                    }
-                    if ($foundHeader && !empty($line) && !str_contains($line, 'row') && !str_contains($line, '---') && !str_contains($line, '>')) {
-                        $sucursalCliente = $line;
-                        break;
-                    }
-                }
-            }
-            
-            // Si sucursal está vacía, usar valor por defecto
-            if (empty($sucursalCliente)) {
-                $sucursalCliente = '1';
-                Log::info("🧪 Sucursal vacía, usando valor por defecto: '1'");
-            }
-            
-            Log::info("🧪 Sucursal Cliente: '{$sucursalCliente}'");
-            Log::info("🧪 Vendedor: {$codigoVendedor}");
-            
-            // Fecha de vencimiento
-            $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
-            
-            // INSERT SIMPLIFICADO DE MAEEDO
-            $insertMAEEDO = "
-                SET IDENTITY_INSERT MAEEDO ON
-                
-                INSERT INTO MAEEDO (
-                    IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO, ENDOFI, SUDO,
-                    TIGEDO, LUVTDO, MEARDO, ESPGDO,
-                    FEEMDO, FE01VEDO, FEULVEDO, FEER,
-                    CAPRCO, CAPRAD, CAPREX, CAPRNC,
-                    MODO, TIMODO, TAMODO,
-                    VAIVDO, VANEDO, VABRDO, VAABDO,
-                    ESDO, KOFUDO, KOTU, LAHORA, DESPACHO, HORAGRAB,
-                    CUOGASDIF, BODESTI, PROYECTO, FLIQUIFCV, LISACTIVA
-                ) VALUES (
-                    {$siguienteId}, '01', 'NVV', '{$nudoFormateado}', '{$cotizacion->cliente_codigo}', 
-                    '{$sucursalCliente}', '{$cotizacion->cliente_codigo}', 'LIB',
-                    'I', 'LIB', 'N', 'S',
-                    GETDATE(), GETDATE(), GETDATE(), '{$cotizacion->fecha_despacho->format('Y-m-d H:i:s')}',
-                    {$cotizacion->subtotal_neto}, 0, 0, 0,
-                    '$', 'N', 1,
-                    {$cotizacion->iva}, {$cotizacion->subtotal_neto}, {$cotizacion->total}, 0,
-                    '', '{$codigoVendedor}', 1, GETDATE(), 1, 0,
-                    0, '', '', GETDATE(), 'TABPP01P'
-                )
-                
-                SET IDENTITY_INSERT MAEEDO OFF
-            ";
-            
-            Log::info("🧪 Ejecutando INSERT MAEEDO...");
-            Log::info("🧪 SQL COMPLETO:");
-            Log::info($insertMAEEDO);
-            
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $insertMAEEDO . "\ngo\nquit");
-            
-            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-            $result = shell_exec($command);
-            unlink($tempFile);
-            
-            if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
-                Log::error("🧪 ERROR en MAEEDO: " . $result);
-                throw new \Exception('Error insertando encabezado: ' . $result);
-            }
-            
-            Log::info("🧪 ✅ MAEEDO insertado correctamente");
-            
-            // INSERT SIMPLIFICADO DE MAEDDO (solo primer producto para prueba)
-            $producto = $cotizacion->productos->first();
-            if ($producto) {
-                $productoDB = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
-                
-                $udtrpr = 1;
-                $rludpr = 1;
-                $ud01pr = 'UN';
-                $ud02pr = 'UN';
-                
-                if ($productoDB) {
-                    $rludpr = $productoDB->RLUD ?? 1;
-                    $ud01pr = trim($productoDB->UD01PR ?? 'UN');
-                    $ud02pr = trim($productoDB->UD02PR ?? 'CJ');
-                    $udtrpr = ($rludpr > 1) ? 2 : 1;
-                }
-                
-                $subtotal = $producto->cantidad * $producto->precio_unitario;
-                
-                $insertMAEDDO = "
-                    INSERT INTO MAEDDO (
-                        IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
-                        LILG, NULIDO, SULIDO, BOSULIDO, LUVTLIDO, KOFULIDO, TIPR,
-                        UDTRPR, RLUDPR, UD01PR, UD02PR,
-                        KOPRCT, NOKOPR, CAPRCO1, CAPRCO2,
-                        KOLTPR, MOPPPR, TIMOPPPR, TAMOPPPR,
-                        PPPRNE, PPPRNELT, PPPRBR, PPPRBRLT,
-                        PODTGLLI, VADTNELI, VANELI, POIVLI, VAIVLI, VABRLI,
-                        TIGELI, FEEMLI, FEERLI, NUDTLI, ARCHIRST, IDRST,
-                        PPPRPM, PPPRNERE1, PPPRNERE2, TASADORIG, CUOGASDIF, PROYECTO,
-                        POTENCIA, HUMEDAD, IDTABITPRE, FEERLIMODI
-                    ) VALUES (
-                        {$siguienteId}, '01', 'NVV', '{$nudoFormateado}',
-                        '{$cotizacion->cliente_codigo}', '{$sucursalCliente}',
-                        'SI', '{$lineaId}', 'LIB', 'LIB', '', '{$codigoVendedor}', 'FPN',
-                        {$udtrpr}, {$rludpr}, '{$ud01pr}', '{$ud02pr}',
-                        '{$producto->codigo_producto}', '{$producto->nombre_producto}',
-                        {$producto->cantidad}, {$producto->cantidad},
-                        'TABPP01P', '$', 'N', 1,
-                        {$producto->precio_unitario}, {$producto->precio_unitario}, {$precioBruto}, {$precioBruto},
-                        {$porcentajeDescuento}, {$valorDescuento}, {$subtotalConDescuento}, 19, {$ivaConDescuento}, {$totalConIVA},
-                        'I', GETDATE(), '{$cotizacion->fecha_despacho->format('Y-m-d H:i:s')}', 1, '', 0,
-                        {$precioMinimo}, {$precioNetoReal}, {$precioNetoReal}, 1, 0, 0,
-                        0, 0, 0, '{$cotizacion->fecha_despacho->format('Y-m-d')}'
-                    )
-                ";
-                
-                Log::info("🧪 Ejecutando INSERT MAEDDO...");
-                
-                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $insertMAEDDO . "\ngo\nquit");
-                
-                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                $result = shell_exec($command);
-                unlink($tempFile);
-                
-                if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
-                    Log::error("🧪 ERROR en MAEDDO: " . $result);
-                    throw new \Exception('Error insertando detalle: ' . $result);
-                }
-                
-                Log::info("🧪 ✅ MAEDDO insertado correctamente");
-            }
-            
-            // Guardar el NUDO en MySQL
-            $cotizacion->numero_nvv = $nudoFormateado;
-            $cotizacion->save();
-            
-            Log::info("🧪 === FIN FUNCIÓN DE PRUEBA - ÉXITO ===");
-            
-            return [
-                'success' => true,
-                'nota_venta_id' => $siguienteId,
-                'numero_correlativo' => $nudoFormateado,
-                'message' => "🧪 NVV DE PRUEBA #{$nudoFormateado} insertada correctamente"
-            ];
-            
-        } catch (\Exception $e) {
-            Log::error('🧪 ERROR en insertarEnSQLServerTest: ' . $e->getMessage());
-            throw $e;
-        }
-    }
-
-    /**
      * Obtener lista de precios del cliente desde MySQL
      */
     private function obtenerListaPreciosCliente($codigoCliente)
@@ -1534,9 +1348,10 @@ class AprobacionController extends Controller
         try {
             $cliente = \App\Models\Cliente::where('codigo_cliente', $codigoCliente)->first();
             if ($cliente && $cliente->lista_precios) {
+                // KOLTPR tiene límite de 8 caracteres
                 return substr($cliente->lista_precios, 0, 8);
             }
-            return 'TABPP01P';
+            return 'TABPP01P'; // Valor por defecto (8 caracteres)
         } catch (\Exception $e) {
             Log::warning("Error obteniendo lista de precios: " . $e->getMessage());
             return 'TABPP01P';
@@ -1566,7 +1381,7 @@ class AprobacionController extends Controller
                     }
                 }
             }
-            return 0;
+            return 0; // Valor por defecto
         } catch (\Exception $e) {
             Log::warning("Error obteniendo días de pago: " . $e->getMessage());
             return 0;
@@ -1589,28 +1404,14 @@ class AprobacionController extends Controller
             
             if ($result && !str_contains($result, 'error')) {
                 $lines = explode("\n", $result);
-                $foundHeader = false;
                 foreach ($lines as $line) {
                     $line = trim($line);
-                    
-                    // Saltar líneas de configuración
-                    if (str_contains($line, 'Setting') || str_contains($line, 'locale') || str_contains($line, '1>')) {
-                        continue;
-                    }
-                    
-                    // Buscar el header CPEN
-                    if ($line === 'CPEN') {
-                        $foundHeader = true;
-                        continue;
-                    }
-                    
-                    // Después del header, la siguiente línea con datos es el valor
-                    if ($foundHeader && !empty($line) && !str_contains($line, 'row') && !str_contains($line, '---')) {
+                    if (!empty($line) && !str_contains($line, 'CPEN') && !str_contains($line, 'row')) {
                         return $line;
                     }
                 }
             }
-            return '';
+            return ''; // Valor por defecto
         } catch (\Exception $e) {
             Log::warning("Error obteniendo condición de pago: " . $e->getMessage());
             return '';
@@ -1635,17 +1436,19 @@ class AprobacionController extends Controller
                 $lines = explode("\n", $result);
                 foreach ($lines as $line) {
                     $line = trim($line);
+                    // NUVECR es numérico, buscar un número
                     if (is_numeric($line)) {
                         return (float)$line;
                     }
                 }
             }
-            return 0;
+            return 0; // Valor por defecto numérico
         } catch (\Exception $e) {
             Log::warning("Error obteniendo NUVECR: " . $e->getMessage());
             return 0;
         }
     }
+
 
     /**
      * Rechazar nota de venta

@@ -258,18 +258,6 @@
                                     @if($cotizacion->estado_aprobacion === 'aprobada_picking')
                                         <span class="badge badge-success">Aprobada</span>
                                         <br><small>Lista para procesar</small>
-                                        @if($cotizacion->numero_nvv)
-                                            <br><br>
-                                            <div class="alert alert-success" style="padding: 10px; margin-top: 10px;">
-                                                <strong><i class="material-icons" style="font-size: 18px; vertical-align: middle;">assignment</i> NVV Generada</strong>
-                                                <br>
-                                                <h4 style="margin: 5px 0;">N° {{ str_pad($cotizacion->numero_nvv, 10, '0', STR_PAD_LEFT) }}</h4>
-                                                <br>
-                                                <a href="{{ route('nvv-pendientes.ver', $cotizacion->numero_nvv) }}" class="btn btn-sm btn-info mt-2" target="_blank">
-                                                    <i class="material-icons">visibility</i> Ver NVV en Sistema
-                                                </a>
-                                            </div>
-                                        @endif
                                     @elseif($cotizacion->estado_aprobacion === 'rechazada')
                                         <span class="badge badge-danger">Rechazada</span>
                                         <br><small>{{ $cotizacion->motivo_rechazo }}</small>
@@ -279,6 +267,23 @@
                                     @endif
                                 </div>
                             </div>
+                            @if($cotizacion->estado_aprobacion === 'aprobada_picking')
+                                <div class="col-md-12 text-center">
+                                        @if($cotizacion->numero_nvv)
+                                            <br><br>
+                                            <div class="alert alert-success" style="padding: 10px; margin-top: 10px;">
+                                                <strong><i class="material-icons" style="font-size: 18px; vertical-align: middle;">assignment</i> NVV Generada</strong>
+                                                <br>
+                                                <h4 style="margin: 5px 0;">N° {{ str_pad($cotizacion->numero_nvv, 10, '0', STR_PAD_LEFT) }}</h4>
+                                                <br>
+                                                <a href="{{ route('nvv-pendientes.ver', str_pad($cotizacion->numero_nvv, 10, '0', STR_PAD_LEFT)) }}" class="btn btn-sm btn-info mt-2">
+                                                    <i class="material-icons">visibility</i> Ver NVV en Sistema
+                                                </a>
+                                            </div>
+                                            @endif
+                                </div>
+                                        
+                            @endif
                         </div>
 
                         <!-- Comentarios de Aprobación -->
@@ -343,7 +348,11 @@
                                             <th>Cantidad</th>
                                             <th>Separar</th>
                                             <th>Precio Unit.</th>
+                                            <th>Desc. (%)</th>
+                                            <th>Desc. ($)</th>
                                             <th>Subtotal</th>
+                                            <th>IVA (19%)</th>
+                                            <th>Total</th>
                                             <th>Stock</th>
                                             <th>Estado</th>
                                             @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock)
@@ -411,8 +420,20 @@
                                                     ${{ number_format($producto->precio_unitario, 0) }}
                                                 </td>
                                                 <td>
-                                                    <strong class="subtotal-{{ $producto->id }}">
-                                                        ${{ number_format($producto->cantidad * $producto->precio_unitario, 0) }}
+                                                    <span class="badge badge-warning">{{ $producto->descuento_porcentaje ?? 0 }}%</span>
+                                                </td>
+                                                <td>
+                                                    ${{ number_format($producto->descuento_valor ?? 0, 0) }}
+                                                </td>
+                                                <td>
+                                                    ${{ number_format($producto->subtotal_con_descuento ?? ($producto->cantidad * $producto->precio_unitario), 0) }}
+                                                </td>
+                                                <td>
+                                                    ${{ number_format($producto->iva_valor ?? 0, 0) }}
+                                                </td>
+                                                <td>
+                                                    <strong class="total-{{ $producto->id }}">
+                                                        ${{ number_format($producto->total_producto ?? (($producto->subtotal_con_descuento ?? ($producto->cantidad * $producto->precio_unitario)) * 1.19), 0) }}
                                                     </strong>
                                                 </td>
                                                 <td>

@@ -257,41 +257,6 @@
             </div>
         </div>
 
-        <!-- Acciones Rápidas -->
-        <div class="row">
-            <div class="col-md-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h4 class="card-title">Acciones Rápidas</h4>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <!-- Botones específicos para Picking -->
-                            <div class="col-md-3">
-                                <a href="{{ route('aprobaciones.index') }}" class="btn btn-warning btn-block">
-                                    <i class="material-icons">pending_actions</i> Notas Pendientes
-                                </a>
-                            </div>
-                            <div class="col-md-3">
-                                <a href="{{ route('facturas-pendientes.index') }}" class="btn btn-danger btn-block">
-                                    <i class="material-icons">receipt</i> Facturas Sistema
-                                </a>
-                            </div>
-                            <div class="col-md-3">
-                                <a href="{{ route('productos.index') }}" class="btn btn-success btn-block">
-                                    <i class="material-icons">inventory</i> Gestión Stock
-                                </a>
-                            </div>
-                            <div class="col-md-3">
-                                <a href="{{ route('clientes.index') }}" class="btn btn-primary btn-block">
-                                    <i class="material-icons">people</i> Listado Clientes
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 </div>
 @endsection
