@@ -12,9 +12,9 @@
                         <div class="col-md-8">
                             <h4 class="card-title">
                                 <i class="material-icons">edit</i>
-                                Editar Nota de Venta #{{ $cotizacion->id }}
+                                Editar Cotización #{{ $cotizacion->id }}
                             </h4>
-                            <p class="card-category">Modificar nota de venta existente</p>
+                            <p class="card-category">Modificar cotización existente</p>
                         </div>
                         <div class="col-md-4 text-right">
                             <a href="{{ route('cotizaciones.index') }}" class="btn btn-secondary">
@@ -82,9 +82,9 @@
                                 <div class="card-header card-header-primary">
                                     <h4 class="card-title">
                                         <i class="material-icons">shopping_cart</i>
-                                        Detalle de la Nota de Venta
+                                        Detalle de la Cotización
                                     </h4>
-                                    <p class="card-category">Agregar productos a la nota de venta</p>
+                                    <p class="card-category">Agregar productos a la cotización</p>
                                 </div>
                                 <div class="card-body">
                                     <!-- Buscador de Productos Mejorado -->
@@ -222,7 +222,7 @@
                                     <div class="row mt-4">
                                         <div class="col-md-12 text-center">
                                             <button type="button" id="btnGuardarNotaVenta" class="btn btn-success btn-lg" onclick="guardarNotaVenta()" {{ !$puedeGenerarNotaVenta ? 'disabled' : '' }}>
-                                                <i class="material-icons">save</i> Guardar Nota de Venta
+                                                <i class="material-icons">save</i> Guardar Cotización
                                             </button>
                                             <a href="{{ route('cotizaciones.index') }}" class="btn btn-secondary btn-lg">
                                                 <i class="material-icons">cancel</i> Cancelar

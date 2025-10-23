@@ -200,6 +200,80 @@ class CobranzaService
             return [];
         }
     }
+
+    /**
+     * Obtener clientes vencidos, bloqueados y morosos por vendedor
+     */
+    public function getClientesVencidosBloqueadosMorosos($codigoVendedor)
+    {
+        try {
+            // Obtener los clientes directamente de la base de datos local
+            $clientes = \App\Models\Cliente::where('codigo_vendedor', $codigoVendedor)
+                ->where('activo', true)
+                ->get();
+            
+            // Obtener todos los datos de facturación en una sola consulta
+            $datosFacturacion = $this->getDatosFacturacionTodosClientes($codigoVendedor);
+            
+            $clientesProblema = [];
+            
+            foreach ($clientes as $cliente) {
+                $codigoCliente = $cliente->codigo_cliente;
+                $datosCliente = $datosFacturacion[$codigoCliente] ?? [
+                    'cantidad_facturas' => 0,
+                    'saldo_total' => 0
+                ];
+                
+                // Verificar si el cliente tiene problemas
+                $tieneProblemas = false;
+                $problemas = [];
+                
+                // Cliente bloqueado
+                if ($cliente->bloqueado) {
+                    $tieneProblemas = true;
+                    $problemas[] = 'BLOQUEADO';
+                }
+                
+                // Cliente con facturas vencidas (más de 30 días)
+                if ($datosCliente['cantidad_facturas'] > 0 && $datosCliente['saldo_total'] > 0) {
+                    // Obtener facturas del cliente para verificar vencimiento
+                    $facturasCliente = $this->getFacturasPendientesCliente($codigoCliente);
+                    $facturasVencidas = array_filter($facturasCliente, function($factura) {
+                        return in_array($factura['ESTADO'], ['VENCIDO', 'MOROSO', 'BLOQUEAR']);
+                    });
+                    
+                    if (count($facturasVencidas) > 0) {
+                        $tieneProblemas = true;
+                        $problemas[] = 'VENCIDO';
+                    }
+                }
+                
+                // Solo incluir clientes con problemas
+                if ($tieneProblemas) {
+                    $clientesProblema[] = [
+                        'CODIGO_CLIENTE' => $cliente->codigo_cliente,
+                        'NOMBRE_CLIENTE' => $cliente->nombre_cliente,
+                        'TELEFONO' => $cliente->telefono,
+                        'DIRECCION' => $cliente->direccion,
+                        'REGION' => $cliente->region,
+                        'COMUNA' => $cliente->comuna,
+                        'CODIGO_VENDEDOR' => $cliente->codigo_vendedor,
+                        'NOMBRE_VENDEDOR' => $cliente->nombre_vendedor ?? 'Vendedor',
+                        'CANTIDAD_FACTURAS' => $datosCliente['cantidad_facturas'],
+                        'SALDO_TOTAL' => $datosCliente['saldo_total'],
+                        'BLOQUEADO' => $cliente->bloqueado ? 1 : 0,
+                        'PROBLEMAS' => implode(', ', $problemas)
+                    ];
+                }
+            }
+            
+            return $clientesProblema;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error en CobranzaService::getClientesVencidosBloqueadosMorosos: ' . $e->getMessage());
+            return [];
+        }
+    }
     
     /**
      * Procesar una línea individual de cliente
@@ -545,8 +619,16 @@ class CobranzaService
             return $result;
 
         } catch (\Exception $e) {
-            \Log::error('Error obteniendo facturas pendientes del cliente ' . $codigoCliente . ': ' . $e->getMessage());
-            return $this->getTestFacturasPendientesCliente($codigoCliente);
+            \Log::error('Error obteniendo facturas pendientes del cliente ' . $codigoCliente . ': ' . $e->getMessage(), [
+                'codigo_cliente' => $codigoCliente,
+                'exception' => get_class($e),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            // En lugar de usar datos de prueba, retornar array vacío para evitar errores
+            return [];
         }
     }
 
@@ -1124,7 +1206,7 @@ class CobranzaService
         return [];
     }
 
-    private function getTestFacturasPendientesCliente($codigoCliente)
+    public function getTestFacturasPendientesCliente($codigoCliente)
     {
         return [
             [
@@ -2230,7 +2312,7 @@ class CobranzaService
                 if (strpos($line, 'DATOS') !== false) {
                     $headerFound = true;
                     $inDataSection = true;
-                    \Log::info('Header encontrado en línea: ' . $lineNumber . ' - Contenido: ' . $line);
+                    // \Log::info('Header encontrado en línea: ' . $lineNumber . ' - Contenido: ' . $line);
                     continue;
                 }
                 
@@ -2238,7 +2320,7 @@ class CobranzaService
                 if (trim($line) === 'DATOS') {
                     $headerFound = true;
                     $inDataSection = true;
-                    \Log::info('Header encontrado (línea separada) en línea: ' . $lineNumber . ' - Contenido: ' . $line);
+                    // \Log::info('Header encontrado (línea separada) en línea: ' . $lineNumber . ' - Contenido: ' . $line);
                     continue;
                 }
                 
@@ -2247,7 +2329,7 @@ class CobranzaService
                 // Detectar cuando terminamos la sección de datos
                 if (strpos($line, '(10 rows affected)') !== false || strpos($line, 'rows affected') !== false) {
                     $inDataSection = false;
-                    \Log::info('Fin de datos en línea: ' . $lineNumber);
+                    // \Log::info('Fin de datos en línea: ' . $lineNumber);
                     break;
                 }
                 
@@ -3008,40 +3090,58 @@ class CobranzaService
             $username = env('SQLSRV_EXTERNAL_USERNAME');
             $password = env('SQLSRV_EXTERNAL_PASSWORD');
             
-            // Consulta para obtener detalle de productos de una NVV
+            // Consulta que funcionaba antes - usando concatenación con |
             $query = "
                 SELECT 
-                    MAEDDO.TIDO AS TD,
-                    MAEDDO.NUDO AS NUM,
-                    MAEDDO.FEEMLI AS EMIS_FCV,
-                    MAEDDO.ENDO AS COD_CLI,
-                    MAEEN.NOKOEN AS CLIE,
-                    MAEDDO.KOPRCT AS CODIGO_PRODUCTO,
-                    MAEDDO.NOKOPR AS NOMBRE_PRODUCTO,
-                    MAEDDO.CAPRCO1 AS CANTIDAD_TOTAL,
-                    MAEDDO.CAPRAD1 AS CANTIDAD_FACTURADA,
-                    MAEDDO.CAPREX1 AS CANTIDAD_EXCLUIDA,
-                    MAEDDO.CAPRCO1 - MAEDDO.CAPRAD1 - MAEDDO.CAPREX1 AS CANTIDAD_PENDIENTE,
-                    MAEDDO.VANELI AS VALOR_TOTAL,
-                    (MAEDDO.VANELI / MAEDDO.CAPRCO1) AS PRECIO_UNITARIO,
-                    (MAEDDO.VANELI / MAEDDO.CAPRCO1) * (MAEDDO.CAPRCO1 - MAEDDO.CAPRAD1 - MAEDDO.CAPREX1) AS VALOR_PENDIENTE,
-                    TABFU.NOKOFU AS VENDEDOR_NOMBRE,
-                    TABCI.NOKOCI AS REGION,
-                    TABCM.NOKOCM AS COMUNA,
-                    CAST(GETDATE() - MAEDDO.FEEMLI AS INT) AS DIAS
-                FROM dbo.MAEDDO
-                INNER JOIN dbo.MAEEN ON MAEDDO.ENDO = MAEEN.KOEN AND MAEDDO.SUENDO = MAEEN.SUEN
-                INNER JOIN dbo.TABFU ON MAEDDO.KOFULIDO = TABFU.KOFU
-                INNER JOIN dbo.TABCI ON MAEEN.PAEN = TABCI.KOPA AND MAEEN.CIEN = TABCI.KOCI
-                INNER JOIN dbo.TABCM ON MAEEN.PAEN = TABCM.KOPA AND MAEEN.CIEN = TABCI.KOCI AND MAEEN.CMEN = TABCM.KOCM
-                WHERE MAEDDO.TIDO = 'NVV'
-                    AND MAEDDO.NUDO = '{$numeroNvv}'";
+                    CAST(dbo.MAEDDO.TIDO AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEDDO.NUDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.FEEMLI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.ENDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEEN.NOKOEN AS VARCHAR(100)) + '|' +
+                    CAST(dbo.MAEDDO.KOPRCT AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEDDO.CAPRCO1 AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.NOKOPR AS VARCHAR(100)) + '|' +
+                    CAST((dbo.MAEDDO.CAPRCO1 - (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1)) AS VARCHAR(20)) + '|' +
+                    CAST((dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1) AS VARCHAR(20)) + '|' +
+                    CAST(dbo.TABFU.NOKOFU AS VARCHAR(50)) + '|' +
+                    CAST(dbo.TABCI.NOKOCI AS VARCHAR(50)) + '|' +
+                    CAST(dbo.TABCM.NOKOCM AS VARCHAR(50)) + '|' +
+                    CAST(CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) AS VARCHAR(10)) + '|' +
+                    CAST(CASE WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) < 8 THEN 'Entre 1 y 7 días' 
+                         WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) BETWEEN 8 AND 30 THEN 'Entre 8 y 30 Días' 
+                         WHEN CAST(GETDATE() - dbo.MAEDDO.FEEMLI AS INT) BETWEEN 31 AND 60 THEN 'Entre 31 y 60 Días' 
+                         ELSE 'Mas de 60 Días' END AS VARCHAR(20)) + '|' +
+                    CAST((dbo.MAEDDO.VANELI / NULLIF(dbo.MAEDDO.CAPRCO1, 0)) AS VARCHAR(20)) + '|' +
+                    CAST(((dbo.MAEDDO.VANELI / NULLIF(dbo.MAEDDO.CAPRCO1, 0)) * (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1)) AS VARCHAR(20)) + '|' +
+                    CAST(CASE WHEN MAEDDO_1.TIDO IS NULL THEN '' ELSE MAEDDO_1.TIDO END AS VARCHAR(10)) + '|' +
+                    CAST(CASE WHEN MAEDDO_1.NUDO IS NULL THEN '' ELSE MAEDDO_1.NUDO END AS VARCHAR(20)) + '|' +
+                    CAST(dbo.TABFU.KOFU AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEDDO.PODTGLLI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.VADTNELI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.VANELI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.POIVLI AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEDDO.VAIVLI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.VABRLI AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.PPPRNE AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEDDO.PPPRBR AS VARCHAR(20)) AS DATOS
+                FROM dbo.MAEDDO 
+                INNER JOIN dbo.MAEEN ON dbo.MAEDDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEDDO.SUENDO = dbo.MAEEN.SUEN 
+                INNER JOIN dbo.TABFU ON dbo.MAEDDO.KOFULIDO = dbo.TABFU.KOFU 
+                INNER JOIN dbo.TABCI ON dbo.MAEEN.PAEN = dbo.TABCI.KOPA AND dbo.MAEEN.CIEN = dbo.TABCI.KOCI 
+                INNER JOIN dbo.TABCM ON dbo.MAEEN.PAEN = dbo.TABCM.KOPA AND dbo.MAEEN.CIEN = dbo.TABCM.KOCI AND dbo.MAEEN.CMEN = dbo.TABCM.KOCM 
+                LEFT OUTER JOIN dbo.MAEDDO AS MAEDDO_1 ON dbo.MAEDDO.IDMAEDDO = MAEDDO_1.IDRST
+                WHERE (dbo.MAEDDO.TIDO = 'NVV') 
+                AND (dbo.MAEDDO.NUDO = '{$numeroNvv}')
+                AND (dbo.MAEDDO.LILG = 'SI') 
+                AND (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1 <> 0) 
+                AND (dbo.MAEDDO.KOPRCT <> 'D') 
+                AND (dbo.MAEDDO.KOPRCT <> 'FLETE')";
             
             if ($codigoCliente) {
-                $query .= " AND MAEDDO.ENDO = '{$codigoCliente}'";
+                $query .= " AND (dbo.MAEDDO.ENDO = '{$codigoCliente}')";
             }
             
-            $query .= " ORDER BY MAEDDO.KOPRCT";
+            $query .= " ORDER BY dbo.MAEDDO.KOPRCT";
             
             // Crear archivo temporal con la consulta
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
@@ -3058,54 +3158,109 @@ class CobranzaService
                 throw new \Exception('Error ejecutando consulta tsql: ' . $output);
             }
             
-            // Procesar la salida
+            // Procesar la salida usando el método que funcionaba
             $lines = explode("\n", $output);
             $result = [];
+            $inDataSection = false;
+            $headerFound = false;
             
-            foreach ($lines as $line) {
+            foreach ($lines as $lineNumber => $line) {
                 $line = trim($line);
                 
-                // Saltar líneas de configuración
+                // Saltar líneas vacías o de configuración
                 if (empty($line) || 
                     strpos($line, 'locale') !== false || 
                     strpos($line, 'Setting') !== false || 
                     strpos($line, 'Msg ') !== false || 
                     strpos($line, 'Warning:') !== false ||
-                    preg_match('/^\d+>$/', $line) ||
-                    preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
-                    strpos($line, 'rows affected') !== false ||
-                    strpos($line, 'TD') !== false ||
-                    strpos($line, 'NUM') !== false ||
-                    strpos($line, 'EMIS_FCV') !== false) {
+                    preg_match('/^\d+>$/', $line)) {
                     continue;
                 }
                 
-                // Buscar líneas con datos de productos
-                if (preg_match('/^(\w+)\s+(\d+)\s+(.+?)\s+(\d+)\s+(.+?)\s+(\w+)\s+(.+?)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.]+)\s+(.+?)\s+(.+?)\s+(.+?)\s+(\d+)$/', $line, $matches)) {
-                    $result[] = [
-                        'TD' => $matches[1],
-                        'NUM' => $matches[2],
-                        'EMIS_FCV' => $matches[3],
-                        'COD_CLI' => $matches[4],
-                        'CLIE' => $this->convertToUtf8($matches[5]),
-                        'CODIGO_PRODUCTO' => $matches[6],
-                        'NOMBRE_PRODUCTO' => $this->convertToUtf8($matches[7]),
-                        'CANTIDAD_TOTAL' => (int)$matches[8],
-                        'CANTIDAD_FACTURADA' => (int)$matches[9],
-                        'CANTIDAD_EXCLUIDA' => (int)$matches[10],
-                        'CANTIDAD_PENDIENTE' => (int)$matches[11],
-                        'VALOR_TOTAL' => (float)$matches[12],
-                        'PRECIO_UNITARIO' => (float)$matches[13],
-                        'VALOR_PENDIENTE' => (float)$matches[14],
-                        'VENDEDOR_NOMBRE' => $this->convertToUtf8($matches[15]),
-                        'REGION' => $this->convertToUtf8($matches[16]),
-                        'COMUNA' => $this->convertToUtf8($matches[17]),
-                        'DIAS' => (int)$matches[18]
-                    ];
+                // Detectar el header de la tabla
+                if (strpos($line, 'DATOS') !== false) {
+                    $headerFound = true;
+                    $inDataSection = true;
+                    continue;
+                }
+                
+                // Detectar cuando terminamos la sección de datos
+                if (strpos($line, 'rows affected') !== false) {
+                    $inDataSection = false;
+                    break;
+                }
+                
+                // Si estamos en la sección de datos y la línea no está vacía
+                if ($inDataSection && $headerFound && !empty($line)) {
+                    // Procesar cada línea usando el método que funcionaba
+                    $nvv = $this->procesarLineaNvvPendiente($line, $lineNumber);
+                    
+                    if ($nvv) {
+                        $result[] = $nvv;
+                    }
                 }
             }
             
-            return $result;
+            // Si no hay datos, devolver array vacío
+            if (empty($result)) {
+                return [];
+            }
+            
+            // Agrupar los productos de la NVV
+            $nvvAgrupada = null;
+            $productos = [];
+            
+            foreach ($result as $nvv) {
+                if ($nvvAgrupada === null) {
+                    // Primera vez, crear el registro base
+                    $nvvAgrupada = [
+                        'TD' => $nvv['TD'],
+                        'NUM' => $nvv['NUM'],
+                        'EMIS_FCV' => $nvv['EMIS_FCV'],
+                        'COD_CLI' => $nvv['COD_CLI'],
+                        'CLIE' => $nvv['CLIE'],
+                        'NOKOFU' => $nvv['NOKOFU'],
+                        'NOKOCI' => $nvv['NOKOCI'],
+                        'NOKOCM' => $nvv['NOKOCM'],
+                        'DIAS' => $nvv['DIAS'],
+                        'Rango' => $nvv['Rango'],
+                        'KOFU' => $nvv['KOFU'],
+                        'TOTAL_PENDIENTE' => 0,
+                        'TOTAL_VALOR_PENDIENTE' => 0,
+                        'CANTIDAD_PRODUCTOS' => 0
+                    ];
+                }
+                
+                // Sumar los valores pendientes
+                $nvvAgrupada['TOTAL_PENDIENTE'] += (float)($nvv['PEND'] ?? 0);
+                $nvvAgrupada['TOTAL_VALOR_PENDIENTE'] += (float)($nvv['PEND_VAL'] ?? 0);
+                $nvvAgrupada['CANTIDAD_PRODUCTOS']++;
+                
+                // Agregar el producto a la lista con todos los campos
+                $productos[] = [
+                    'KOPRCT' => $nvv['KOPRCT'],
+                    'NOKOPR' => $nvv['NOKOPR'],
+                    'CAPRCO1' => $nvv['CAPRCO1'],
+                    'FACT' => $nvv['FACT'],
+                    'PEND' => $nvv['PEND'],
+                    'PUNIT' => $nvv['PUNIT'],
+                    'PEND_VAL' => $nvv['PEND_VAL'],
+                    // Campos de descuento, IVA y totales
+                    'PRECIO_NETO' => (float)($nvv['PPPRNE'] ?? 0),
+                    'PORCENTAJE_DESCUENTO' => (float)($nvv['PODTGLLI'] ?? 0),
+                    'VALOR_DESCUENTO' => (float)($nvv['VADTNELI'] ?? 0),
+                    'SUBTOTAL' => (float)($nvv['VANELI'] ?? 0),
+                    'PORCENTAJE_IVA' => (float)($nvv['POIVLI'] ?? 0),
+                    'VALOR_IVA' => (float)($nvv['VAIVLI'] ?? 0),
+                    'TOTAL' => (float)($nvv['VABRLI'] ?? 0)
+                ];
+            }
+            
+            if ($nvvAgrupada) {
+                $nvvAgrupada['productos'] = $productos;
+            }
+            
+            return $nvvAgrupada;
             
         } catch (\Exception $e) {
             \Log::error('Error obteniendo detalle de NVV ' . $numeroNvv . ': ' . $e->getMessage());
@@ -3771,8 +3926,8 @@ class CobranzaService
                 return null;
             }
             
-            // Log para ver cuántos campos tenemos
-            \Log::info("Procesando NVV línea {$lineNumber} con " . count($fields) . " campos");
+            // Log para ver cuántos campos tenemos (comentado para evitar spam en logs)
+            // \Log::info("Procesando NVV línea {$lineNumber} con " . count($fields) . " campos");
             
             // Función helper para convertir a float de forma segura
             $safeFloat = function($value) {
@@ -3803,13 +3958,13 @@ class CobranzaService
                 'N_FCV' => trim($fields[18] ?? ''), // N_FCV
                 'KOFU' => trim($fields[19] ?? ''), // KOFU
                 
-                // Campos adicionales no disponibles en esta consulta (se llenan con valores por defecto)
-                'PODTGLLI' => 0, // No disponible en esta consulta
-                'VADTNELI' => 0, // No disponible en esta consulta
-                'VANELI' => 0, // No disponible en esta consulta
-                'POIVLI' => 0, // No disponible en esta consulta
-                'VAIVLI' => 0, // No disponible en esta consulta
-                'VABRLI' => 0, // No disponible en esta consulta
+                // Campos de descuento, IVA y totales (disponibles en la consulta)
+                'PODTGLLI' => $safeFloat($fields[20] ?? 0), // Porcentaje descuento
+                'VADTNELI' => $safeFloat($fields[21] ?? 0), // Valor descuento
+                'VANELI' => $safeFloat($fields[22] ?? 0), // Subtotal
+                'POIVLI' => $safeFloat($fields[23] ?? 0), // Porcentaje IVA
+                'VAIVLI' => $safeFloat($fields[24] ?? 0), // Valor IVA
+                'VABRLI' => $safeFloat($fields[25] ?? 0), // Total
                 'PPPRNE' => $safeFloat($fields[26] ?? 0), // Precio neto
                 'PPPRBR' => $safeFloat($fields[27] ?? 0), // Precio bruto
                 

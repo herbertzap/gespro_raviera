@@ -19,6 +19,11 @@ Route::get('/', function () {
     return redirect()->route('dashboard');
 });
 
+// Rutas de manejo de errores
+Route::get('/error/{code?}', [App\Http\Controllers\ErrorController::class, 'show'])
+    ->name('error.show')
+    ->where('code', '[0-9]+');
+
 // Dashboard
 Route::get('/dashboard', [App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard')->middleware(['auth']);
 

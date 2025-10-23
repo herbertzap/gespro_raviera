@@ -48,13 +48,13 @@
                             <div class="card-icon">
                                 <i class="material-icons">receipt</i>
                             </div>
-                            <p class="card-category">Total Facturas</p>
+                            <p class="card-category">Total documentos pendientes de pago</p>
                             <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_FACTURAS'] ?? 0) }}</h3>
                         </div>
                         <div class="card-footer">
                             <div class="stats">
                                 <i class="material-icons text-success">trending_up</i>
-                                <a href="{{ route('cobranza.index') }}">Ver detalles</a>
+                                <a href="{{ route('cobranza.index') }}">Ver cobranza del vendedor</a>
                             </div>
                         </div>
                     </div>
@@ -66,7 +66,7 @@
                             <div class="card-icon">
                                 <i class="material-icons">shopping_cart</i>
                             </div>
-                            <p class="card-category">Total Notas de Venta</p>
+                            <p class="card-category">Total Notas de Venta en proceso de aprobación</p>
                             <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_NOTAS_VENTA'] ?? 0) }}</h3>
                         </div>
                         <div class="card-footer">
@@ -84,7 +84,7 @@
                             <div class="card-icon">
                                 <i class="material-icons">schedule</i>
                             </div>
-                            <p class="card-category">Total Facturas Vencidas</p>
+                            <p class="card-category">Total documentos vencidos</p>
                             <h3 class="card-title">${{ number_format($resumenCobranza['SALDO_VENCIDO'] ?? 0, 0) }}</h3>
                         </div>
                         <div class="card-footer">
@@ -535,6 +535,87 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- Sección de Clientes Vencidos, Bloqueados y Morosos -->
+                @if(isset($clientesVencidosBloqueadosMorosos) && count($clientesVencidosBloqueadosMorosos) > 0)
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header card-header-danger">
+                            <h4 class="card-title">
+                                <i class="material-icons">warning</i>
+                                Clientes Vencidos, Bloqueados y Morosos
+                            </h4>
+                            <p class="card-category">Clientes que requieren atención inmediata</p>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead class="text-primary">
+                                        <tr>
+                                            <th>Código</th>
+                                            <th>Cliente</th>
+                                            <th>Teléfono</th>
+                                            <th>Dirección</th>
+                                            <th>Facturas</th>
+                                            <th>Saldo</th>
+                                            <th>Problemas</th>
+                                            <th>Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach($clientesVencidosBloqueadosMorosos as $cliente)
+                                        <tr>
+                                            <td>
+                                                <a href="{{ route('cliente.show', $cliente['CODIGO_CLIENTE']) }}" 
+                                                   class="text-primary font-weight-bold" 
+                                                   title="Ver información de {{ $cliente['NOMBRE_CLIENTE'] }}">
+                                                    {{ $cliente['CODIGO_CLIENTE'] }}
+                                                </a>
+                                            </td>
+                                            <td>
+                                                <a href="{{ route('cliente.show', $cliente['CODIGO_CLIENTE']) }}" 
+                                                   class="text-primary" 
+                                                   title="Ver información de {{ $cliente['NOMBRE_CLIENTE'] }}">
+                                                    {{ $cliente['NOMBRE_CLIENTE'] }}
+                                                </a>
+                                            </td>
+                                            <td>{{ $cliente['TELEFONO'] ?: 'No especificado' }}</td>
+                                            <td>{{ $cliente['DIRECCION'] ?: 'No especificada' }}</td>
+                                            <td>{{ $cliente['CANTIDAD_FACTURAS'] }}</td>
+                                            <td>${{ number_format($cliente['SALDO_TOTAL'] ?? 0, 2) }}</td>
+                                            <td>
+                                                <span class="badge badge-danger">
+                                                    {{ $cliente['PROBLEMAS'] }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                @if(isset($cliente['BLOQUEADO']) && $cliente['BLOQUEADO'] == 1)
+                                                    <span class="badge badge-danger">
+                                                        <i class="material-icons" style="font-size: 12px;">block</i>
+                                                        Bloqueado
+                                                    </span>
+                                                @else
+                                                    <span class="badge badge-warning">
+                                                        <i class="material-icons" style="font-size: 12px;">warning</i>
+                                                        Vencido
+                                                    </span>
+                                                @endif
+                                            </td>
+                                        </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <!-- Información de resumen -->
+                            <div class="alert alert-warning mt-3">
+                                <i class="material-icons">info</i>
+                                <strong>Resumen:</strong> Se encontraron {{ count($clientesVencidosBloqueadosMorosos) }} clientes con problemas que requieren atención inmediata.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                @endif
             @endif
 
             @if($tipoUsuario == 'Supervisor')

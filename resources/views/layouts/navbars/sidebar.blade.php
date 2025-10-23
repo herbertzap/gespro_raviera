@@ -125,7 +125,7 @@
                         <li @if (($pageSlug ?? '') == 'nvv-pendientes') class="active " @endif>
                             <a href="{{ route('nvv-pendientes.index') }}">
                                 <i class="tim-icons icon-notes"></i>
-                                <p>{{ __('Estado Notas de Ventas') }}</p>
+                                <p>{{ __('Estado Notas de Ventas por aprobadas por facturar') }}</p>
                             </a>
                         </li>
                         <li @if (($pageSlug ?? '') == 'facturas-pendientes') class="active " @endif>

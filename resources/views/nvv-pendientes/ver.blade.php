@@ -100,37 +100,37 @@
                                                         {{ number_format($producto['CAPRCO1'], 0, ',', '.') }}
                                                     </span>
                                                 </td>
-                                                <td>${{ number_format($producto['PPPRNE'] ?? 0, 0, ',', '.') }}</td>
+                                                <td>${{ number_format($producto['PRECIO_NETO'] ?? 0, 0, ',', '.') }}</td>
                                                 <td>
-                                                    @if(isset($producto['PODTGLLI']) && $producto['PODTGLLI'] > 0)
-                                                        <span class="badge badge-success">{{ $producto['PODTGLLI'] }}%</span>
+                                                    @if(isset($producto['PORCENTAJE_DESCUENTO']) && $producto['PORCENTAJE_DESCUENTO'] > 0)
+                                                        <span class="badge badge-success">{{ $producto['PORCENTAJE_DESCUENTO'] }}%</span>
                                                     @else
                                                         <span class="text-muted">-</span>
                                                     @endif
                                                 </td>
                                                 <td>
-                                                    @if(isset($producto['VADTNELI']) && $producto['VADTNELI'] > 0)
-                                                        <span class="text-success">-${{ number_format($producto['VADTNELI'], 0, ',', '.') }}</span>
+                                                    @if(isset($producto['VALOR_DESCUENTO']) && $producto['VALOR_DESCUENTO'] > 0)
+                                                        <span class="text-success">-${{ number_format($producto['VALOR_DESCUENTO'], 0, ',', '.') }}</span>
                                                     @else
                                                         <span class="text-muted">-</span>
                                                     @endif
                                                 </td>
-                                                <td>${{ number_format($producto['VANELI'] ?? 0, 0, ',', '.') }}</td>
+                                                <td>${{ number_format($producto['SUBTOTAL'] ?? 0, 0, ',', '.') }}</td>
                                                 <td>
                                                     <small class="text-info">
-                                                        ${{ number_format($producto['VAIVLI'] ?? 0, 2, ',', '.') }}
+                                                        ${{ number_format($producto['VALOR_IVA'] ?? 0, 2, ',', '.') }}
                                                     </small>
                                                 </td>
-                                                <td><strong>${{ number_format($producto['VABRLI'] ?? 0, 0, ',', '.') }}</strong></td>
+                                                <td><strong>${{ number_format($producto['TOTAL'] ?? 0, 0, ',', '.') }}</strong></td>
                                             </tr>
                                             @endforeach
                                         </tbody>
                                         <tfoot>
                                             <tr class="table-info">
                                                 <td colspan="6" class="text-right"><strong>TOTALES:</strong></td>
-                                                <td><strong>${{ number_format(collect($nvv['productos'])->sum('VANELI'), 0, ',', '.') }}</strong></td>
-                                                <td><strong class="text-info">${{ number_format(collect($nvv['productos'])->sum('VAIVLI'), 2, ',', '.') }}</strong></td>
-                                                <td><strong>${{ number_format(collect($nvv['productos'])->sum('VABRLI'), 0, ',', '.') }}</strong></td>
+                                                <td><strong>${{ number_format(collect($nvv['productos'])->sum('SUBTOTAL'), 0, ',', '.') }}</strong></td>
+                                                <td><strong class="text-info">${{ number_format(collect($nvv['productos'])->sum('VALOR_IVA'), 2, ',', '.') }}</strong></td>
+                                                <td><strong>${{ number_format(collect($nvv['productos'])->sum('TOTAL'), 0, ',', '.') }}</strong></td>
                                             </tr>
                                         </tfoot>
                                     </table>

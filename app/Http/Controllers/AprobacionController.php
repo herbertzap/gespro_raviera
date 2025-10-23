@@ -244,7 +244,7 @@ class AprobacionController extends Controller
             // Solo si el insert fue exitoso, aprobamos en MySQL
             if ($resultado['success']) {
                 Log::info("✅ Insert en SQL Server exitoso, aprobando en MySQL...");
-                $cotizacion->aprobarPorPicking($user->id, $request->comentarios);
+            $cotizacion->aprobarPorPicking($user->id, $request->comentarios);
                 Log::info("✅ Cotización aprobada en MySQL");
             } else {
                 // Si falló el insert, lanzar excepción para que se capture en el catch
@@ -779,10 +779,10 @@ class AprobacionController extends Controller
                     $siguienteId = (int)$matches[1];
                 } else {
                     // Fallback: buscar el número más grande en las líneas
-                    $lines = explode("\n", $result);
+                $lines = explode("\n", $result);
                     $maxNumber = 0;
-                    foreach ($lines as $line) {
-                        $line = trim($line);
+                foreach ($lines as $line) {
+                    $line = trim($line);
                         if (is_numeric($line) && (int)$line > $maxNumber && (int)$line > 1000) {
                             $maxNumber = (int)$line;
                         }
@@ -912,7 +912,7 @@ class AprobacionController extends Controller
             Log::info("Fecha Vencimiento: {$fechaVencimiento}");
             
             // Insertar encabezado en MAEEDO con campos requeridos por el sistema interno
-                $insertMAEEDO = "
+            $insertMAEEDO = "
                 SET IDENTITY_INSERT MAEEDO ON
                 
                 INSERT INTO MAEEDO (
@@ -1232,25 +1232,25 @@ class AprobacionController extends Controller
                     $insertMAEDTLI = "
                         INSERT INTO MAEDTLI (
                             IDMAEEDO, NULIDO, KODT, PODT, VADT
-                        ) VALUES (
+                ) VALUES (
                             {$siguienteId}, '{$nulidoFormateado}', 'D_SIN_TIPO', {$porcentajeDescuento}, {$valorDescuento}
-                        )
-                    ";
+                )
+            ";
                     
                     Log::info("SQL INSERT MAEDTLI línea {$lineaId} (producto con descuento):");
                     Log::info($insertMAEDTLI);
-                    
-                    $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
                     file_put_contents($tempFile, $insertMAEDTLI . "\ngo\nquit");
-                    
-                    $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                    $result = shell_exec($command);
-                    
-                    unlink($tempFile);
-                    
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
                     if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
                         Log::warning('Error insertando MAEDTLI línea ' . $lineaId . ': ' . $result);
-                    } else {
+            } else {
                         Log::info("✅ MAEDTLI insertado correctamente para producto con descuento {$lineaId}");
                     }
                 }
@@ -1264,8 +1264,8 @@ class AprobacionController extends Controller
             
             // Verificar que la NVV realmente se insertó en SQL Server
             $queryVerificacion = "SELECT COUNT(*) as total FROM MAEEDO WHERE IDMAEEDO = {$siguienteId} AND EMPRESA = '01' AND TIDO = 'NVV'";
-            
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $queryVerificacion . "\ngo\nquit");
             
             $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
@@ -1328,9 +1328,9 @@ class AprobacionController extends Controller
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $queryCorrelativo . "\ngo\nquit");
-            
-            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-            $result = shell_exec($command);
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
             unlink($tempFile);
             
             // Parsear el resultado
@@ -1366,8 +1366,8 @@ class AprobacionController extends Controller
             
             $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
             $result = shell_exec($command);
-            unlink($tempFile);
-            
+                unlink($tempFile);
+                
             $sucursalCliente = '';
             if ($result && !str_contains($result, 'error')) {
                 $lines = explode("\n", $result);
@@ -1428,12 +1428,12 @@ class AprobacionController extends Controller
             Log::info("🧪 Ejecutando INSERT MAEEDO...");
             Log::info("🧪 SQL COMPLETO:");
             Log::info($insertMAEEDO);
-            
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $insertMAEEDO . "\ngo\nquit");
-            
-            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-            $result = shell_exec($command);
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
             unlink($tempFile);
             
             if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
@@ -1605,11 +1605,14 @@ class AprobacionController extends Controller
                     }
                     
                     // Después del header, la siguiente línea con datos es el valor
-                    if ($foundHeader && !empty($line) && !str_contains($line, 'row') && !str_contains($line, '---')) {
+                    if ($foundHeader && !empty($line) && !str_contains($line, 'row') && !str_contains($line, '---') && !str_contains($line, 'affected')) {
+                        Log::info("Condición de pago encontrada para cliente {$codigoCliente}: '{$line}'");
                         return $line;
                     }
                 }
             }
+            
+            Log::warning("No se encontró condición de pago para cliente {$codigoCliente}");
             return '';
         } catch (\Exception $e) {
             Log::warning("Error obteniendo condición de pago: " . $e->getMessage());
@@ -1795,12 +1798,24 @@ class AprobacionController extends Controller
     {
         $user = Auth::user();
         
+        $cotizacion = Cotizacion::with(['user', 'productos'])->findOrFail($id);
+        
         // Verificar permisos
-        if (!$user->hasRole('Supervisor') && !$user->hasRole('Compras') && !$user->hasRole('Picking') && !$user->hasRole('Super Admin')) {
+        $puedeAcceder = false;
+        
+        // Super Admin, Supervisor, Compras, Picking siempre pueden acceder
+        if ($user->hasRole('Super Admin') || $user->hasRole('Supervisor') || 
+            $user->hasRole('Compras') || $user->hasRole('Picking')) {
+            $puedeAcceder = true;
+        }
+        // Vendedores solo pueden ver sus propias cotizaciones
+        elseif ($user->hasRole('Vendedor') && $cotizacion->user_id == $user->id) {
+            $puedeAcceder = true;
+        }
+        
+        if (!$puedeAcceder) {
             return redirect()->route('dashboard')->with('error', 'Acceso no autorizado');
         }
-
-        $cotizacion = Cotizacion::with(['user', 'productos'])->findOrFail($id);
         
         // Obtener historial completo
         $historial = \App\Models\CotizacionHistorial::obtenerHistorialCompleto($id);

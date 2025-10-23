@@ -16,7 +16,7 @@
                         <div class="col-md-4 text-right">
                             <a href="{{ route('cobranza.index') }}" class="btn btn-primary">
                                 <i class="material-icons">add</i>
-                                Nueva Nota de Venta
+                                Nueva Cotización
                             </a>
                         </div>
                     </div>

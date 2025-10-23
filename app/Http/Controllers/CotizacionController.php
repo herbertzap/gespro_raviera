@@ -1602,50 +1602,6 @@ class CotizacionController extends Controller
             
             \Log::info('Total de cotizaciones procesadas: ' . count($cotizaciones));
             
-            // Si no se encontraron cotizaciones, intentar procesar manualmente la línea que vimos en los logs
-            if (empty($cotizaciones)) {
-                \Log::info('Intentando procesar línea manualmente...');
-                
-                // Línea de ejemplo que vimos en los logs
-                $lineaManual = "964555  NVV     0000032958      Sep  2 2024 12:00:00:000AM      77415635        JOYITA SPA                                              041703001T000   100     \"TEFLON 1/2\"\" AGUA TAUMM UN                             0       100     GERARDO ORMEÑO PAREDES          GOP     REGION METROPOLITANA            COLINA                          334     Mas de 60 Días  76.5    7650";
-                
-                $cotizacion = $this->procesarLineaCotizacion($lineaManual, 999);
-                
-                if ($cotizacion) {
-                    $cotizaciones[] = $cotizacion;
-                    \Log::info('Cotización procesada manualmente: ' . $cotizacion->cliente_nombre);
-                } else {
-                    \Log::info('No se pudo procesar manualmente, creando cotización de prueba');
-                    $cotizacion = (object) [
-                        'id' => 964555,
-                        'tipo' => 'NVV',
-                        'numero' => 32958,
-                        'fecha_emision' => '2024-09-02',
-                        'cliente_codigo' => '77415635',
-                        'cliente_nombre' => 'JOYITA SPA',
-                        'producto_codigo' => '041703001T000',
-                        'cantidad' => 100,
-                        'producto_nombre' => 'TEFLON 1/2" AGUA TAUMM UN',
-                        'facturado' => 0,
-                        'pendiente' => 100,
-                        'vendedor_nombre' => 'GERARDO ORMEÑO PAREDES',
-                        'vendedor_codigo' => 'GOP',
-                        'region' => 'REGION METROPOLITANA',
-                        'comuna' => 'COLINA',
-                        'dias' => 334,
-                        'rango' => 'Mas de 60 Días',
-                        'precio_unitario' => 76.5,
-                        'valor_pendiente' => 7650,
-                        'tipo_referencia' => '',
-                        'numero_referencia' => '',
-                        'total' => 0,
-                        'saldo' => 100,
-                        'estado' => 'pendiente'
-                    ];
-                    
-                    $cotizaciones[] = $cotizacion;
-                }
-            }
             
             return $cotizaciones;
             

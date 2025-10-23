@@ -78,6 +78,9 @@ class DashboardController extends Controller
         // Obtener clientes asignados al vendedor
         $clientesAsignados = $this->cobranzaService->getClientesPorVendedor($user->codigo_vendedor);
         
+        // Obtener clientes vencidos, bloqueados y morosos
+        $clientesVencidosBloqueadosMorosos = $this->cobranzaService->getClientesVencidosBloqueadosMorosos($user->codigo_vendedor);
+        
         // Aplicar filtros
         $clientesFiltrados = $this->aplicarFiltrosClientes($clientesAsignados, $filtros);
         
@@ -124,13 +127,14 @@ class DashboardController extends Controller
         $resumenCobranza = [
             'TOTAL_FACTURAS' => $resumenFacturasPendientes['total_facturas'],
             'TOTAL_NOTAS_VENTA' => $totalNotasVenta,
-            'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor'],
+            'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor'] + $resumenFacturasPendientes['por_estado']['BLOQUEAR']['valor'],
             'CHEQUES_EN_CARTERA' => $chequesEnCartera,
             'CHEQUES_PROTESTADOS' => $chequesProtestados['valor_total']
         ];
 
         return [
             'clientesAsignados' => $clientesPaginated,
+            'clientesVencidosBloqueadosMorosos' => $clientesVencidosBloqueadosMorosos,
             'notasVenta' => $notasVenta,
             'resumenCobranza' => $resumenCobranza,
             'nvvPendientes' => $nvvPendientes,
@@ -184,7 +188,7 @@ class DashboardController extends Controller
                 'TOTAL_FACTURAS' => $totalFacturasPendientes,
                 'TOTAL_NOTAS_VENTA' => $totalNotasVentaSQL,
                 'CHEQUES_EN_CARTERA' => $chequesEnCartera,
-                'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor']
+                'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor'] + $resumenFacturasPendientes['por_estado']['BLOQUEAR']['valor']
             ];
 
             return [
@@ -240,7 +244,8 @@ class DashboardController extends Controller
             $resumenCobranza = [
                 'TOTAL_FACTURAS_PENDIENTES' => $resumenFacturasPendientes['total_facturas'] ?? 0,
                 'TOTAL_NOTAS_VENTA_SQL' => $totalNvvSistema,
-                'TOTAL_NOTAS_PENDIENTES_VALIDAR' => count($nvvPendientes)
+                'TOTAL_NOTAS_PENDIENTES_VALIDAR' => count($nvvPendientes),
+                'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor'] + $resumenFacturasPendientes['por_estado']['BLOQUEAR']['valor']
             ];
 
             return [
@@ -404,7 +409,7 @@ class DashboardController extends Controller
                 'TOTAL_FACTURAS' => $totalFacturasPendientes,
                 'TOTAL_NOTAS_VENTA' => $totalNotasVentaSQL,
                 'CHEQUES_EN_CARTERA' => $chequesEnCartera,
-                'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor']
+                'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor'] + $resumenFacturasPendientes['por_estado']['BLOQUEAR']['valor']
             ];
 
             return [
@@ -742,7 +747,8 @@ class DashboardController extends Controller
             $resumenCobranza = [
                 'TOTAL_FACTURAS_PENDIENTES' => $resumenFacturasPendientes['total_facturas'] ?? 0,
                 'TOTAL_NOTAS_VENTA_SQL' => $totalNvvSistema, // Este es el TOTAL correcto de todas las NVV
-                'TOTAL_NOTAS_PENDIENTES_VALIDAR' => count($nvvPendientes)
+                'TOTAL_NOTAS_PENDIENTES_VALIDAR' => count($nvvPendientes),
+                'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor'] + $resumenFacturasPendientes['por_estado']['BLOQUEAR']['valor']
             ];
 
             return [

@@ -117,7 +117,7 @@ class NvvPendientesController extends Controller
         }
         
         // Obtener detalles de la NVV
-        $nvvDetalle = $this->cobranzaService->getNvvDetalle($numeroNvv);
+        $nvvDetalle = $this->cobranzaService->getDetalleNvv($numeroNvv);
         
         if (!$nvvDetalle) {
             abort(404, 'NVV no encontrada.');
