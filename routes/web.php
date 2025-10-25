@@ -128,9 +128,10 @@ Route::get('/nvv-pendientes/ver/{numeroNvv}', [App\Http\Controllers\NvvPendiente
 // Rutas de Facturas Pendientes
 Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/facturas-pendientes', [App\Http\Controllers\FacturasPendientesController::class, 'index'])->name('facturas-pendientes.index');
-Route::get('/facturas-pendientes/export', [App\Http\Controllers\FacturasPendientesController::class, 'export'])->name('facturas-pendientes.export');
-Route::get('/facturas-pendientes/resumen', [App\Http\Controllers\FacturasPendientesController::class, 'resumen'])->name('facturas-pendientes.resumen');
-Route::get('/facturas-pendientes/ver/{tipoDocumento}/{numeroDocumento}', [App\Http\Controllers\FacturasPendientesController::class, 'ver'])->name('facturas-pendientes.ver');
+    Route::get('/facturas-pendientes/export', [App\Http\Controllers\FacturasPendientesController::class, 'export'])->name('facturas-pendientes.export');
+    Route::get('/facturas-pendientes/download', [App\Http\Controllers\FacturasPendientesController::class, 'download'])->name('facturas-pendientes.download');
+    Route::get('/facturas-pendientes/resumen', [App\Http\Controllers\FacturasPendientesController::class, 'resumen'])->name('facturas-pendientes.resumen');
+    Route::get('/facturas-pendientes/ver/{tipoDocumento}/{numeroDocumento}', [App\Http\Controllers\FacturasPendientesController::class, 'ver'])->name('facturas-pendientes.ver');
 });
 
 // Rutas de Clientes
@@ -170,6 +171,14 @@ Route::get('/cliente/{codigo}', [App\Http\Controllers\ClienteController::class, 
 
 // Autenticación
 Auth::routes();
+
+// Ruta alternativa para logout en caso de error CSRF
+Route::get('/logout', function() {
+    Auth::logout();
+    request()->session()->invalidate();
+    request()->session()->regenerateToken();
+    return redirect('/login');
+})->name('logout.get');
 
 // Página de inicio después del login
 Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home')->middleware(['auth']);

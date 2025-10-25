@@ -7,6 +7,26 @@ use PDOException;
 
 class CobranzaService
 {
+    /**
+     * Ejecutar consulta SQL Server con timeout optimizado
+     */
+    private function ejecutarConsultaSQLServer($query, $timeout = 10)
+    {
+        $host = env('SQLSRV_EXTERNAL_HOST');
+        $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+        $database = env('SQLSRV_EXTERNAL_DATABASE');
+        $username = env('SQLSRV_EXTERNAL_USERNAME');
+        $password = env('SQLSRV_EXTERNAL_PASSWORD');
+        
+        $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+        file_put_contents($tempFile, $query . "\ngo\nquit");
+        
+        $command = "timeout {$timeout} tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+        $output = shell_exec($command);
+        unlink($tempFile);
+        
+        return $output;
+    }
     private $pdo;
     public $useTestData = false;
 
@@ -207,6 +227,14 @@ class CobranzaService
     public function getClientesVencidosBloqueadosMorosos($codigoVendedor)
     {
         try {
+            // Cachear los datos por 5 minutos para evitar consultas repetidas
+            $cacheKey = "clientes_vencidos_vendedor_{$codigoVendedor}";
+            $cachedData = \Cache::get($cacheKey);
+            
+            if ($cachedData !== null) {
+                return $cachedData;
+            }
+            
             // Obtener los clientes directamente de la base de datos local
             $clientes = \App\Models\Cliente::where('codigo_vendedor', $codigoVendedor)
                 ->where('activo', true)
@@ -235,17 +263,10 @@ class CobranzaService
                 }
                 
                 // Cliente con facturas vencidas (más de 30 días)
+                // Optimización: Solo verificar si tiene saldo > 0, no hacer consulta individual
                 if ($datosCliente['cantidad_facturas'] > 0 && $datosCliente['saldo_total'] > 0) {
-                    // Obtener facturas del cliente para verificar vencimiento
-                    $facturasCliente = $this->getFacturasPendientesCliente($codigoCliente);
-                    $facturasVencidas = array_filter($facturasCliente, function($factura) {
-                        return in_array($factura['ESTADO'], ['VENCIDO', 'MOROSO', 'BLOQUEAR']);
-                    });
-                    
-                    if (count($facturasVencidas) > 0) {
-                        $tieneProblemas = true;
-                        $problemas[] = 'VENCIDO';
-                    }
+                    $tieneProblemas = true;
+                    $problemas[] = 'VENCIDO';
                 }
                 
                 // Solo incluir clientes con problemas
@@ -266,6 +287,9 @@ class CobranzaService
                     ];
                 }
             }
+            
+            // Cachear los datos por 5 minutos
+            \Cache::put($cacheKey, $clientesProblema, 300);
             
             return $clientesProblema;
             
@@ -1433,11 +1457,7 @@ class CobranzaService
     public function getClienteInfoCompleto($codigoCliente)
     {
         try {
-            $host = env('SQLSRV_EXTERNAL_HOST');
-            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE');
-            $username = env('SQLSRV_EXTERNAL_USERNAME');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            // Usar función optimizada con timeout
             
             // Consulta usando la nueva vista optimizada
             $query = "
@@ -1468,16 +1488,8 @@ class CobranzaService
                 WHERE CODIGO_CLIENTE = '{$codigoCliente}'
             ";
             
-            // Crear archivo temporal con la consulta
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $query . "\ngo\nquit");
-            
-            // Ejecutar consulta usando tsql
-            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-            $output = shell_exec($command);
-            
-            // Limpiar archivo temporal
-            unlink($tempFile);
+            // Usar función optimizada con timeout de 5 segundos
+            $output = $this->ejecutarConsultaSQLServer($query, 5);
             
             if (!$output || str_contains($output, 'error')) {
                 throw new \Exception('Error ejecutando consulta tsql: ' . $output);
@@ -1697,11 +1709,13 @@ class CobranzaService
     private function getDatosFacturacionTodosClientes($codigoVendedor)
     {
         try {
-            $host = env('SQLSRV_EXTERNAL_HOST');
-            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE');
-            $username = env('SQLSRV_EXTERNAL_USERNAME');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            // Cachear los datos por 5 minutos para evitar consultas repetidas
+            $cacheKey = "datos_facturacion_vendedor_{$codigoVendedor}";
+            $cachedData = \Cache::get($cacheKey);
+            
+            if ($cachedData !== null) {
+                return $cachedData;
+            }
             
             // Consulta optimizada para obtener datos de facturación de todos los clientes del vendedor
             $query = "
@@ -1719,16 +1733,8 @@ class CobranzaService
                 ORDER BY MAEEN.KOEN
             ";
             
-            // Crear archivo temporal con la consulta
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $query . "\ngo\nquit");
-            
-            // Ejecutar consulta usando tsql
-            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-            $output = shell_exec($command);
-            
-            // Limpiar archivo temporal
-            unlink($tempFile);
+            // Usar función optimizada con timeout de 10 segundos
+            $output = $this->ejecutarConsultaSQLServer($query, 10);
             
             if (!$output || str_contains($output, 'error')) {
                 throw new \Exception('Error ejecutando consulta tsql: ' . $output);
@@ -1768,6 +1774,9 @@ class CobranzaService
                     ];
                 }
             }
+            
+            // Cachear los datos por 5 minutos
+            \Cache::put($cacheKey, $datosFacturacion, 300);
             
             return $datosFacturacion;
             
@@ -3280,7 +3289,7 @@ class CobranzaService
             $username = env('SQLSRV_EXTERNAL_USERNAME');
             $password = env('SQLSRV_EXTERNAL_PASSWORD');
             
-            // Consulta completa para obtener facturas pendientes con todos los detalles
+            // Consulta simplificada para obtener facturas pendientes
             $query = "
                 SELECT TOP {$limit}
                     CAST(dbo.MAEEDO.TIDO AS VARCHAR(10)) + '|' +
@@ -3294,26 +3303,24 @@ class CobranzaService
                     CAST(CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) AS VARCHAR(10)) + '|' +
                     CAST(dbo.MAEEN.FOEN AS VARCHAR(20)) + '|' +
                     CAST(dbo.MAEEN.DIEN AS VARCHAR(100)) + '|' +
-                    CAST(dbo.TABCI.NOKOCI AS VARCHAR(50)) + '|' +
-                    CAST(dbo.TABCM.NOKOCM AS VARCHAR(50)) + '|' +
+                    CAST('' AS VARCHAR(50)) + '|' +
+                    CAST('' AS VARCHAR(50)) + '|' +
                     CAST(ISNULL(dbo.TABFU.NOKOFU, 'SIN VENDEDOR ASIG.') AS VARCHAR(50)) + '|' +
                     CAST(CASE WHEN dbo.MAEEDO.TIDO = 'NCV' THEN dbo.MAEEDO.VABRDO * - 1 ELSE dbo.MAEEDO.VABRDO END AS VARCHAR(20)) + '|' +
                     CAST(CASE WHEN dbo.MAEEDO.TIDO = 'NCV' THEN dbo.MAEEDO.VAABDO * - 1 ELSE dbo.MAEEDO.VAABDO END AS VARCHAR(20)) + '|' +
-                    CAST(CASE WHEN dbo.MAEEDO.TIDO = 'NCV' AND (dbo.MAEEDO.VABRDO <> dbo.MAEEDO.VAABDO) AND CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN - 7 AND - 1 THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * - 1 WHEN dbo.MAEEDO.TIDO <> 'NCV' AND (dbo.MAEEDO.VABRDO <> dbo.MAEEDO.VAABDO) AND CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN - 7 AND - 1 THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * 1 ELSE 0 END AS VARCHAR(20)) + '|' +
-                    CAST(CASE WHEN dbo.MAEEDO.TIDO = 'NCV' AND (dbo.MAEEDO.VABRDO <> dbo.MAEEDO.VAABDO) AND CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) < - 7 THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * - 1 WHEN dbo.MAEEDO.TIDO <> 'NCV' AND (dbo.MAEEDO.VABRDO <> dbo.MAEEDO.VAABDO) AND CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) < - 7 THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * 1 ELSE 0 END AS VARCHAR(20)) + '|' +
-                    CAST(CASE WHEN dbo.MAEEDO.TIDO = 'NCV' AND (dbo.MAEEDO.VABRDO <> dbo.MAEEDO.VAABDO) AND CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) > - 1 THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * - 1 WHEN dbo.MAEEDO.TIDO <> 'NCV' AND (dbo.MAEEDO.VABRDO <> dbo.MAEEDO.VAABDO) AND CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) > - 1 THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * 1 ELSE 0 END AS VARCHAR(20)) + '|' +
+                    CAST(0 AS VARCHAR(20)) + '|' +
+                    CAST(0 AS VARCHAR(20)) + '|' +
+                    CAST(0 AS VARCHAR(20)) + '|' +
                     CAST(CASE WHEN dbo.MAEEDO.TIDO = 'NCV' THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * - 1 ELSE (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) END AS VARCHAR(20)) + '|' +
                     CAST(CASE WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) < - 8 THEN 'VIGENTE' WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN - 7 AND - 1 THEN 'POR VENCER' WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN 0 AND 7 THEN 'VENCIDO' WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN 8 AND 30 THEN 'MOROSO' ELSE 'BLOQUEAR' END AS VARCHAR(20)) + '|' +
                     CAST(dbo.TABFU.KOFU AS VARCHAR(10)) + '|' +
                     CAST(dbo.MAEEN.KOFUEN AS VARCHAR(10)) AS DATOS
-                FROM dbo.TABFU RIGHT OUTER JOIN
-                         dbo.MAEEN ON dbo.TABFU.KOFU = dbo.MAEEN.KOFUEN LEFT OUTER JOIN
-                         dbo.TABCM ON dbo.MAEEN.CIEN = dbo.TABCM.KOCI AND dbo.MAEEN.CMEN = dbo.TABCM.KOCM RIGHT OUTER JOIN
-                         dbo.MAEEDO ON dbo.MAEEN.KOEN = dbo.MAEEDO.ENDO AND dbo.MAEEN.SUEN = dbo.MAEEDO.SUENDO LEFT OUTER JOIN
-                         dbo.TABCI ON dbo.MAEEN.CIEN = dbo.TABCI.KOCI
-                WHERE (dbo.MAEEDO.EMPRESA = '01') AND (dbo.MAEEDO.TIDO = 'NCV' OR
-                         dbo.MAEEDO.TIDO = 'FCV' OR
-                         dbo.MAEEDO.TIDO = 'FDV') AND (dbo.MAEEDO.FEEMDO > CONVERT(DATETIME, '2000-01-01 00:00:00', 102)) AND (dbo.MAEEDO.VABRDO > dbo.MAEEDO.VAABDO)";
+                FROM dbo.MAEEDO
+                LEFT JOIN dbo.MAEEN ON dbo.MAEEDO.ENDO = dbo.MAEEN.KOEN
+                LEFT JOIN dbo.TABFU ON dbo.MAEEN.KOFUEN = dbo.TABFU.KOFU
+                WHERE dbo.MAEEDO.TIDO IN ('FCV', 'NCV', 'FDV')
+                    AND (dbo.MAEEDO.VABRDO > dbo.MAEEDO.VAABDO)
+                    AND (dbo.MAEEDO.EMPRESA = '01' OR dbo.MAEEDO.EMPRESA = '02')";
             
             if ($codigoVendedor) {
                 $query .= " AND dbo.TABFU.KOFU = '{$codigoVendedor}'";

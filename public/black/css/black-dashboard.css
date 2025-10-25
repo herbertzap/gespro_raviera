@@ -1586,11 +1586,11 @@ pre code {
 .table-info,
 .table-info>th,
 .table-info>td {
-  background-color: #c0dffd;
+  background-color: transparent;
 }
 
 .table-hover .table-info:hover {
-  background-color: #a7d2fc;
+  background-color: transparent;
 }
 
 .table-hover .table-info:hover>td,

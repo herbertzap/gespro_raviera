@@ -165,14 +165,28 @@
         </thead>
         <tbody>
             @foreach($cotizacion->productos as $producto)
+            @php
+                $descuentoPorcentaje = $producto->descuento_porcentaje ?? 0;
+                $descuentoValor = $producto->descuento_valor ?? 0;
+                $precioConDescuento = $producto->precio_unitario - $descuentoValor;
+                $subtotal = $producto->cantidad * $precioConDescuento;
+                $iva = $subtotal * 0.19;
+                $total = $subtotal + $iva;
+            @endphp
             <tr>
                 <td>{{ $producto->codigo_producto }}</td>
                 <td>{{ number_format($producto->cantidad, 2, ',', '.') }}</td>
                 <td>UN</td>
                 <td>{{ $producto->descripcion_producto }}</td>
                 <td>${{ number_format($producto->precio_unitario, 0, ',', '.') }}</td>
-                <td>0</td>
-                <td>${{ number_format($producto->cantidad * $producto->precio_unitario, 0, ',', '.') }}</td>
+                <td>
+                    @if($descuentoPorcentaje > 0)
+                        {{ $descuentoPorcentaje }}%
+                    @else
+                        -
+                    @endif
+                </td>
+                <td>${{ number_format($total, 0, ',', '.') }}</td>
             </tr>
             @endforeach
         </tbody>
@@ -194,13 +208,18 @@
     
     <div class="totals">
         @php
-            $totalNeto = $cotizacion->productos->sum(function($producto) {
+            $totalSinDescuento = $cotizacion->productos->sum(function($producto) {
                 return $producto->cantidad * $producto->precio_unitario;
             });
+            $totalDescuentos = $cotizacion->productos->sum(function($producto) {
+                $descuentoValor = $producto->descuento_valor ?? 0;
+                return $producto->cantidad * $descuentoValor;
+            });
+            $totalNeto = $totalSinDescuento - $totalDescuentos;
             $iva = $totalNeto * 0.19;
             $totalFinal = $totalNeto + $iva;
         @endphp
-        <p><strong>DESCTO. GLOBAL:</strong> $0</p>
+        <p><strong>DESCTO. GLOBAL:</strong> ${{ number_format($totalDescuentos, 0, ',', '.') }}</p>
         <p><strong>NETO $:</strong> ${{ number_format($totalNeto, 0, ',', '.') }}</p>
         <p><strong>EXENTO $:</strong> $0</p>
         <p><strong>19% I.V.A. $:</strong> ${{ number_format($iva, 0, ',', '.') }}</p>

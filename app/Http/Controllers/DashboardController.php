@@ -291,12 +291,29 @@ class DashboardController extends Controller
 
     private function aplicarFiltrosClientes($clientes, $filtros)
     {
-        // Filtrar por búsqueda (código o nombre)
+        // Filtrar por búsqueda (código o nombre) con soporte para múltiples términos
         if (!empty($filtros['buscar'])) {
             $buscar = strtolower($filtros['buscar']);
-            $clientes = array_filter($clientes, function($cliente) use ($buscar) {
-                return strpos(strtolower($cliente['CODIGO_CLIENTE']), $buscar) !== false ||
-                       strpos(strtolower($cliente['NOMBRE_CLIENTE']), $buscar) !== false;
+            $terminos = array_filter(explode(' ', trim($buscar)));
+            
+            $clientes = array_filter($clientes, function($cliente) use ($terminos) {
+                $codigoCliente = strtolower($cliente['CODIGO_CLIENTE']);
+                $nombreCliente = strtolower($cliente['NOMBRE_CLIENTE']);
+                
+                if (count($terminos) > 1) {
+                    // Búsqueda con múltiples términos: todos deben estar presentes
+                    foreach ($terminos as $termino) {
+                        if (strpos($codigoCliente, $termino) === false && 
+                            strpos($nombreCliente, $termino) === false) {
+                            return false;
+                        }
+                    }
+                    return true;
+                } else {
+                    // Búsqueda simple
+                    return strpos($codigoCliente, $buscar) !== false ||
+                           strpos($nombreCliente, $buscar) !== false;
+                }
             });
         }
         

@@ -1594,12 +1594,12 @@ class AprobacionController extends Controller
                     $line = trim($line);
                     
                     // Saltar líneas de configuración
-                    if (str_contains($line, 'Setting') || str_contains($line, 'locale') || str_contains($line, '1>')) {
+                    if (str_contains($line, 'Setting') || str_contains($line, 'locale')) {
                         continue;
                     }
                     
-                    // Buscar el header CPEN
-                    if ($line === 'CPEN') {
+                    // Buscar el header CPEN (puede estar en línea con números como '1> 2> CPEN')
+                    if (str_contains($line, 'CPEN')) {
                         $foundHeader = true;
                         continue;
                     }

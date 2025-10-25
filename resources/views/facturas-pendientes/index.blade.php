@@ -161,6 +161,34 @@
                             <div class="row">
                                 <div class="col-md-2">
                                     <div class="form-group">
+                                        <label for="fecha_desde">Fecha Desde</label>
+                                        <input type="date" class="form-control" id="fecha_desde" name="fecha_desde" 
+                                               value="{{ $filtros['fecha_desde'] ?? '' }}">
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="form-group">
+                                        <label for="fecha_hasta">Fecha Hasta</label>
+                                        <input type="date" class="form-control" id="fecha_hasta" name="fecha_hasta" 
+                                               value="{{ $filtros['fecha_hasta'] ?? '' }}">
+                                    </div>
+                                </div>
+                                @if($tipoUsuario === 'Administrador')
+                                <div class="col-md-3">
+                                    <div class="form-group">
+                                        <label for="vendedores">Vendedores</label>
+                                        <select class="form-control" id="vendedores" name="vendedores[]" multiple>
+                                            <option value="AVS" {{ in_array('AVS', $filtros['vendedores'] ?? []) ? 'selected' : '' }}>ANDRES EDMUNDO VASQUEZ</option>
+                                            <option value="GOP" {{ in_array('GOP', $filtros['vendedores'] ?? []) ? 'selected' : '' }}>GOP</option>
+                                            <option value="LCB" {{ in_array('LCB', $filtros['vendedores'] ?? []) ? 'selected' : '' }}>LCB</option>
+                                            <option value="LCC" {{ in_array('LCC', $filtros['vendedores'] ?? []) ? 'selected' : '' }}>LCC</option>
+                                            <option value="LCD" {{ in_array('LCD', $filtros['vendedores'] ?? []) ? 'selected' : '' }}>LCD</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                @endif
+                                <div class="col-md-2">
+                                    <div class="form-group">
                                         <label for="por_pagina">Por Página</label>
                                         <select class="form-control" id="por_pagina" name="por_pagina">
                                             <option value="10" {{ $filtros['por_pagina'] == 10 ? 'selected' : '' }}>10</option>
@@ -178,17 +206,23 @@
                                         </button>
                                     </div>
                                 </div>
-                                <div class="col-md-9">
+                                <div class="col-md-2">
                                     <div class="form-group">
                                         <label>&nbsp;</label>
                                         <div>
                                             <a href="{{ route('facturas-pendientes.index') }}" class="btn btn-secondary">
-                                                <i class="material-icons">clear</i> Limpiar Filtros
+                                                <i class="material-icons">clear</i> Limpiar
                                             </a>
-                                            <button type="button" class="btn btn-success" onclick="exportarFacturas()">
-                                                <i class="material-icons">file_download</i> Exportar Excel
-                                            </button>
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <div class="form-group">
+                                        <button type="button" class="btn btn-success" onclick="exportarFacturas()">
+                                            <i class="material-icons">file_download</i> Exportar Excel
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -353,51 +387,50 @@ function exportarFacturas() {
         tipo_documento: document.getElementById('tipo_documento').value,
         cliente: document.getElementById('cliente').value,
         saldo_min: document.getElementById('saldo_min').value,
-        saldo_max: document.getElementById('saldo_max').value
+        saldo_max: document.getElementById('saldo_max').value,
+        fecha_desde: document.getElementById('fecha_desde').value,
+        fecha_hasta: document.getElementById('fecha_hasta').value
     };
+    
+    // Agregar vendedores si es administrador
+    const vendedoresSelect = document.getElementById('vendedores');
+    if (vendedoresSelect) {
+        const vendedores = Array.from(vendedoresSelect.selectedOptions).map(option => option.value);
+        filtros.vendedores = vendedores;
+    }
     
     // Construir URL con filtros
     const params = new URLSearchParams(filtros);
     const url = '{{ route("facturas-pendientes.export") }}?' + params.toString();
     
-    // Mostrar mensaje de carga
-    Swal.fire({
-        title: 'Exportando...',
-        text: 'Generando archivo Excel',
-        allowOutsideClick: false,
-        didOpen: () => {
-            Swal.showLoading();
-        }
-    });
+    // Mostrar mensaje de carga simple
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '<i class="material-icons">hourglass_empty</i> Exportando...';
+    button.disabled = true;
     
     // Realizar petición AJAX
     fetch(url)
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                Swal.fire({
-                    icon: 'success',
-                    title: '¡Exportación completada!',
-                    text: `Se exportaron ${data.total_registros} registros`,
-                    confirmButtonText: 'OK'
-                });
+                // Descargar el archivo directamente
+                window.location.href = data.download_url;
+                
+                // Mostrar mensaje de éxito
+                alert('¡Exportación completada! Se exportaron ' + data.total_registros + ' registros');
             } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'No se pudo exportar el archivo',
-                    confirmButtonText: 'OK'
-                });
+                alert('Error: No se pudo exportar el archivo');
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: 'Ocurrió un error durante la exportación',
-                confirmButtonText: 'OK'
-            });
+            alert('Ocurrió un error durante la exportación');
+        })
+        .finally(() => {
+            // Restaurar el botón
+            button.innerHTML = originalText;
+            button.disabled = false;
         });
 }
 </script>

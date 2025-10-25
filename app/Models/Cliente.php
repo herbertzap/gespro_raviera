@@ -148,8 +148,22 @@ class Cliente extends Model
      */
     public static function buscarPorNombre($nombre, $codigoVendedor = null)
     {
-        $query = self::where('nombre_cliente', 'LIKE', "%{$nombre}%")
-                     ->where('activo', true);
+        // Dividir la búsqueda en términos individuales
+        $terminos = array_filter(explode(' ', trim($nombre)));
+        
+        $query = self::where('activo', true);
+        
+        if (count($terminos) > 1) {
+            // Búsqueda con múltiples términos: todos los términos deben estar en el nombre
+            $query->where(function($q) use ($terminos) {
+                foreach ($terminos as $termino) {
+                    $q->where('nombre_cliente', 'LIKE', "%{$termino}%");
+                }
+            });
+        } else {
+            // Búsqueda simple: por nombre
+            $query->where('nombre_cliente', 'LIKE', "%{$nombre}%");
+        }
         
         if ($codigoVendedor) {
             $query->where('codigo_vendedor', $codigoVendedor);

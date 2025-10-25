@@ -51,17 +51,10 @@ class CotizacionController extends Controller
             try {
                 // PRIMERO: Buscar en base de datos local
                 $codigoVendedor = auth()->user()->codigo_vendedor ?? 'GOP';
-                \Log::info('🔍 Buscando cliente en base local:');
-                \Log::info('   - Código: ' . $clienteCodigo);
-                \Log::info('   - Vendedor: ' . $codigoVendedor);
                 
                 $clienteLocal = Cliente::buscarPorCodigo($clienteCodigo, $codigoVendedor);
                 
                 if ($clienteLocal) {
-                    \Log::info('✅ Cliente encontrado en base de datos local');
-                    \Log::info('   - Nombre: ' . $clienteLocal->nombre_cliente);
-                    \Log::info('   - Teléfono: ' . $clienteLocal->telefono);
-                    \Log::info('   - Email: ' . $clienteLocal->email);
                     
                     // Obtener información completa (sincroniza si es necesario)
                     $clienteLocal = $clienteLocal->obtenerInformacionCompleta();
@@ -138,17 +131,11 @@ class CotizacionController extends Controller
                     }
                     
                 } else {
-                    \Log::info('⚠️ Cliente no encontrado en base local, buscando en SQL Server...');
-                    
                     // SEGUNDO: Si no está en local, buscar en SQL Server
                     $cobranzaService = new \App\Services\CobranzaService();
-                    \Log::info('🔍 Buscando cliente en SQL Server...');
                     $clienteData = $cobranzaService->getClienteInfoCompleto($clienteCodigo);
                     
                     if ($clienteData) {
-                        \Log::info('✅ Cliente encontrado en SQL Server');
-                        \Log::info('   - Nombre: ' . ($clienteData['NOMBRE_CLIENTE'] ?? 'N/A'));
-                        \Log::info('   - Teléfono: ' . ($clienteData['TELEFONO'] ?? 'N/A'));
                         
                         // Crear cliente en base local para futuras consultas
                         $nuevoCliente = Cliente::create([
@@ -358,16 +345,29 @@ class CotizacionController extends Controller
                 $listaPrecios = '01P';
             }
             
+            // Dividir la búsqueda en términos individuales
+            $terminos = array_filter(explode(' ', trim($busqueda)));
+            
             // Buscar productos en tabla local MySQL (consulta optimizada)
-            // Buscar por código (KOPR) o por nombre (NOKOPR)
-            $productos = DB::table('productos')
-                ->where(function($query) use ($busqueda) {
-                    $query->where('KOPR', 'LIKE', "{$busqueda}%")
-                          ->orWhere('NOKOPR', 'LIKE', "{$busqueda}%");
-                })
-                ->where('activo', true)
-                ->limit(15)
-                ->get()
+            // Buscar por código (KOPR) o por nombre (NOKOPR) con múltiples términos
+            $query = DB::table('productos')->where('activo', true);
+            
+            if (count($terminos) > 1) {
+                // Búsqueda con múltiples términos: todos los términos deben estar en el nombre
+                $query->where(function($q) use ($terminos) {
+                    foreach ($terminos as $termino) {
+                        $q->where('NOKOPR', 'LIKE', "%{$termino}%");
+                    }
+                });
+            } else {
+                // Búsqueda simple: por código o nombre
+                $query->where(function($q) use ($busqueda) {
+                    $q->where('KOPR', 'LIKE', "{$busqueda}%")
+                      ->orWhere('NOKOPR', 'LIKE', "%{$busqueda}%");
+                });
+            }
+            
+            $productos = $query->limit(15)->get()
                 ->map(function($producto) use ($listaPrecios) {
                     // Mapear precios según la lista
                     $precio = 0;
@@ -1065,16 +1065,8 @@ class CotizacionController extends Controller
                     'estado_aprobacion' => $estadoAprobacion,
                     'requiere_aprobacion' => true,
                     'tiene_problemas_credito' => $tieneProblemasCredito,
-                    'tiene_problemas_stock' => $tieneProblemasStock,
-                    'observaciones' => $cotizacion->observaciones . "\n\n⚠️ PRODUCTOS SIN STOCK SUFICIENTE:\n" .                                            
-                        collect($productosSinStock)->map(function($p) {
-                            return "- {$p['codigo']} ({$p['nombre']}): Disponible {$p['stock_disponible']}, Solicitado {$p['cantidad_solicitada']}";       
-                        })->join("\n") . 
-                        "\n\n🔍 VALIDACIONES AUTOMÁTICAS:\n" .
-                        "- Crédito: " . ($validacionesAutomaticas['validaciones']['credito']['valido'] ? 'Válido' : 'Requiere autorización') . "\n" .      
-                        "- Facturas: " . ($validacionesAutomaticas['validaciones']['retraso']['valido'] ? 'Válido' : 'Requiere autorización') . "\n" .     
-                        "- Stock: " . ($validacionStock['valido'] ? 'Válido' : 'Requiere autorización') . "\n" .
-                        "- Estado de aprobación: {$estadoAprobacion}"                                                    
+                    'tiene_problemas_stock' => $tieneProblemasStock
+                    // Las observaciones se mantienen como las escribió el usuario, sin agregar información automática
                 ]);
                 
                 // Crear nota de venta pendiente

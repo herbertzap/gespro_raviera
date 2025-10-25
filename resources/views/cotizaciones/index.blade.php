@@ -113,21 +113,12 @@
                         </div>
                     </form>
                 <div class="card-body">
-                    <!-- Debug info -->
-                    <div class="alert alert-info">
-                        <strong>Debug:</strong> 
-                        Cotizaciones encontradas: {{ count($cotizaciones) }} | 
-                        Estado filtro: {{ $estado }} | 
-                        Cliente filtro: {{ $cliente }} | 
-                        Buscar filtro: {{ $buscar }}
-                    </div>
                     
                     @if(count($cotizaciones) > 0)
                         <div class="table-responsive">
                             <table class="table">
                                 <thead>
                                     <tr>
-                                        <th>Tipo</th>
                                         <th>N° NV</th>
                                         <th>Cliente</th>
                                         <th>Fecha</th>
@@ -146,23 +137,10 @@
                                     @endphp
                                     <tr>
                                         <td>
-                                            @if(isset($cotizacion['tipo_documento']))
-                                                @if($cotizacion['tipo_documento'] === 'cotizacion')
-                                                    <span class="badge badge-info">
-                                                        <i class="material-icons" style="font-size: 14px;">description</i> Cotización
-                                                    </span>
-                                                @else
-                                                    <span class="badge badge-success">
-                                                        <i class="material-icons" style="font-size: 14px;">receipt</i> Nota Venta
-                                                    </span>
-                                                @endif
-                                            @else
-                                                <span class="badge badge-secondary">N/A</span>
-                                            @endif
-                                        </td>
-                                        <td>
                                             <strong>
-                                                @if(isset($cotizacion['fuente']) && $cotizacion['fuente'] === 'local')
+                                                @if(isset($cotizacion['numero_nvv']) && !empty($cotizacion['numero_nvv']))
+                                                    NVV-{{ $cotizacion['numero_nvv'] }}
+                                                @elseif(isset($cotizacion['fuente']) && $cotizacion['fuente'] === 'local')
                                                     COT#{{ $cotizacion['numero'] }}
                                                 @else
                                                     NV#{{ $cotizacion['numero'] }}

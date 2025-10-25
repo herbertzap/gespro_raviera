@@ -56,7 +56,15 @@
                         </li>
                         <li class="dropdown-divider"></li>
                         <li class="nav-link">
-                            <a href="#" class="nav-item dropdown-item" onclick="event.preventDefault(); document.getElementById('logout-form').submit();">{{ __('Log out') }}</a>
+                            <a href="#" class="nav-item dropdown-item" onclick="event.preventDefault(); 
+                                if (confirm('¿Estás seguro de que quieres cerrar sesión?')) {
+                                    try {
+                                        document.getElementById('logout-form').submit();
+                                    } catch (error) {
+                                        // Si hay error con el token CSRF, redirigir a login
+                                        window.location.href = '{{ route('login') }}';
+                                    }
+                                }">{{ __('Log out') }}</a>
                         </li>
                     </ul>
                 </li>
