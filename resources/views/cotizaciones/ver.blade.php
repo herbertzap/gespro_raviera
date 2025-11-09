@@ -1,25 +1,33 @@
 @extends('layouts.app', ['pageSlug' => 'cotizaciones'])
 
-@section('title', 'Ver Nota de Venta')
+@section('title', 'Ver ' . ($cotizacion->tipo_documento === 'nota_venta' ? 'Nota de Venta' : 'Cotización'))
 
 @section('content')
 <div class="container-fluid">
         <div class="row">
             <div class="col-md-12">
                 <div class="card">
-                    <div class="card-header card-header-warning">
+                    <div class="card-header {{ $cotizacion->tipo_documento === 'nota_venta' ? 'card-header-danger' : 'card-header-info' }}">
                         <div class="row">
                             <div class="col-md-8">
                                 <h4 class="card-title">
                                     <i class="material-icons">visibility</i>
-                                    Ver Nota de Venta #{{ $cotizacion->id }}
+                                    Ver {{ $cotizacion->tipo_documento === 'nota_venta' ? 'Nota de Venta' : 'Cotización' }} #{{ $cotizacion->id }}
                                 </h4>
-                                <p class="card-category">Visualizar nota de venta (solo lectura)</p>
+                                <p class="card-category">Visualizar {{ $cotizacion->tipo_documento === 'nota_venta' ? 'nota de venta' : 'cotización' }} (solo lectura)</p>
                             </div>
                             <div class="col-md-4 text-right">
                                 <a href="{{ route('cotizaciones.index') }}" class="btn btn-secondary">
                                     <i class="material-icons">arrow_back</i> Volver
                                 </a>
+                                @if($cotizacion->tipo_documento === 'cotizacion')
+                                <button type="button" class="btn btn-warning ml-2" onclick="convertirANotaVenta({{ $cotizacion->id }})">
+                                    <i class="material-icons">transform</i> Convertir a NVV
+                                </button>
+                                @endif
+                                <button type="button" class="btn btn-success ml-2" onclick="descargarPDF({{ $cotizacion->id }})" style="display: inline-block !important;">
+                                    <i class="material-icons">picture_as_pdf</i> Descargar PDF
+                                </button>
                                 <a href="{{ route('aprobaciones.historial', $cotizacion->id) }}" class="btn btn-info ml-2">
                                     <i class="material-icons">history</i> Historial
                                 </a>
@@ -44,13 +52,13 @@
                                         <div class="col-md-3">
                                             <div class="form-group">
                                                 <label class="bmd-label-floating">RUT/Código Cliente</label>
-                                                <input type="text" class="form-control" value="{{ $cliente->codigo ?? '' }}" readonly>
+                                                <input type="text" class="form-control" value="{{ $cliente->codigo_cliente ?? '' }}" readonly>
                                             </div>
                                         </div>
                                         <div class="col-md-6">
                                             <div class="form-group">
                                                 <label class="bmd-label-floating">Nombre/Razón Social</label>
-                                                <input type="text" class="form-control" value="{{ $cliente->nombre }}" readonly>
+                                                <input type="text" class="form-control" value="{{ $cliente->nombre_cliente ?? '' }}" readonly>
                                             </div>
                                         </div>
                                         <div class="col-md-3">
@@ -99,20 +107,35 @@
                                                     <th>Producto</th>
                                                     <th>Cantidad</th>
                                                     <th>Precio Unit.</th>
+                                                    <th>Descuento (%)</th>
+                                                    <th>Descuento ($)</th>
                                                     <th>Subtotal</th>
+                                                    <th>IVA (19%)</th>
+                                                    <th>Total</th>
                                                     <th>Stock</th>
                                                 </tr>
                                             </thead>
                                             <tbody id="productosCotizacion">
-                                                @foreach($productosCotizacion as $producto)
+                                                @foreach($cotizacion->productos as $producto)
+                                                @php
+                                                    $descuentoPorcentaje = $producto->descuento_porcentaje ?? 0;
+                                                    $descuentoValor = $producto->descuento_valor ?? 0;
+                                                    $subtotalConDescuento = $producto->subtotal_con_descuento ?? 0;
+                                                    $iva = $producto->iva_valor ?? 0;
+                                                    $total = $producto->total_producto ?? 0;
+                                                @endphp
                                                 <tr>
-                                                    <td>{{ $producto['codigo'] }}</td>
-                                                    <td>{{ $producto['nombre'] }}</td>
-                                                    <td>{{ $producto['cantidad'] }}</td>
-                                                    <td>${{ number_format($producto['precio'], 0, ',', '.') }}</td>
-                                                    <td>${{ number_format($producto['subtotal'], 0, ',', '.') }}</td>
+                                                    <td>{{ $producto->codigo_producto ?? '' }}</td>
+                                                    <td>{{ $producto->nombre_producto ?? '' }}</td>
+                                                    <td>{{ $producto->cantidad ?? 0 }}</td>
+                                                    <td>${{ number_format($producto->precio_unitario ?? 0, 0, ',', '.') }}</td>
+                                                    <td>{{ number_format($descuentoPorcentaje, 2) }}%</td>
+                                                    <td>${{ number_format($descuentoValor, 0, ',', '.') }}</td>
+                                                    <td>${{ number_format($subtotalConDescuento, 0, ',', '.') }}</td>
+                                                    <td>${{ number_format($iva, 0, ',', '.') }}</td>
+                                                    <td>${{ number_format($total, 0, ',', '.') }}</td>
                                                     <td>
-                                                        @if($producto['stock_suficiente'])
+                                                        @if($producto->stock_suficiente ?? true)
                                                             <span class="badge badge-success">Suficiente</span>
                                                         @else
                                                             <span class="badge badge-warning">Insuficiente</span>
@@ -122,6 +145,15 @@
                                                 </tr>
                                                 @endforeach
                                             </tbody>
+                                            <tfoot>
+                                                <tr class="font-weight-bold">
+                                                    <td colspan="6" class="text-right">TOTALES:</td>
+                                                    <td id="totalSubtotal">$0</td>
+                                                    <td id="totalIva">$0</td>
+                                                    <td id="totalGeneral">$0</td>
+                                                    <td></td>
+                                                </tr>
+                                            </tfoot>
                                         </table>
                                     </div>
 
@@ -130,12 +162,35 @@
                                         // Calcular totales automáticamente
                                         document.addEventListener('DOMContentLoaded', function() {
                                             let subtotal = 0;
-                                            @foreach($productosCotizacion as $producto)
+                                            let descuentoTotal = 0;
+                                            let subtotalNeto = 0;
+                                            let ivaTotal = 0;
+                                            let totalGeneral = 0;
+                                            
+                                            @foreach($cotizacion->productos as $producto)
+                                                @php
+                                                    $descuentoValor = $producto['descuento_valor'] ?? 0;
+                                                    $subtotalConDescuento = $producto['subtotal'] - $descuentoValor;
+                                                    $iva = $subtotalConDescuento * 0.19;
+                                                    $total = $subtotalConDescuento + $iva;
+                                                @endphp
                                                 subtotal += {{ $producto['subtotal'] }};
+                                                descuentoTotal += {{ $descuentoValor }};
+                                                subtotalNeto += {{ $subtotalConDescuento }};
+                                                ivaTotal += {{ $iva }};
+                                                totalGeneral += {{ $total }};
                                             @endforeach
                                             
-                                            document.getElementById('subtotal').textContent = '$' + subtotal.toLocaleString('es-CL');
-                                            document.getElementById('total').textContent = '$' + subtotal.toLocaleString('es-CL');
+                                            document.getElementById('subtotal').textContent = '$' + Math.round(subtotal).toLocaleString('es-CL');
+                                            document.getElementById('descuento').textContent = '$' + Math.round(descuentoTotal).toLocaleString('es-CL');
+                                            document.getElementById('subtotalNeto').textContent = '$' + Math.round(subtotalNeto).toLocaleString('es-CL');
+                                            document.getElementById('iva').textContent = '$' + Math.round(ivaTotal).toLocaleString('es-CL');
+                                            document.getElementById('total').textContent = '$' + Math.round(totalGeneral).toLocaleString('es-CL');
+                                            
+                                            // Actualizar totales de la tabla
+                                            document.getElementById('totalSubtotal').textContent = '$' + Math.round(subtotalNeto).toLocaleString('es-CL');
+                                            document.getElementById('totalIva').textContent = '$' + Math.round(ivaTotal).toLocaleString('es-CL');
+                                            document.getElementById('totalGeneral').textContent = '$' + Math.round(totalGeneral).toLocaleString('es-CL');
                                         });
                                     </script>
                                     <div class="row mt-4">
@@ -162,6 +217,22 @@
                                                         </div>
                                                         <div class="col-md-6 text-right">
                                                             <h5 id="descuento">$0</h5>
+                                                        </div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="col-md-6">
+                                                            <h5>Subtotal Neto:</h5>
+                                                        </div>
+                                                        <div class="col-md-6 text-right">
+                                                            <h5 id="subtotalNeto">$0</h5>
+                                                        </div>
+                                                    </div>
+                                                    <div class="row">
+                                                        <div class="col-md-6">
+                                                            <h5>IVA (19%):</h5>
+                                                        </div>
+                                                        <div class="col-md-6 text-right">
+                                                            <h5 id="iva">$0</h5>
                                                         </div>
                                                     </div>
                                                     <hr>
@@ -507,6 +578,12 @@ function actualizarTablaProductos() {
         // Determinar el step según la unidad
         const step = obtenerStepPorUnidad(producto.unidad);
         
+        const descuentoValor = producto.descuento_valor || 0;
+        const subtotalConDescuento = producto.subtotal - descuentoValor;
+        const iva = subtotalConDescuento * 0.19;
+        const total = subtotalConDescuento + iva;
+        const descuentoPorcentaje = producto.descuento_porcentaje || 0;
+        
         const row = `
             <tr>
                 <td>${producto.codigo}</td>
@@ -517,7 +594,11 @@ function actualizarTablaProductos() {
                     <small class="text-muted">${producto.unidad}</small>
                 </td>
                 <td>$${Math.round(producto.precio).toLocaleString()}</td>
-                <td>$${Math.round(producto.subtotal).toLocaleString()}</td>
+                <td>${descuentoPorcentaje.toFixed(2)}%</td>
+                <td>$${Math.round(descuentoValor).toLocaleString()}</td>
+                <td>$${Math.round(subtotalConDescuento).toLocaleString()}</td>
+                <td>$${Math.round(iva).toLocaleString()}</td>
+                <td>$${Math.round(total).toLocaleString()}</td>
                 <td class="${stockClass}">
                     ${stockText}
                     ${producto.stock > 0 ? `<br><small>Disponible: ${producto.stock} ${producto.unidad}</small>` : '<br><small>Nota pendiente de stock</small>'}
@@ -559,19 +640,35 @@ function eliminarProducto(index) {
 
 // Función para calcular totales
 function calcularTotales() {
-    const subtotal = productosCotizacion.reduce((sum, producto) => sum + producto.subtotal, 0);
+    let subtotal = 0;
+    let descuentoTotal = 0;
+    let subtotalNeto = 0;
+    let ivaTotal = 0;
+    let totalGeneral = 0;
     
-    // Calcular descuento (5% si supera $400,000)
-    let descuento = 0;
-    if (subtotal > 400000) {
-        descuento = subtotal * 0.05;
-    }
-    
-    const total = subtotal - descuento;
+    productosCotizacion.forEach(producto => {
+        const descuentoValor = producto.descuento_valor || 0;
+        const subtotalConDescuento = producto.subtotal - descuentoValor;
+        const iva = subtotalConDescuento * 0.19;
+        const total = subtotalConDescuento + iva;
+        
+        subtotal += producto.subtotal;
+        descuentoTotal += descuentoValor;
+        subtotalNeto += subtotalConDescuento;
+        ivaTotal += iva;
+        totalGeneral += total;
+    });
     
     document.getElementById('subtotal').textContent = '$' + Math.round(subtotal).toLocaleString();
-    document.getElementById('descuento').textContent = '$' + Math.round(descuento).toLocaleString();
-    document.getElementById('total').textContent = '$' + Math.round(total).toLocaleString();
+    document.getElementById('descuento').textContent = '$' + Math.round(descuentoTotal).toLocaleString();
+    document.getElementById('subtotalNeto').textContent = '$' + Math.round(subtotalNeto).toLocaleString();
+    document.getElementById('iva').textContent = '$' + Math.round(ivaTotal).toLocaleString();
+    document.getElementById('total').textContent = '$' + Math.round(totalGeneral).toLocaleString();
+    
+    // Actualizar totales de la tabla
+    document.getElementById('totalSubtotal').textContent = '$' + Math.round(subtotalNeto).toLocaleString();
+    document.getElementById('totalIva').textContent = '$' + Math.round(ivaTotal).toLocaleString();
+    document.getElementById('totalGeneral').textContent = '$' + Math.round(totalGeneral).toLocaleString();
 }
 
 // Función para limpiar búsqueda
@@ -700,5 +797,118 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('✅ Configuración completada');
 });
 
+// Función para convertir cotización a NVV
+function convertirANotaVenta(cotizacionId) {
+    if (!confirm('¿Estás seguro de convertir esta cotización a Nota de Venta?\n\nUna vez convertida, entrará al flujo de aprobaciones (Supervisor, Compras, Picking).')) {
+        return;
+    }
+    
+    // Abrir modal de conversión
+    $('#modalConvertirNVV').data('cotizacion-id', cotizacionId);
+    $('#modalConvertirNVV').modal('show');
+}
+
+function confirmarConversionNVV() {
+    const cotizacionId = $('#modalConvertirNVV').data('cotizacion-id');
+    const numeroOrdenCompra = $('#numero_orden_compra_nvv').val();
+    const observacionVendedor = $('#observacion_vendedor_nvv').val();
+    const solicitarDescuentoExtra = $('#solicitar_descuento_extra_nvv').is(':checked');
+    
+    $.ajax({
+        url: `/cotizacion/convertir-a-nota-venta/${cotizacionId}`,
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+        },
+        data: {
+            numero_orden_compra: numeroOrdenCompra,
+            observacion_vendedor: observacionVendedor,
+            solicitar_descuento_extra: solicitarDescuentoExtra
+        },
+        success: function(response) {
+            $('#modalConvertirNVV').modal('hide');
+            alert('Cotización convertida exitosamente a Nota de Venta');
+            location.reload();
+        },
+        error: function(xhr) {
+            const errorMsg = xhr.responseJSON?.message || 'Error al convertir la cotización';
+            alert('Error: ' + errorMsg);
+        }
+    });
+}
+
+// Función para descargar PDF
+function descargarPDF(cotizacionId) {
+    window.open(`/cotizacion/pdf/${cotizacionId}`, '_blank');
+}
+
 console.log('🔍 Script cargado completamente');
-</script> 
+</script>
+
+<!-- Modal de Conversión a NVV -->
+<div class="modal fade" id="modalConvertirNVV" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="material-icons">description</i>
+                    Convertir a Nota de Venta
+                </h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="material-icons">info</i>
+                    <strong>Información:</strong> Una vez convertida, la cotización entrará al flujo de aprobaciones (Supervisor, Compras, Picking).
+                </div>
+                
+                <div class="form-group">
+                    <label for="numero_orden_compra_nvv">Número de Orden de Compra</label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="numero_orden_compra_nvv" 
+                           maxlength="40"
+                           placeholder="Número de orden de compra del cliente (opcional)">
+                    <small class="form-text text-muted">
+                        <i class="material-icons" style="font-size: 14px; vertical-align: middle;">info</i>
+                        Campo opcional - Máximo 40 caracteres
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="observacion_vendedor_nvv">Observación del Vendedor</label>
+                    <textarea class="form-control" 
+                              id="observacion_vendedor_nvv" 
+                              rows="3" 
+                              maxlength="250"
+                              placeholder="Observación personal del vendedor (opcional)"></textarea>
+                    <small class="form-text text-muted">
+                        <i class="material-icons" style="font-size: 14px; vertical-align: middle;">info</i>
+                        Campo opcional - Máximo 250 caracteres
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <div class="form-check">
+                        <label class="form-check-label">
+                            <input class="form-check-input" type="checkbox" id="solicitar_descuento_extra_nvv">
+                            <span class="form-check-sign"><span class="check"></span></span>
+                            <strong>Solicitar descuento extra</strong>
+                        </label>
+                    </div>
+                    <small class="form-text text-muted">
+                        Si está marcado, la NVV requerirá aprobación de Supervisor aunque el cliente no tenga problemas de crédito.
+                    </small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="confirmarConversionNVV()">
+                    <i class="material-icons">check</i> Convertir a NVV
+                </button>
+            </div>
+        </div>
+    </div>
+</div> 

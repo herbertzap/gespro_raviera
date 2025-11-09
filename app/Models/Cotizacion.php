@@ -48,6 +48,7 @@ class Cotizacion extends Model
         'comentarios_supervisor',
         'comentarios_compras',
         'comentarios_picking',
+        'observaciones_picking',
         'tiene_problemas_stock',
         'detalle_problemas_stock',
         'tiene_problemas_credito',
@@ -191,6 +192,14 @@ class Cotizacion extends Model
         return $query->where('estado_aprobacion', 'aprobada_picking');
     }
 
+    /**
+     * Scope para notas pendientes de entrega
+     */
+    public function scopePendientesEntrega($query)
+    {
+        return $query->where('estado_aprobacion', 'pendiente_entrega');
+    }
+
     public function scopeConProblemasStock($query)
     {
         return $query->where('tiene_problemas_stock', true);
@@ -229,6 +238,7 @@ class Cotizacion extends Model
         }
         
         $this->tipo_documento = 'nota_venta';
+        $this->estado = 'enviada';
         $this->estado_aprobacion = 'pendiente';
         $this->requiere_aprobacion = true;
         
@@ -268,7 +278,9 @@ class Cotizacion extends Model
     // Nuevos métodos para el flujo de aprobaciones
     public function puedeAprobarSupervisor()
     {
-        return $this->estado_aprobacion === 'pendiente' && $this->tiene_problemas_credito;
+        return $this->estado_aprobacion === 'pendiente' && (
+            $this->tiene_problemas_credito || $this->requiere_aprobacion
+        );
     }
 
     public function puedeAprobarCompras()
@@ -281,7 +293,7 @@ class Cotizacion extends Model
 
     public function puedeAprobarPicking()
     {
-        return in_array($this->estado_aprobacion, ['pendiente_picking', 'aprobada_compras']);
+        return in_array($this->estado_aprobacion, ['pendiente_picking', 'aprobada_compras', 'pendiente_entrega']);
     }
 
     public function aprobarPorSupervisor($supervisorId, $comentarios = null)
@@ -314,6 +326,19 @@ class Cotizacion extends Model
             'aprobado_por_picking' => $pickingId,
             'fecha_aprobacion_picking' => now(),
             'comentarios_picking' => $comentarios
+        ]);
+    }
+
+    /**
+     * Guardar como pendiente de entrega (nuevo estado)
+     */
+    public function guardarPendienteEntrega($pickingId, $observaciones = null)
+    {
+        $this->update([
+            'estado_aprobacion' => 'pendiente_entrega',
+            'aprobado_por_picking' => $pickingId,
+            'fecha_aprobacion_picking' => now(),
+            'observaciones_picking' => $observaciones
         ]);
     }
 

@@ -20,48 +20,10 @@
             </div>
         </div>
 
-        <!-- Solo 3 Tarjetas Principales -->
+        <!-- Tarjeta Principal -->
         <div class="row">
-            <!-- 1. Facturas Pendientes -->
-            <div class="col-lg-4 col-md-6 col-sm-6">
-                <div class="card card-stats">
-                    <div class="card-header card-header-danger card-header-icon">
-                        <div class="card-icon">
-                            <i class="material-icons">receipt</i>
-                        </div>
-                        <p class="card-category">Facturas Pendientes</p>
-                        <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_FACTURAS_PENDIENTES'] ?? 0) }}</h3>
-                    </div>
-                    <div class="card-footer">
-                        <div class="stats">
-                            <i class="material-icons text-danger">receipt</i>
-                            <a href="{{ route('facturas-pendientes.index') }}" class="text-danger">Ver detalles</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 2. Total Notas de Venta en SQL -->
-            <div class="col-lg-4 col-md-6 col-sm-6">
-                <div class="card card-stats">
-                    <div class="card-header card-header-info card-header-icon">
-                        <div class="card-icon">
-                            <i class="material-icons">storage</i>
-                        </div>
-                        <p class="card-category">NVV en Sistema</p>
-                        <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_NOTAS_VENTA_SQL'] ?? 0) }}</h3>
-                    </div>
-                    <div class="card-footer">
-                        <div class="stats">
-                            <i class="material-icons text-info">storage</i>
-                            <a href="#notas-sql" class="text-info">Ver en sistema</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 3. Notas Pendientes por Validar -->
-            <div class="col-lg-4 col-md-6 col-sm-6">
+            <!-- Notas Pendientes por Validar -->
+            <div class="col-lg-12 col-md-12 col-sm-12">
                 <div class="card card-stats">
                     <div class="card-header card-header-warning card-header-icon">
                         <div class="card-icon">
@@ -80,13 +42,13 @@
             </div>
         </div>
 
-        <!-- Tablas de Información -->
+        <!-- Tabla de Información -->
         <div class="row">
-            <!-- Notas de Venta Pendientes (col-6) -->
-            <div class="col-md-6">
+            <!-- Notas de Venta Pendientes (col-12) -->
+            <div class="col-md-12">
                 <div class="card">
                     <div class="card-header card-header-warning">
-                        <h4 class="card-title">Notas de Venta Pendientes</h4>
+                        <h4 class="card-title">Notas de Venta por Validar</h4>
                         <p class="card-category">Esperando validación de stock por Picking</p>
                     </div>
                     <div class="card-body">
@@ -135,127 +97,9 @@
                     </div>
                 </div>
             </div>
-
-            <!-- Notas de Venta en Sistema SQL (col-6) -->
-            <div class="col-md-6" id="notas-sql">
-                <div class="card">
-                    <div class="card-header card-header-info">
-                        <h4 class="card-title">Notas de Venta en Sistema</h4>
-                        <p class="card-category">NVV ingresadas en SQL Server</p>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table">
-                                <thead class="text-info">
-                                    <tr>
-                                        <th>Tipo</th>
-                                        <th>Número</th>
-                                        <th>Cliente</th>
-                                        <th>Vendedor</th>
-                                        <th>Productos</th>
-                                        <th>Valor Total</th>
-                                        <th>Fecha</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @forelse($nvvSistema ?? [] as $nota)
-                                    <tr>
-                                        <td><span class="badge badge-info">{{ $nota['TIPO_DOCTO'] }}</span></td>
-                                        <td>{{ $nota['NRO_DOCTO'] }}</td>
-                                        <td>{{ $nota['CLIENTE'] }}</td>
-                                        <td>{{ $nota['VENDEDOR'] }}</td>
-                                        <td><span class="badge badge-primary">{{ $nota['CANTIDAD_TOTAL'] ?? 0 }}</span></td>
-                                        <td>${{ number_format($nota['VALOR_PENDIENTE'] ?? 0, 0) }}</td>
-                                        <td>{{ \Carbon\Carbon::parse($nota['FECHA_EMISION'])->format('d/m/Y') }}</td>
-                                    </tr>
-                                    @empty
-                                    <tr>
-                                        <td colspan="7" class="text-center">No hay notas de venta en sistema</td>
-                                    </tr>
-                                    @endforelse
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
 
-        <!-- Facturas Pendientes (col-12) -->
-        <div class="row">
-            <div class="col-md-12">
-                <div class="card">
-                    <div class="card-header card-header-danger">
-                        <h4 class="card-title">Facturas Pendientes</h4>
-                        <p class="card-category">Facturas por cobrar del sistema SQL Server</p>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table">
-                                <thead class="text-danger">
-                                    <tr>
-                                        <th>Tipo</th>
-                                        <th>Número</th>
-                                        <th>Cliente</th>
-                                        <th>Vendedor</th>
-                                        <th>Valor</th>
-                                        <th>Abonos</th>
-                                        <th>Saldo</th>
-                                        <th>Días</th>
-                                        <th>Estado</th>
-                                        <th>Acción</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @forelse($facturasPendientes ?? [] as $factura)
-                                    <tr>
-                                        <td><span class="badge badge-danger">{{ $factura['TIPO_DOCTO'] }}</span></td>
-                                        <td>{{ $factura['NRO_DOCTO'] }}</td>
-                                        <td>{{ $factura['CLIENTE'] }}</td>
-                                        <td>{{ $factura['VENDEDOR'] }}</td>
-                                        <td>${{ number_format($factura['VALOR'], 0) }}</td>
-                                        <td>${{ number_format($factura['ABONOS'], 0) }}</td>
-                                        <td>
-                                            <span class="badge badge-{{ $factura['SALDO'] > 0 ? 'warning' : 'success' }}">
-                                                ${{ number_format($factura['SALDO'], 0) }}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="badge badge-{{ 
-                                                $factura['DIAS'] < 8 ? 'success' : 
-                                                ($factura['DIAS'] < 31 ? 'warning' : 
-                                                ($factura['DIAS'] < 61 ? 'danger' : 'dark')) 
-                                            }}">
-                                                {{ $factura['DIAS'] }}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="badge badge-{{ 
-                                                $factura['ESTADO'] == 'VIGENTE' ? 'success' : 
-                                                ($factura['ESTADO'] == 'POR VENCER' ? 'warning' : 
-                                                ($factura['ESTADO'] == 'VENCIDO' ? 'danger' : 'dark')) 
-                                            }}">
-                                                {{ $factura['ESTADO'] }}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <a href="{{ route('facturas-pendientes.ver', [$factura['TIPO_DOCTO'], $factura['NRO_DOCTO']]) }}" class="btn btn-sm btn-primary">
-                                                <i class="material-icons">visibility</i> Ver
-                                            </a>
-                                        </td>
-                                    </tr>
-                                    @empty
-                                    <tr>
-                                        <td colspan="10" class="text-center">No hay facturas pendientes</td>
-                                    </tr>
-                                    @endforelse
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <!-- (Sección de Facturas Pendientes removida para Picking) -->
 
     </div>
 </div>

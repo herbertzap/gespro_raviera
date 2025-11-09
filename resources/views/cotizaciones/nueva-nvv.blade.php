@@ -1,30 +1,26 @@
 @extends('layouts.app')
 
-@section('title', 'Nueva Nota de Venta / Cotización')
+@section('title', 'Nueva Nota de Venta')
 
 @push('css')
 <style>
-    /* Fix específico para el problema de scroll en cotizaciones */
+    /* Fix específico para el problema de scroll en NVV */
     html, body {
         overflow-y: auto !important;
         height: auto !important;
-        min-height: 100vh !important;
         max-height: none !important;
-        overflow: auto !important;
     }
     
     .wrapper {
         height: auto !important;
         min-height: 100vh !important;
-        max-height: none !important;
-        overflow: visible !important;
+        overflow-y: visible !important;
     }
     
     .main-panel {
         height: auto !important;
-        min-height: auto !important;
-        max-height: none !important;
-        overflow: visible !important;
+        min-height: 100vh !important;
+        overflow-y: visible !important;
     }
     
     /* Sobrescribir el CSS específico del dashboard que causa el problema */
@@ -32,9 +28,7 @@
         height: auto !important;
         min-height: auto !important;
         max-height: none !important;
-        overflow: visible !important;
         overflow-y: visible !important;
-        overflow-x: visible !important;
         /* Mantener padding original del dashboard */
         padding: 78px 30px 30px 280px;
     }
@@ -43,14 +37,13 @@
         height: auto !important;
         min-height: auto !important;
         max-height: none !important;
-        overflow: visible !important;
-        overflow-y: visible !important;
-        overflow-x: visible !important;
+        overflow-y: scroll !important;
+        overflow-x: scroll !important;
     }
     
     .container-fluid {
         height: auto !important;
-        overflow: visible !important;
+        overflow-y: visible !important;
     }
     
     /* Asegurar que las tarjetas no interfieran con el scroll */
@@ -68,7 +61,7 @@
         box-sizing: border-box;
     }
     
-    /* Fix adicional específico para cotizaciones - Forzar scroll en body */
+    /* Fix adicional específico para NVV - Forzar scroll en body */
     body {
         overflow: auto !important;
         overflow-y: auto !important;
@@ -96,19 +89,47 @@
         height: auto !important;
     }
     
-    /* Asegurar que las tarjetas no interfieran con el scroll */
-    .card {
+    /* Forzar que el main-panel no tenga altura fija */
+    .main-panel {
+        height: auto !important;
+        min-height: auto !important;
+        max-height: none !important;
         overflow: visible !important;
     }
     
-    /* Fix para el navbar fijo */
-    .navbar {
-        position: relative !important;
+    /* Evitar checkbox duplicado: ocultar input nativo y usar el check custom del tema */
+    .form-check .form-check-input {
+        position: absolute !important;
+        opacity: 0 !important;
+        width: 0 !important;
+        height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        visibility: hidden !important;
+        display: none !important;
+    }
+    .form-check .form-check-sign {
+        display: inline-block !important;
+    }
+    .form-check .form-check-label {
+        cursor: pointer;
+    }
+
+    /* Forzar que el contenido del main-panel no tenga altura fija */
+    .main-panel > .content {
+        height: auto !important;
+        min-height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        padding: 78px 30px 30px 280px !important;
     }
     
-    /* Asegurar que el scroll funcione en todos los elementos */
-    * {
-        box-sizing: border-box;
+    /* Asegurar que el body y html permitan scroll natural */
+    body, html {
+        height: auto !important;
+        min-height: 100vh !important;
+        max-height: none !important;
+        overflow: auto !important;
     }
 </style>
 @endpush
@@ -121,47 +142,10 @@
                 <div class="card-header card-header-warning">
                     <h4 class="card-title">
                         <i class="material-icons">add_shopping_cart</i>
-                        <span id="titulo-documento">{{ request('tipo_documento') === 'nota_venta' ? 'Nueva Nota de Venta' : 'Nueva Cotización' }}</span>
+                        <span id="titulo-documento">Nueva Nota de Venta</span>
                     </h4>
                 </div>
                 <div class="card-body">
-                    <!-- Selector de Tipo de Documento -->
-                    <div class="row mb-4">
-                        <div class="col-md-12">
-                            <div class="card card-header-info">
-                                <div class="card-header">
-                                    <h4 class="card-title">
-                                        <i class="material-icons">description</i>
-                                        Tipo de Documento
-                                    </h4>
-                                </div>
-                                <div class="card-body">
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <div class="form-check form-check-radio">
-                                                <label class="form-check-label">
-                                                    <input class="form-check-input" type="radio" name="tipo_documento" id="tipo_nota_venta" value="nota_venta" checked>
-                                                    <span class="circle"></span>
-                                                    <span class="check"></span>
-                                                    <strong>Nota de Venta</strong> - Requiere aprobaciones (Supervisor, Compras, Picking) y genera documento en el sistema
-                                                </label>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="form-check form-check-radio">
-                                                <label class="form-check-label">
-                                                    <input class="form-check-input" type="radio" name="tipo_documento" id="tipo_cotizacion" value="cotizacion">
-                                                    <span class="circle"></span>
-                                                    <span class="check"></span>
-                                                    <strong>Cotización</strong> - Para enviar al cliente, sin aprobaciones. Se puede convertir a Nota de Venta luego
-                                                </label>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
 
                     <!-- Información del Cliente -->
                     @if($cliente)
@@ -179,13 +163,13 @@
                                         <div class="col-md-3">
                                             <div class="form-group">
                                                 <label class="bmd-label-floating">RUT/Código Cliente</label>
-                                               <input type="text" class="form-control" value="{{ $cliente->codigo_cliente ?? '' }}" readonly>
+                                                <input type="text" class="form-control" value="{{ $cliente->codigo ?? '' }}" readonly>
                                             </div>
                                         </div>
                                         <div class="col-md-6">
                                             <div class="form-group">
                                                 <label class="bmd-label-floating">Nombre/Razón Social</label>
-                                               <input type="text" class="form-control" value="{{ $cliente->nombre_cliente ?? '' }}" readonly>
+                                                <input type="text" class="form-control" value="{{ $cliente->nombre }}" readonly>
                                             </div>
                                         </div>
                                         <div class="col-md-3">
@@ -371,6 +355,47 @@
                                                 <input type="date" class="form-control" value="{{ date('Y-m-d') }}" disabled>
                                             </div>
                                             
+                                            <div class="form-group">
+                                                <label for="numero_orden_compra">Número de Orden de Compra</label>
+                                                <input type="text" 
+                                                       class="form-control" 
+                                                       id="numero_orden_compra" 
+                                                       name="numero_orden_compra" 
+                                                       maxlength="40"
+                                                       placeholder="Número de orden de compra del cliente (opcional)">
+                                                <small class="form-text text-muted">
+                                                    <i class="material-icons" style="font-size: 14px; vertical-align: middle;">info</i>
+                                                    Campo opcional - Máximo 40 caracteres
+                                                </small>
+                                            </div>
+                                            
+                                            <div class="form-group">
+                                                <label for="observacion_vendedor">Observación del Vendedor</label>
+                                                <textarea class="form-control" 
+                                                          id="observacion_vendedor" 
+                                                          name="observacion_vendedor" 
+                                                          rows="3" 
+                                                          maxlength="250"
+                                                          placeholder="Observación personal del vendedor (opcional)"></textarea>
+                                                <small class="form-text text-muted">
+                                                    <i class="material-icons" style="font-size: 14px; vertical-align: middle;">info</i>
+                                                    Campo opcional - Máximo 250 caracteres
+                                                </small>
+                                            </div>
+                                            
+                                            <div class="form-group">
+                                                <div class="form-check">
+                                                    <label class="form-check-label" for="solicitar_descuento_extra">
+                                                        <input class="form-check-input" type="checkbox" id="solicitar_descuento_extra">
+                                                        <span class="form-check-sign"><span class="check"></span></span>
+                                                        <strong>Solicitar descuento extra</strong>
+                                                    </label>
+                                                </div>
+                                                <small class="form-text text-muted">
+                                                    Si está marcado, la NVV requerirá aprobación de Supervisor aunque el cliente no tenga problemas de crédito.
+                                                </small>
+                                            </div>
+                                            
                                         </div>
                                         <div class="col-md-6">
                                             <div class="card card-header-info">
@@ -425,7 +450,7 @@
                                     <div class="row mt-4">
                                         <div class="col-md-12 text-center">
                                             <button type="button" id="btnGuardarNotaVenta" class="btn btn-success btn-lg" onclick="guardarNotaVenta()" {{ !$puedeGenerarNotaVenta ? 'disabled' : '' }}>
-                                                <i class="material-icons">save</i> Guardar Cotización
+                                                <i class="material-icons">save</i> Guardar Nota de Venta
                                             </button>
                                             <a href="{{ route('cotizaciones.index') }}" class="btn btn-secondary btn-lg">
                                                 <i class="material-icons">cancel</i> Cancelar
@@ -549,7 +574,8 @@ function mostrarResultadosProductosAjax(productos) {
     let contenido = '<div class="table-responsive">';
     contenido += '<div class="mb-3">';
     contenido += '<button class="btn btn-success btn-sm" onclick="agregarProductosSeleccionados()" id="btnAgregarSeleccionados" disabled>';
-    contenido += '<i class="material-icons">add_shopping_cart</i> Agregar Seleccionados (<span id="contadorSeleccionados">0</span>)';
+    contenido += '<i class="material-icons">add_shopping_cart</i> Agregar Seleccionados';
+    contenido += '<span id="contadorSeleccionados"></span>';
     contenido += '</button>';
     contenido += '</div>';
     contenido += '<table class="table table-striped table-hover">';
@@ -669,18 +695,7 @@ function sincronizarStock() {
         mensajeSincronizacion.textContent = 'Sincronizando productos desde SQL Server...';
         detalleSincronizacion.textContent = 'Por favor, espere. Esto puede tomar varios minutos.';
         progressText.textContent = 'Iniciando sincronización...';
-        
-        // Mostrar el modal y asegurar que aria-hidden esté correcto
-        $(modal).modal({
-            backdrop: 'static',
-            keyboard: false,
-            show: true
-        });
-        
-        // Asegurar que aria-hidden esté en false cuando el modal esté visible
-        $(modal).on('shown.bs.modal', function() {
-            $(this).attr('aria-hidden', 'false');
-        });
+        $(modal).modal('show');
     }
     
     // Crear form data
@@ -699,21 +714,9 @@ function sincronizarStock() {
     })
     .then(response => {
         if (!response.ok) {
-            return response.text().then(text => {
-                console.error('Error response:', text);
-                throw new Error(`HTTP error! status: ${response.status} - ${text}`);
-            });
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
-        // Verificar si la respuesta es JSON
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-            return response.json();
-        } else {
-            return response.text().then(text => {
-                console.error('Response is not JSON:', text);
-                throw new Error('La respuesta del servidor no es JSON válido');
-            });
-        }
+        return response.json();
     })
     .then(data => {
         const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(0);
@@ -721,7 +724,6 @@ function sincronizarStock() {
         // Cerrar modal
         if (modal) {
             $(modal).modal('hide');
-            $(modal).attr('aria-hidden', 'true');
         }
         
         if (data.success) {
@@ -750,7 +752,6 @@ function sincronizarStock() {
         // Cerrar modal
         if (modal) {
             $(modal).modal('hide');
-            $(modal).attr('aria-hidden', 'true');
         }
         
         mostrarMensaje('error', 'Error al sincronizar stock: ' + (error.message || 'Por favor, intente nuevamente.'));
@@ -801,7 +802,7 @@ function testJavaScript() {
 
 // Función para mostrar modal de lista de precios
 function mostrarModalListaPrecios() {
-    const clienteInfo = clienteData ? `Código: ${clienteData.codigo_cliente}<br>Nombre: ${clienteData.nombre_cliente}` : '';
+    const clienteInfo = clienteData ? `Código: ${clienteData.codigo}<br>Nombre: ${clienteData.nombre}` : '';
     
     const modalHtml = `
         <div class="modal fade" id="modalListaPrecios" tabindex="-1" role="dialog" aria-labelledby="modalListaPreciosLabel" aria-hidden="true">
@@ -836,9 +837,9 @@ function mostrarModalListaPrecios() {
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-dismiss="modal">Cerrar</button>
-                        <button type="button" class="btn btn-primary" onclick="window.location.href='/cotizaciones'">
+                        <button type="button" class="btn btn-primary" onclick="window.location.href='/cotizaciones?tipo_documento=nota_venta'">
                             <i class="material-icons">arrow_back</i>
-                            Volver a Cotizaciones
+                            Volver a Notas de Venta
                         </button>
                     </div>
                 </div>
@@ -894,6 +895,8 @@ function guardarBorradorLocal() {
 function cargarBorradorLocal() {
     try {
         const borradorStr = localStorage.getItem(STORAGE_KEY);
+        const urlParams = new URLSearchParams(window.location.search);
+        const autoRecuperar = urlParams.get('recuperar_borrador') === '1';
         if (borradorStr) {
             const borrador = JSON.parse(borradorStr);
             
@@ -901,7 +904,7 @@ function cargarBorradorLocal() {
             if (borrador.cliente_codigo === '{{ $clienteData['CODIGO_CLIENTE'] ?? '' }}') {
                 // Preguntar al usuario si desea recuperar el borrador
                 const fechaBorrador = new Date(borrador.timestamp).toLocaleString('es-CL');
-                if (confirm(`📋 Se encontró un borrador guardado el ${fechaBorrador}\n\n¿Deseas recuperarlo?\n\nProductos: ${borrador.productos.length}`)) {
+                if (autoRecuperar || confirm(`📋 Se encontró un borrador guardado el ${fechaBorrador}\n\n¿Deseas recuperarlo?\n\nProductos: ${borrador.productos.length}`)) {
                     productosCotizacion = borrador.productos;
                     
                     // Restaurar observaciones y fecha
@@ -919,11 +922,7 @@ function cargarBorradorLocal() {
                     }
                     if (borrador.tipo_documento) {
                         document.getElementById(`tipo_${borrador.tipo_documento}`).checked = true;
-                        // Actualizar título del documento
-                        const tituloDocumento = document.getElementById('titulo-documento');
-                        if (tituloDocumento) {
-                            tituloDocumento.textContent = borrador.tipo_documento === 'nota_venta' ? 'Nueva Nota de Venta' : 'Nueva Cotización';
-                        }
+                        actualizarTituloDocumento();
                     }
                     
                     actualizarTablaProductos();
@@ -1336,41 +1335,8 @@ function limpiarBusqueda() {
 // Variable para controlar si ya se está procesando una solicitud
 let guardandoNotaVenta = false;
 
-// Función para obtener un token CSRF fresco
-async function obtenerTokenCSRF() {
-    try {
-        const response = await fetch('/cotizacion/nueva', {
-            method: 'GET',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        });
-        
-        if (response.ok) {
-            const html = await response.text();
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            const newToken = doc.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            
-            if (newToken) {
-                // Actualizar el token en la página actual
-                const currentToken = document.querySelector('meta[name="csrf-token"]');
-                if (currentToken) {
-                    currentToken.setAttribute('content', newToken);
-                }
-                return newToken;
-            }
-        }
-    } catch (error) {
-        console.error('Error obteniendo token CSRF:', error);
-    }
-    
-    // Fallback al token actual
-    return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-}
-
 // Función para guardar nota de venta (con validación anti-doble clic)
-async function guardarNotaVenta() {
+function guardarNotaVenta() {
     // Verificar si ya se está procesando
     if (guardandoNotaVenta) {
         alert('Ya se está procesando el documento, por favor espere...');
@@ -1387,17 +1353,9 @@ async function guardarNotaVenta() {
         return;
     }
 
-    // Obtener tipo de documento seleccionado
-    const tipoDocumentoElement = document.querySelector('input[name="tipo_documento"]:checked');
-    if (!tipoDocumentoElement) {
-        alert('Error: No se pudo determinar el tipo de documento');
-        guardandoNotaVenta = false;
-        btn.disabled = false;
-        btn.innerHTML = originalText;
-        return;
-    }
-    const tipoDocumento = tipoDocumentoElement.value;
-    const esCotizacion = (tipoDocumento === 'cotizacion');
+    // Esta página es específica para Nota de Venta
+    const tipoDocumento = 'nota_venta';
+    const esCotizacion = false;
     
     // Marcar como procesando y deshabilitar botón
     guardandoNotaVenta = true;
@@ -1406,36 +1364,31 @@ async function guardarNotaVenta() {
     btn.disabled = true;
     btn.innerHTML = '<i class="material-icons">hourglass_empty</i> Guardando...';
 
-    const observaciones = document.getElementById('observaciones')?.value || '';
-    const fechaDespacho = document.getElementById('fecha_despacho')?.value || '{{ date('Y-m-d') }}';
-    const numeroOrdenCompra = document.getElementById('numero_orden_compra')?.value || '';
-    const observacionVendedor = document.getElementById('observacion_vendedor')?.value || '';
-    const solicitarDescuentoExtra = document.getElementById('solicitar_descuento_extra')?.checked || false;
+    const observaciones = document.getElementById('observaciones').value;
+    const fechaDespacho = document.getElementById('fecha_despacho').value || '{{ date('Y-m-d') }}';
+    const numeroOrdenCompra = document.getElementById('numero_orden_compra').value;
+    const observacionVendedor = document.getElementById('observacion_vendedor').value;
     
     // Fecha de despacho no requiere validación (se usa fecha de creación)
     
-    // Obtener token CSRF fresco
-    const csrfToken = await obtenerTokenCSRF();
-    
     const cotizacionData = {
         tipo_documento: tipoDocumento,
-        cliente_codigo: clienteData.codigo_cliente,
-        cliente_nombre: clienteData.nombre_cliente,
+        cliente_codigo: clienteData.codigo,
+        cliente_nombre: clienteData.nombre,
         productos: productosCotizacion,
         observaciones: observaciones,
         fecha_despacho: fechaDespacho,
         numero_orden_compra: numeroOrdenCompra,
         observacion_vendedor: observacionVendedor,
-        solicitar_descuento_extra: solicitarDescuentoExtra,
-        _token: csrfToken
+        solicitar_descuento_extra: (document.getElementById('solicitar_descuento_extra') && document.getElementById('solicitar_descuento_extra').checked) ? 1 : 0,
+        _token: document.querySelector('meta[name="csrf-token"]').getAttribute('content')
     };
 
-    fetch('/cotizacion/guardar', {
+    fetch('/nota-venta/guardar', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': csrfToken,
-            'X-Requested-With': 'XMLHttpRequest'
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
         },
         body: JSON.stringify(cotizacionData)
     })
@@ -1452,12 +1405,10 @@ async function guardarNotaVenta() {
         if (!data) return; // Si hubo error 419, ya se manejó arriba
         
         if (data.success) {
-            const mensaje = esCotizacion 
-                ? 'Cotización guardada exitosamente' 
-                : 'Nota de venta guardada exitosamente';
+            const mensaje = 'Nota de venta guardada exitosamente';
             limpiarBorradorLocal(); // Limpiar borrador después de guardar exitosamente
             alert(mensaje);
-            window.location.href = '/cotizaciones';
+            window.location.href = '/cotizaciones?tipo_documento=nota_venta';
         } else {
             alert('Error: ' + data.message);
             // Restaurar botón en caso de error
@@ -1530,16 +1481,32 @@ document.addEventListener('DOMContentLoaded', function() {
         document.documentElement.style.overflow = 'auto';
         if (mainPanel) mainPanel.style.overflow = 'visible';
         if (content) content.style.overflow = 'visible';
-        if (window.location.pathname.includes('/cotizacion/') || window.location.pathname.includes('/nota-venta/')) {
-            const wrapperElement = document.querySelector('.wrapper');
-            if (wrapperElement) {
-                wrapperElement.style.overflow = 'visible';
-            }
+        if (wrapper && (window.location.pathname.includes('/cotizacion/') || window.location.pathname.includes('/nota-venta/'))) {
+            wrapper.style.overflow = 'visible';
         }
     }, 100);
     
     // Cargar borrador guardado si existe
     cargarBorradorLocal();
+    
+    // Manejar clic en checkbox personalizado
+    const checkboxLabel = document.querySelector('.form-check-label[for="solicitar_descuento_extra"]');
+    const checkboxInput = document.getElementById('solicitar_descuento_extra');
+    const checkboxSign = document.querySelector('.form-check-sign');
+    
+    if (checkboxLabel && checkboxInput && checkboxSign) {
+        checkboxLabel.addEventListener('click', function(e) {
+            e.preventDefault();
+            checkboxInput.checked = !checkboxInput.checked;
+            
+            // Actualizar visual del checkbox
+            if (checkboxInput.checked) {
+                checkboxSign.classList.add('checked');
+            } else {
+                checkboxSign.classList.remove('checked');
+            }
+        });
+    }
     
     // Verificar si el cliente tiene lista de precios
     if (clienteData && (!clienteData.lista_precios_codigo || clienteData.lista_precios_codigo === '00' || clienteData.lista_precios_codigo === '0')) {
@@ -1551,27 +1518,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     console.log('🔍 Lista de precios final:', clienteData?.lista_precios_codigo);
     
-    // Configurar cambio de tipo de documento
-    const radioNotaVenta = document.getElementById('tipo_nota_venta');
-    const radioCotizacion = document.getElementById('tipo_cotizacion');
-    const tituloDocumento = document.getElementById('titulo-documento');
-    const btnGuardar = document.getElementById('btnGuardarNotaVenta');
-    
-    if (radioNotaVenta && radioCotizacion && tituloDocumento) {
-        radioNotaVenta.addEventListener('change', function() {
-            if (this.checked) {
-                tituloDocumento.textContent = 'Nueva Nota de Venta';
-                if (btnGuardar) btnGuardar.innerHTML = '<i class="material-icons">save</i> Guardar Nota de Venta';
-            }
-        });
-        
-        radioCotizacion.addEventListener('change', function() {
-            if (this.checked) {
-                tituloDocumento.textContent = (new URLSearchParams(window.location.search).get('tipo_documento') === 'nota_venta') ? 'Nueva Nota de Venta' : 'Nueva Cotización';
-                if (btnGuardar) btnGuardar.innerHTML = '<i class="material-icons">save</i> Guardar Cotización';
-            }
-        });
-    }
+    // Esta página es específica para Nota de Venta, no necesita cambio de tipo
     
     // Configurar input de búsqueda
     const buscarInput = document.getElementById('buscarProducto');
@@ -1607,7 +1554,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Función para mostrar detalle de cheques protestados
 function mostrarDetalleChequesProtestados() {
-    if (!clienteData || !clienteData.codigo_cliente) {
+    if (!clienteData || !clienteData.codigo) {
         alert('No hay información de cliente disponible');
         return;
     }
@@ -1620,13 +1567,13 @@ function mostrarDetalleChequesProtestados() {
             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
         },
         body: JSON.stringify({
-            codigo_cliente: clienteData.codigo_cliente
+            codigo_cliente: clienteData.codigo
         })
     })
     .then(response => response.json())
     .then(data => {
         if (data.success && data.data.tiene_cheques_protestados) {
-            let mensaje = `CHEQUES PROTESTADOS - ${clienteData.nombre_cliente}\n\n`;
+            let mensaje = `CHEQUES PROTESTADOS - ${clienteData.nombre}\n\n`;
             mensaje += `Total de cheques: ${data.data.cantidad}\n`;
             mensaje += `Valor total: $${data.data.valor_total.toLocaleString()}\n\n`;
             mensaje += `DETALLE:\n`;

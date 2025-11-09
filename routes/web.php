@@ -36,26 +36,46 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
 // Rutas de búsqueda de productos (sin middleware de sincronización para mejor rendimiento)
 Route::middleware(['auth'])->group(function () {
     Route::get('/cotizacion/buscar-productos', [App\Http\Controllers\CotizacionController::class, 'buscarProductos'])->name('cotizacion.buscar-productos');
+    Route::get('/cotizacion/buscar-productos-mejorada', [App\Http\Controllers\CotizacionBusquedaMejoradaController::class, 'buscarProductos'])->name('cotizacion.buscar-productos-mejorada');
     Route::get('/cotizacion/obtener-precios', [App\Http\Controllers\CotizacionController::class, 'obtenerPrecios'])->name('cotizacion.obtener-precios');
     Route::post('/cotizacion/cheques-protestados', [App\Http\Controllers\CotizacionController::class, 'obtenerChequesProtestados'])->name('cotizacion.cheques-protestados');
+    Route::post('/cotizacion/sincronizar-stock', [App\Http\Controllers\CotizacionController::class, 'sincronizarStock'])->name('cotizacion.sincronizar-stock-simple');
 });
 
 // Rutas de Cotizaciones
 Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/cotizaciones', [App\Http\Controllers\CotizacionController::class, 'index'])->name('cotizaciones.index');
-    Route::get('/cotizacion/nueva', [App\Http\Controllers\CotizacionController::class, 'nueva'])->name('cotizacion.nueva');
-    Route::get('/cotizacion/editar/{id}', [App\Http\Controllers\CotizacionController::class, 'editar'])->name('cotizacion.editar');
-    Route::get('/cotizacion/ver/{id}', [App\Http\Controllers\CotizacionController::class, 'ver'])->name('cotizacion.ver');
+    Route::get('/cotizacion/nueva', [App\Http\Controllers\CotizacionSimpleController::class, 'nueva'])->name('cotizacion.nueva');
+    Route::get('/cotizacion/editar/{id}', [App\Http\Controllers\CotizacionSimpleController::class, 'editar'])->name('cotizacion.editar');
+    Route::get('/cotizacion/ver/{id}', [App\Http\Controllers\CotizacionSimpleController::class, 'ver'])->name('cotizacion.ver');
     Route::get('/cotizacion/historial/{id}', [App\Http\Controllers\CotizacionController::class, 'historial'])->name('cotizacion.historial');
-    Route::delete('/cotizacion/{id}', [App\Http\Controllers\CotizacionController::class, 'eliminar'])->name('cotizacion.eliminar');
-    Route::post('/cotizacion/guardar', [App\Http\Controllers\CotizacionController::class, 'guardar'])->name('cotizacion.guardar');
-    Route::put('/cotizacion/actualizar/{id}', [App\Http\Controllers\CotizacionController::class, 'actualizar'])->name('cotizacion.actualizar');
+    Route::get('/cotizacion/pdf/{id}', [App\Http\Controllers\CotizacionSimpleController::class, 'generarPDF'])->name('cotizacion.pdf');
+    Route::delete('/cotizacion/{id}', [App\Http\Controllers\CotizacionSimpleController::class, 'eliminar'])->name('cotizacion.eliminar');
+    Route::post('/cotizacion/guardar', [App\Http\Controllers\CotizacionSimpleController::class, 'guardar'])->name('cotizacion.guardar');
+    Route::put('/cotizacion/actualizar/{id}', [App\Http\Controllers\CotizacionSimpleController::class, 'actualizar'])->name('cotizacion.actualizar');
     Route::post('/cotizacion/generar-nota-venta/{id}', [App\Http\Controllers\CotizacionController::class, 'generarNotaVenta'])->name('cotizacion.generar-nota-venta');
     Route::post('/cotizacion/convertir-a-nota-venta/{id}', [App\Http\Controllers\CotizacionController::class, 'convertirANotaVenta'])->name('cotizacion.convertir-a-nota-venta');
     
     // Rutas de Stock Comprometido
     Route::post('/cotizacion/{id}/liberar-stock', [App\Http\Controllers\CotizacionController::class, 'liberarStockComprometido'])->name('cotizacion.liberar-stock');
     Route::get('/cotizacion/resumen-stock-comprometido', [App\Http\Controllers\CotizacionController::class, 'resumenStockComprometido'])->name('cotizacion.resumen-stock-comprometido');
+    Route::post('/cotizacion/{id}/sincronizar-stock', [App\Http\Controllers\CotizacionController::class, 'sincronizarStock'])->name('cotizacion.sincronizar-stock');
+});
+
+// Rutas de Nota de Venta (NVV) - Páginas separadas
+Route::middleware(['auth'])->group(function () {
+    Route::get('/nota-venta/nueva', [App\Http\Controllers\NotaVentaController::class, 'nueva'])->name('nota-venta.nueva');
+    Route::post('/nota-venta/guardar', [App\Http\Controllers\NotaVentaController::class, 'guardar'])->name('nota-venta.guardar');
+    Route::get('/nota-venta/editar/{id}', [App\Http\Controllers\NotaVentaController::class, 'editar'])->name('nota-venta.editar');
+    Route::put('/nota-venta/actualizar/{id}', [App\Http\Controllers\NotaVentaController::class, 'actualizar'])->name('nota-venta.actualizar');
+    Route::get('/nota-venta/ver/{id}', [App\Http\Controllers\NotaVentaController::class, 'ver'])->name('nota-venta.ver');
+    Route::delete('/nota-venta/{id}', [App\Http\Controllers\NotaVentaController::class, 'eliminar'])->name('nota-venta.eliminar');
+    Route::post('/nota-venta/generar-nota-venta/{id}', [App\Http\Controllers\NotaVentaController::class, 'generarNotaVenta'])->name('nota-venta.generar-nota-venta');
+    Route::post('/nota-venta/convertir-a-nota-venta/{id}', [App\Http\Controllers\NotaVentaController::class, 'convertirANotaVenta'])->name('nota-venta.convertir-a-nota-venta');
+    
+    // Rutas de Stock Comprometido para NVV
+    Route::post('/nota-venta/{id}/liberar-stock', [App\Http\Controllers\NotaVentaController::class, 'liberarStockComprometido'])->name('nota-venta.liberar-stock');
+    Route::get('/nota-venta/resumen-stock-comprometido', [App\Http\Controllers\NotaVentaController::class, 'resumenStockComprometido'])->name('nota-venta.resumen-stock-comprometido');
 });
 
 // Rutas de Productos (Compras)
@@ -77,7 +97,8 @@ Route::middleware(['auth'])->group(function () {
     // Aprobaciones por rol
     Route::post('/aprobaciones/{id}/supervisor', [App\Http\Controllers\AprobacionController::class, 'aprobarSupervisor'])->name('aprobaciones.supervisor');
     Route::post('/aprobaciones/{id}/compras', [App\Http\Controllers\AprobacionController::class, 'aprobarCompras'])->name('aprobaciones.compras');
-    Route::post('/aprobaciones/{id}/picking', [App\Http\Controllers\AprobacionController::class, 'aprobarPicking'])->name('aprobaciones.picking');
+        Route::post('/aprobaciones/{id}/picking', [App\Http\Controllers\AprobacionController::class, 'aprobarPicking'])->name('aprobaciones.picking');
+        Route::post('/aprobaciones/{id}/guardar-pendiente-entrega', [App\Http\Controllers\AprobacionController::class, 'guardarPendienteEntrega'])->name('aprobaciones.guardar-pendiente-entrega');
     
     // Rechazar y separar productos
     Route::post('/aprobaciones/{id}/rechazar', [App\Http\Controllers\AprobacionController::class, 'rechazar'])->name('aprobaciones.rechazar');
@@ -87,6 +108,8 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/aprobaciones/{id}/separar-producto-individual', [App\Http\Controllers\AprobacionController::class, 'separarProductoIndividual'])->name('aprobaciones.separar-producto-individual');
     Route::post('/aprobaciones/{id}/separar-productos', [App\Http\Controllers\AprobacionController::class, 'separarProductos'])->name('aprobaciones.separar-productos');
     Route::post('/aprobaciones/{id}/modificar-cantidades', [App\Http\Controllers\AprobacionController::class, 'modificarCantidadesProductos'])->name('aprobaciones.modificar-cantidades');
+    Route::post('/aprobaciones/{id}/modificar-descuentos', [App\Http\Controllers\AprobacionController::class, 'modificarDescuentosProductos'])->name('aprobaciones.modificar-descuentos');
+    Route::post('/aprobaciones/{id}/sincronizar-stock', [App\Http\Controllers\AprobacionController::class, 'sincronizarStock'])->name('aprobaciones.sincronizar-stock');
 });
 
 // Ruta de prueba para historial
@@ -132,6 +155,16 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/facturas-pendientes/download', [App\Http\Controllers\FacturasPendientesController::class, 'download'])->name('facturas-pendientes.download');
     Route::get('/facturas-pendientes/resumen', [App\Http\Controllers\FacturasPendientesController::class, 'resumen'])->name('facturas-pendientes.resumen');
     Route::get('/facturas-pendientes/ver/{tipoDocumento}/{numeroDocumento}', [App\Http\Controllers\FacturasPendientesController::class, 'ver'])->name('facturas-pendientes.ver');
+    
+    // Ruta para obtener stock de producto específico
+    Route::get('/cotizaciones/stock-producto/{codigo}', [App\Http\Controllers\CotizacionController::class, 'obtenerStockProducto'])->name('cotizaciones.stock-producto');
+});
+
+// Rutas de Facturas Emitidas
+Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
+    Route::get('/facturas-emitidas', [App\Http\Controllers\FacturasEmitidasController::class, 'index'])->name('facturas-emitidas.index');
+    Route::get('/facturas-emitidas/export', [App\Http\Controllers\FacturasEmitidasController::class, 'export'])->name('facturas-emitidas.export');
+    Route::get('/facturas-emitidas/download', [App\Http\Controllers\FacturasEmitidasController::class, 'download'])->name('facturas-emitidas.download');
 });
 
 // Rutas de Clientes
@@ -139,6 +172,7 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/clientes', [App\Http\Controllers\ClienteController::class, 'index'])->name('clientes.index');
     Route::get('/clientes/{codigo}', [App\Http\Controllers\ClienteController::class, 'show'])->name('clientes.show');
     Route::post('/clientes/buscar', [App\Http\Controllers\ClienteController::class, 'buscar'])->name('clientes.buscar');
+    Route::get('/clientes/buscar', [App\Http\Controllers\ClienteController::class, 'buscarAjax'])->name('clientes.buscar.ajax');
     Route::post('/clientes/sincronizar', [App\Http\Controllers\ClienteController::class, 'sincronizar'])->name('clientes.sincronizar');
     Route::get('/clientes/estadisticas', [App\Http\Controllers\ClienteController::class, 'estadisticas'])->name('clientes.estadisticas');
 });

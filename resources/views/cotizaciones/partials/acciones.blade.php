@@ -44,6 +44,22 @@
                             Ver Aprobaciones
                         </a>
                         @endif
+
+                        <!-- Descargar PDF -->
+                        <button type="button" class="btn btn-success btn-block" 
+                                onclick="descargarPDF({{ $cotizacion->id }})">
+                            <i class="tim-icons icon-paper"></i>
+                            Descargar PDF
+                        </button>
+
+                        <!-- Sincronizar Stock -->
+                        <form action="{{ route('cotizacion.sincronizar-stock', $cotizacion->id) }}" method="POST" style="display: inline-block; width: 100%;">
+                            @csrf
+                            <button type="submit" class="btn btn-warning btn-block" onclick="return confirmarSincronizacion()">
+                                <i class="tim-icons icon-refresh-02"></i>
+                                Sincronizar Productos
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -212,5 +228,15 @@ function showNotification(message, type) {
     } else {
         alert('❌ ' + message);
     }
+}
+
+// Función para descargar PDF
+function descargarPDF(cotizacionId) {
+    window.open(`/cotizacion/pdf/${cotizacionId}`, '_blank');
+}
+
+// Función para confirmar sincronización
+function confirmarSincronizacion() {
+    return confirm('¿Estás seguro de que deseas sincronizar el stock de productos desde SQL Server?\n\nEsto actualizará los datos de stock en el sistema.');
 }
 </script>

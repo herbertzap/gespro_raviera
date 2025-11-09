@@ -429,7 +429,7 @@ function actualizarDatos() {
 
 // Función para crear nueva NVV
 function crearNuevaNVV() {
-    window.location.href = '/cotizaciones/create';
+    window.location.href = '/nota-venta/nueva';
 }
 
 // Permitir búsqueda con Enter

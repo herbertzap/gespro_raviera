@@ -144,35 +144,99 @@
 
 @endsection
 
-@push('scripts')
+@push('js')
 <script>
 function buscarCliente() {
-    const codigo = document.getElementById('buscarCliente').value.trim();
-    if (!codigo) {
-        alert('Por favor ingresa un código de cliente');
+    const input = document.getElementById('buscarCliente');
+    if (!input) {
+        console.error('Elemento buscarCliente no encontrado');
+        return;
+    }
+    
+    const termino = input.value.trim();
+    if (!termino) {
+        alert('Por favor ingresa un código o nombre de cliente');
         return;
     }
 
-    fetch('/clientes/buscar', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-        },
-        body: JSON.stringify({ codigo_cliente: codigo })
-    })
+    // Usamos el endpoint GET /clientes/buscar (buscarAjax) que soporta código o nombre
+    fetch(`/clientes/buscar?q=${encodeURIComponent(termino)}`)
     .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            mostrarResultadoCliente(data.cliente);
-        } else {
-            alert('Error: ' + data.message);
+    .then(resultados => {
+        if (Array.isArray(resultados)) {
+            if (resultados.length === 0) {
+                alert('Cliente no encontrado');
+                return;
+            }
+            if (resultados.length === 1) {
+                const c = resultados[0];
+                mostrarResultadoCliente({
+                    codigo: c.codigo_cliente,
+                    nombre: c.nombre_cliente,
+                    direccion: c.direccion,
+                    telefono: c.telefono,
+                    region: c.region,
+                    comuna: c.comuna,
+                    bloqueado: !!c.bloqueado,
+                    puede_vender: c.puede_vender ?? true,
+                    motivo_rechazo: c.motivo_rechazo ?? ''
+                });
+                return;
+            }
+            renderResultadosLista(resultados);
+            return;
         }
+
+        // Soporte legado por si el endpoint POST responde {success, cliente}
+        if (resultados && resultados.success && resultados.cliente) {
+            mostrarResultadoCliente(resultados.cliente);
+            return;
+        }
+
+        alert('No se encontraron clientes');
     })
     .catch(error => {
         console.error('Error:', error);
         alert('Error al buscar cliente');
     });
+}
+
+function renderResultadosLista(clientes) {
+    const rows = clientes.map(c => `
+        <tr>
+            <td>${c.codigo_cliente}</td>
+            <td>${c.nombre_cliente}</td>
+            <td>${c.telefono ?? 'N/A'}</td>
+            <td>${c.region ?? 'N/A'}</td>
+            <td>${c.comuna ?? 'N/A'}</td>
+            <td>
+                <a href="/clientes/${c.codigo_cliente}" class="btn btn-sm btn-info">
+                    <i class="fas fa-eye"></i> Ver
+                </a>
+            </td>
+        </tr>
+    `).join('');
+
+    const contenido = `
+        <div class="table-responsive">
+            <table class="table">
+                <thead class="text-primary">
+                    <tr>
+                        <th>Código</th>
+                        <th>Cliente</th>
+                        <th>Teléfono</th>
+                        <th>Región</th>
+                        <th>Comuna</th>
+                        <th>Acción</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>
+    `;
+
+    document.getElementById('contenidoResultados').innerHTML = contenido;
+    document.getElementById('resultadosBusqueda').style.display = 'block';
 }
 
 
@@ -312,19 +376,18 @@ function mostrarEstadisticas() {
 
 function seleccionarCliente(codigo, nombre) {
     // Redirigir a la página de nueva cotización con el cliente seleccionado
-    window.location.href = `/cotizacion/nueva?cliente=${codigo}&nombre=${encodeURIComponent(nombre)}`;
+    window.location.href = `/cotizacion/nueva?cliente=${codigo}&nombre=${encodeURIComponent(nombre)}&tipo_documento=cotizacion`;
 }
 
 // Buscar con Enter
-document.getElementById('buscarCliente').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') {
-        buscarCliente();
-    }
-});
-
-document.getElementById('buscarPorNombre').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') {
-        buscarPorNombre();
+document.addEventListener('DOMContentLoaded', function() {
+    const inputBuscar = document.getElementById('buscarCliente');
+    if (inputBuscar) {
+        inputBuscar.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                buscarCliente();
+            }
+        });
     }
 });
 </script>

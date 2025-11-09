@@ -1,0 +1,28 @@
+/* Fix para páginas de aprobaciones - Corregir fondo rojo y estructura */
+.main-panel {
+    background: linear-gradient(87deg, #1e3c72 0%, #2a5298 100%) !important;
+    min-height: calc(100vh - 70px) !important;
+}
+
+.main-panel > .content {
+    padding: 78px 30px 30px 280px !important;
+    min-height: calc(100vh - 70px) !important;
+}
+
+/* Asegurar que el wrapper no interfiera */
+.wrapper {
+    height: auto !important;
+    min-height: 100vh !important;
+    max-height: none !important;
+    overflow: visible !important;
+}
+
+/* Asegurar que el body tenga el fondo correcto */
+body {
+    background: #1e3c72 !important;
+}
+
+/* Asegurar que el html tenga el fondo correcto */
+html {
+    background: #1e3c72 !important;
+}

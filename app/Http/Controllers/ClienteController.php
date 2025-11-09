@@ -23,13 +23,13 @@ class ClienteController extends Controller
             return redirect()->route('dashboard')->with('error', 'Acceso no autorizado');
         }
 
-        // Si es Supervisor, puede ver todos los clientes
+        // Supervisores y Super Admin usan la vista de Cobranza con buscador robusto
         if ($user->hasRole('Supervisor') || $user->hasRole('Super Admin')) {
-            $clientes = Cliente::where('activo', true)->paginate(15);
-        } else {
-            // Si es Vendedor, solo sus clientes
-            $clientes = Cliente::getClientesActivosPorVendedor($user->codigo_vendedor);
+            return redirect()->route('cobranza.index');
         }
+
+        // Si es Vendedor, solo sus clientes
+        $clientes = Cliente::getClientesActivosPorVendedor($user->codigo_vendedor);
         
         return view('clientes.index', compact('clientes'))->with('pageSlug', 'clientes');
     }
@@ -208,6 +208,38 @@ class ClienteController extends Controller
                 'success' => false,
                 'message' => 'Error en la sincronización: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    public function buscarAjax(Request $request)
+    {
+        $request->validate([
+            'q' => 'required|string|min:2'
+        ]);
+
+        $termino = $request->q;
+        $user = auth()->user();
+
+        try {
+            // Buscar clientes por nombre o código
+            $clientes = \App\Models\Cliente::where('activo', true)
+                ->where(function($query) use ($termino) {
+                    $query->where('nombre_cliente', 'LIKE', "%{$termino}%")
+                          ->orWhere('codigo_cliente', 'LIKE', "%{$termino}%");
+                });
+
+            // Si es Vendedor, solo sus clientes
+            if ($user->hasRole('Vendedor')) {
+                $clientes->where('codigo_vendedor', $user->codigo_vendedor);
+            }
+
+            $resultados = $clientes->limit(20)->get();
+
+            return response()->json($resultados);
+
+        } catch (\Exception $e) {
+            \Log::error('Error en búsqueda de clientes: ' . $e->getMessage());
+            return response()->json([], 500);
         }
     }
 

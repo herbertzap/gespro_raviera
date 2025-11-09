@@ -6,8 +6,10 @@ use Illuminate\Http\Request;
 use App\Models\Cotizacion;
 use App\Models\Cliente;
 use App\Services\CobranzaService;
+use App\Services\StockService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class AprobacionController extends Controller
 {
@@ -22,47 +24,138 @@ class AprobacionController extends Controller
     /**
      * Vista principal de aprobaciones según el rol del usuario
      */
-    public function index()
+    public function index(Request $request)
     {
         $user = Auth::user();
         $cotizaciones = collect();
 
+        // Obtener filtros del request
+        $filtros = [
+            'buscar' => $request->get('buscar'),
+            'region' => $request->get('region'),
+            'comuna' => $request->get('comuna'),
+            'fecha_desde' => $request->get('fecha_desde'),
+            'fecha_hasta' => $request->get('fecha_hasta'),
+        ];
+
+        // Función para aplicar filtros comunes
+        $aplicarFiltros = function($query) use ($filtros) {
+            // Filtro de búsqueda por cliente o código
+            if (!empty($filtros['buscar'])) {
+                $buscar = $filtros['buscar'];
+                $query->where(function($q) use ($buscar) {
+                    $q->where('cliente_codigo', 'like', '%' . $buscar . '%')
+                      ->orWhere('cliente_nombre', 'like', '%' . $buscar . '%')
+                      ->orWhereHas('cliente', function($clienteQuery) use ($buscar) {
+                          $clienteQuery->where('codigo_cliente', 'like', '%' . $buscar . '%')
+                                      ->orWhere('nombre_cliente', 'like', '%' . $buscar . '%');
+                      });
+                });
+            }
+            
+            // Filtro por región
+            if (!empty($filtros['region'])) {
+                $query->whereHas('cliente', function($q) use ($filtros) {
+                    $q->where('region', $filtros['region']);
+                });
+            }
+            
+            // Filtro por comuna
+            if (!empty($filtros['comuna'])) {
+                $query->whereHas('cliente', function($q) use ($filtros) {
+                    $q->where('comuna', $filtros['comuna']);
+                });
+            }
+            
+            // Filtro por fecha desde
+            if (!empty($filtros['fecha_desde'])) {
+                $query->whereDate('created_at', '>=', $filtros['fecha_desde']);
+            }
+            
+            // Filtro por fecha hasta
+            if (!empty($filtros['fecha_hasta'])) {
+                $query->whereDate('created_at', '<=', $filtros['fecha_hasta']);
+            }
+        };
+
         if ($user->hasRole('Supervisor')) {
-            // Supervisor ve todas las notas pendientes de aprobación (crédito o stock)
-            $cotizaciones = Cotizacion::whereIn('estado_aprobacion', ['pendiente', 'pendiente_picking'])
-                ->where(function($query) {
-                    $query->where('tiene_problemas_credito', true)
-                          ->orWhere('tiene_problemas_stock', true);
-                })
-                ->with(['user', 'productos'])
+            // Supervisor ve todas las notas pendientes de aprobación
+            // Incluye: pendiente (nuevas), pendiente_picking (aprobadas por supervisor pero pendientes de picking)
+            $query = Cotizacion::whereIn('estado_aprobacion', ['pendiente', 'pendiente_picking'])
+                ->where('tipo_documento', 'nota_venta'); // Solo notas de venta
+            
+            $aplicarFiltros($query);
+            
+            $cotizaciones = $query->with(['user', 'productos', 'cliente'])
                 ->latest()
-                ->paginate(15);
+                ->paginate(15)
+                ->appends($request->query());
             $tipoAprobacion = 'supervisor';
         } elseif ($user->hasRole('Compras')) {
-            $cotizaciones = Cotizacion::pendientesCompras()
-                ->with(['user', 'productos'])
+            // Compras ve:
+            // 1. Notas aprobadas por supervisor (que tienen problemas de stock)
+            // 2. Notas pendientes que tienen problemas de stock
+            $query = Cotizacion::where('tipo_documento', 'nota_venta')
+                ->where('tiene_problemas_stock', true)
+                ->where(function($q) {
+                    $q->where('estado_aprobacion', 'aprobada_supervisor')
+                      ->orWhere('estado_aprobacion', 'pendiente');
+                });
+            
+            $aplicarFiltros($query);
+            
+            $cotizaciones = $query->with(['user', 'productos', 'cliente'])
                 ->latest()
-                ->paginate(15);
+                ->paginate(15)
+                ->appends($request->query());
             $tipoAprobacion = 'compras';
         } elseif ($user->hasRole('Picking')) {
             // Picking ve tanto notas con problemas de stock como sin problemas
-            $cotizacionesConProblemas = Cotizacion::pendientesPicking()
-                ->with(['user', 'productos'])
+            $queryConProblemas = Cotizacion::pendientesPicking();
+            $aplicarFiltros($queryConProblemas);
+            $cotizacionesConProblemas = $queryConProblemas->with(['user', 'productos', 'cliente'])
                 ->latest()
                 ->get();
             
-            $cotizacionesSinProblemas = Cotizacion::pendientesPickingSinProblemas()
-                ->with(['user', 'productos'])
+            $querySinProblemas = Cotizacion::pendientesPickingSinProblemas();
+            $aplicarFiltros($querySinProblemas);
+            $cotizacionesSinProblemas = $querySinProblemas->with(['user', 'productos', 'cliente'])
                 ->latest()
                 ->get();
             
-            $cotizaciones = $cotizacionesConProblemas->merge($cotizacionesSinProblemas);
+            $queryPendientesEntrega = Cotizacion::pendientesEntrega();
+            $aplicarFiltros($queryPendientesEntrega);
+            $cotizacionesPendientesEntrega = $queryPendientesEntrega->with(['user', 'productos', 'cliente'])
+                ->latest()
+                ->get();
+            
+            $cotizaciones = $cotizacionesConProblemas->merge($cotizacionesSinProblemas)->merge($cotizacionesPendientesEntrega);
             $tipoAprobacion = 'picking';
         } else {
             return redirect()->route('dashboard')->with('error', 'No tienes permisos para aprobar notas de venta');
         }
 
-        return view('aprobaciones.index', compact('cotizaciones', 'tipoAprobacion'));
+        // Obtener regiones y comunas únicas de las cotizaciones para los filtros
+        // Obtener desde las cotizaciones que tienen cliente asociado
+        $regiones = Cotizacion::whereNotNull('cliente_codigo')
+            ->join('clientes', 'cotizaciones.cliente_codigo', '=', 'clientes.codigo_cliente')
+            ->whereNotNull('clientes.region')
+            ->where('clientes.region', '!=', '')
+            ->distinct()
+            ->pluck('clientes.region')
+            ->sort()
+            ->values();
+        
+        $comunas = Cotizacion::whereNotNull('cliente_codigo')
+            ->join('clientes', 'cotizaciones.cliente_codigo', '=', 'clientes.codigo_cliente')
+            ->whereNotNull('clientes.comuna')
+            ->where('clientes.comuna', '!=', '')
+            ->distinct()
+            ->pluck('clientes.comuna')
+            ->sort()
+            ->values();
+
+        return view('aprobaciones.index', compact('cotizaciones', 'tipoAprobacion', 'filtros', 'regiones', 'comunas'));
     }
 
     /**
@@ -140,6 +233,60 @@ class AprobacionController extends Controller
             Log::error("Error aprobando nota de venta por compras: " . $e->getMessage());
             return redirect()->route('aprobaciones.show', $id)
                 ->with('error', 'Error al aprobar la nota de venta');
+        }
+    }
+
+    /**
+     * Guardar como pendiente de entrega (nuevo método para Picking)
+     */
+    public function guardarPendienteEntrega(Request $request, $id)
+    {
+        Log::info("========================================");
+        Log::info("🚀 INICIO GUARDAR PENDIENTE ENTREGA");
+        Log::info("========================================");
+        Log::info("Cotización ID: {$id}");
+        Log::info("Usuario ID: " . auth()->id());
+        Log::info("Request data: " . json_encode($request->all()));
+        
+        $request->validate([
+            'observaciones_picking' => 'required|string|max:1000',
+            'productos_pendientes' => 'array',
+            'productos_pendientes.*' => 'integer'
+        ]);
+
+        $cotizacion = Cotizacion::findOrFail($id);
+        $user = Auth::user();
+
+        if (!$user->hasRole('Picking')) {
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'No tienes permisos para esta acción');
+        }
+
+        if (!$cotizacion->puedeAprobarPicking() && $cotizacion->estado_aprobacion !== 'pendiente_picking') {
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'La nota de venta no puede ser procesada');
+        }
+
+        try {
+            // Actualizar observación y estado general de la NVV a pendiente de entrega
+            $cotizacion->guardarPendienteEntrega($user->id, $request->observaciones_picking);
+
+            // Marcar productos pendientes vs embalados
+            $idsPendientes = collect($request->input('productos_pendientes', []))->map(fn($v) => (int)$v)->all();
+            foreach ($cotizacion->productos as $producto) {
+                $producto->pendiente_entrega = in_array((int)$producto->id, $idsPendientes, true);
+                $producto->save();
+            }
+            
+            Log::info("✅ Nota de venta {$cotizacion->id} guardada como pendiente de entrega por picking {$user->id}");
+            
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('success', 'Nota de venta guardada como pendiente de entrega. Los productos llegarán en los próximos días.');
+                
+        } catch (\Exception $e) {
+            Log::error("Error guardando como pendiente de entrega: " . $e->getMessage());
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'Error al guardar la nota de venta');
         }
     }
 
@@ -928,7 +1075,7 @@ class AprobacionController extends Controller
                     {$siguienteId}, '01', 'NVV', '{$nudoFormateado}', '{$cotizacion->cliente_codigo}', 
                     '{$sucursalCliente}', '{$cotizacion->cliente_codigo}', 'LIB',
                     'I', 'LIB', 'N', 'S',
-                    GETDATE(), GETDATE(), GETDATE(), '{$cotizacion->fecha_despacho->format('Y-m-d H:i:s')}',
+                    GETDATE(), GETDATE(), GETDATE(), '{$cotizacion->fecha->format('Y-m-d H:i:s')}',
                     {$sumaCantidades}, 0, 0, 0,
                     '$', 'N', 1,
                     {$VAIVDO}, {$VANEDO}, {$VABRDO}, 0,
@@ -1042,9 +1189,9 @@ class AprobacionController extends Controller
                         '{$listaPrecios}', '$', 'N', 1,
                         {$precioNeto}, {$precioNeto}, " . ($precioNeto * 1.19) . ", " . ($precioNeto * 1.19) . ",
                         {$porcentajeDescuento}, {$vadtneli}, {$subtotalConDescuento}, 19, {$ivaConDescuento}, {$total},
-                        'I', GETDATE(), '{$cotizacion->fecha_despacho->format('Y-m-d')}', {$nudtli}, '', 0,
+                        'I', GETDATE(), '{$cotizacion->fecha->format('Y-m-d')}', {$nudtli}, '', 0,
                         {$ppprpm}, {$ppprnere1}, {$ppprnere2}, 1, 0, 0,
-                        0, 0, 0, '{$cotizacion->fecha_despacho->format('Y-m-d')}'
+                        0, 0, 0, '{$cotizacion->fecha->format('Y-m-d')}'
                     )
                 ";
                 
@@ -1414,7 +1561,7 @@ class AprobacionController extends Controller
                     {$siguienteId}, '01', 'NVV', '{$nudoFormateado}', '{$cotizacion->cliente_codigo}', 
                     '{$sucursalCliente}', '{$cotizacion->cliente_codigo}', 'LIB',
                     'I', 'LIB', 'N', 'S',
-                    GETDATE(), GETDATE(), GETDATE(), '{$cotizacion->fecha_despacho->format('Y-m-d H:i:s')}',
+                    GETDATE(), GETDATE(), GETDATE(), '{$cotizacion->fecha->format('Y-m-d H:i:s')}',
                     {$cotizacion->subtotal_neto}, 0, 0, 0,
                     '$', 'N', 1,
                     {$cotizacion->iva}, {$cotizacion->subtotal_neto}, {$cotizacion->total}, 0,
@@ -1484,9 +1631,9 @@ class AprobacionController extends Controller
                         'TABPP01P', '$', 'N', 1,
                         {$producto->precio_unitario}, {$producto->precio_unitario}, {$precioBruto}, {$precioBruto},
                         {$porcentajeDescuento}, {$valorDescuento}, {$subtotalConDescuento}, 19, {$ivaConDescuento}, {$totalConIVA},
-                        'I', GETDATE(), '{$cotizacion->fecha_despacho->format('Y-m-d H:i:s')}', 1, '', 0,
+                        'I', GETDATE(), '{$cotizacion->fecha->format('Y-m-d H:i:s')}', 1, '', 0,
                         {$precioMinimo}, {$precioNetoReal}, {$precioNetoReal}, 1, 0, 0,
-                        0, 0, 0, '{$cotizacion->fecha_despacho->format('Y-m-d')}'
+                        0, 0, 0, '{$cotizacion->fecha->format('Y-m-d')}'
                     )
                 ";
                 
@@ -2375,6 +2522,12 @@ class AprobacionController extends Controller
             $cotizacion = Cotizacion::findOrFail($id);
             $producto = $cotizacion->productos()->findOrFail($productoId);
 
+            // Validar múltiplos de venta
+            $multiplo = intval($producto->multiplo ?? (\DB::table('productos')->where('KOPR', $producto->codigo_producto)->value('multiplo_venta') ?? 1));
+            if ($multiplo > 1 && ($cantidadSeparar % $multiplo) !== 0) {
+                return response()->json(['error' => "La cantidad a separar debe ser múltiplo de {$multiplo}"], 400);
+            }
+
             // Validar que la cantidad a separar no exceda la cantidad disponible
             if ($cantidadSeparar > $producto->cantidad) {
                 return response()->json(['error' => 'La cantidad a separar no puede exceder la cantidad del producto'], 400);
@@ -2420,6 +2573,12 @@ class AprobacionController extends Controller
 
             if ($cantidadSeparar <= 0) {
                 return response()->json(['error' => 'Debe especificar una cantidad a separar mayor a 0'], 400);
+            }
+
+            // Validar múltiplos también aquí
+            $multiplo = intval($producto->multiplo ?? (\DB::table('productos')->where('KOPR', $producto->codigo_producto)->value('multiplo_venta') ?? 1));
+            if ($multiplo > 1 && ($cantidadSeparar % $multiplo) !== 0) {
+                return response()->json(['error' => "La cantidad a separar debe ser múltiplo de {$multiplo}"], 400);
             }
 
             if ($cantidadSeparar > $producto->cantidad) {
@@ -2547,6 +2706,151 @@ class AprobacionController extends Controller
                 'descripcion' => 'NVV creada por separación de producto'
             ]
         ]);
+    }
+    
+    /**
+     * Sincronizar stock desde SQL Server
+     */
+    public function sincronizarStock(Request $request, $id = null)
+    {
+        try {
+            $stockService = new StockService();
+            $productosSincronizados = $stockService->sincronizarStockDesdeSQLServer();
+            
+            $mensaje = "Stock sincronizado exitosamente. {$productosSincronizados} productos actualizados.";
+            
+            // Si es una petición AJAX, devolver JSON
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $mensaje,
+                    'productos_sincronizados' => $productosSincronizados
+                ]);
+            }
+            
+            if ($id) {
+                // Si viene desde una aprobación específica, redirigir de vuelta
+                return redirect()->back()->with('success', $mensaje);
+            }
+            
+            // Si no viene desde una vista específica, redirigir al index de aprobaciones
+            return redirect()->route('aprobaciones.index')->with('success', $mensaje);
+            
+        } catch (\Exception $e) {
+            Log::error('Error sincronizando stock: ' . $e->getMessage());
+            $mensajeError = 'Error al sincronizar stock: ' . $e->getMessage();
+            
+            // Si es una petición AJAX, devolver JSON
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $mensajeError
+                ], 500);
+            }
+            
+            if ($id) {
+                return redirect()->back()->with('error', $mensajeError);
+            }
+            
+            return redirect()->route('aprobaciones.index')->with('error', $mensajeError);
+        }
+    }
+
+    /**
+     * Modificar descuentos de productos (Supervisor)
+     */
+    public function modificarDescuentosProductos(Request $request, $id)
+    {
+        try {
+            $cotizacion = Cotizacion::findOrFail($id);
+            
+            // Verificar permisos - solo supervisor puede modificar descuentos
+            if (!auth()->user()->hasRole('Supervisor')) {
+                return response()->json(['error' => 'No tienes permisos para modificar descuentos'], 403);
+            }
+            
+            // Verificar que puede aprobar supervisor
+            if (!$cotizacion->puedeAprobarSupervisor()) {
+                return response()->json(['error' => 'Esta nota de venta no requiere aprobación del supervisor'], 400);
+            }
+            
+            $descuentos = $request->input('descuentos', []);
+            
+            if (empty($descuentos)) {
+                return response()->json(['error' => 'No se proporcionaron descuentos para modificar'], 400);
+            }
+            
+            DB::beginTransaction();
+            
+            foreach ($descuentos as $descuento) {
+                $producto = $cotizacion->productos()->find($descuento['producto_id']);
+                
+                if ($producto) {
+                    $porcentaje = floatval($descuento['descuento_porcentaje']);
+                    
+                    // Calcular valores
+                    $subtotal = $producto->cantidad * $producto->precio_unitario;
+                    $descuentoValor = ($subtotal * $porcentaje) / 100;
+                    $subtotalConDescuento = $subtotal - $descuentoValor;
+                    $iva = $subtotalConDescuento * 0.19;
+                    $total = $subtotalConDescuento + $iva;
+                    
+                    // Actualizar producto
+                    $producto->update([
+                        'descuento_porcentaje' => $porcentaje,
+                        'descuento_valor' => $descuentoValor,
+                        'subtotal_con_descuento' => $subtotalConDescuento,
+                        'iva_valor' => $iva,
+                        'total_producto' => $total
+                    ]);
+                }
+            }
+            
+            // Recalcular totales de la cotización
+            $productos = $cotizacion->productos;
+            $subtotal = $productos->sum('subtotal');
+            $descuentoGlobal = $productos->sum('descuento_valor');
+            $subtotalNeto = $productos->sum('subtotal_con_descuento');
+            $iva = $productos->sum('iva_valor');
+            $total = $productos->sum('total_producto');
+            
+            $cotizacion->update([
+                'subtotal' => $subtotal,
+                'descuento_global' => $descuentoGlobal,
+                'subtotal_neto' => $subtotalNeto,
+                'iva' => $iva,
+                'total' => $total
+            ]);
+            
+            // Registrar en historial
+            \App\Models\CotizacionHistorial::crearRegistro(
+                $cotizacion->id,
+                $cotizacion->estado_aprobacion,
+                'aprobacion',
+                $cotizacion->estado_aprobacion,
+                'Descuentos modificados por supervisor',
+                ['modificado_por' => auth()->id()]
+            );
+            
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Descuentos actualizados correctamente',
+                'totales' => [
+                    'subtotal' => (float) $subtotal,
+                    'descuento' => (float) $descuentoGlobal,
+                    'subtotal_neto' => (float) $subtotalNeto,
+                    'iva' => (float) $iva,
+                    'total' => (float) $total,
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollback();
+            \Log::error('Error modificando descuentos: ' . $e->getMessage());
+            return response()->json(['error' => 'Error al modificar descuentos: ' . $e->getMessage()], 500);
+        }
     }
 
 }

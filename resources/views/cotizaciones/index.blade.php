@@ -10,14 +10,17 @@
                         <div class="col-md-8">
                             <h4 class="card-title">
                                 <i class="material-icons">description</i>
-                                 Notas de Venta
+                                @if(request('tipo_documento') == 'cotizacion')
+                                    Cotizaciones
+                                @elseif(request('tipo_documento') == 'nota_venta')
+                                    Notas de Venta
+                                @else
+                                    Cotizaciones y Notas de Venta
+                                @endif
                             </h4>
                         </div>
                         <div class="col-md-4 text-right">
-                            <a href="{{ route('cobranza.index') }}" class="btn btn-primary">
-                                <i class="material-icons">add</i>
-                                Nueva Cotización
-                            </a>
+                            <!-- Los botones de nueva cotización/NVV se han movido a las páginas de cliente -->
                         </div>
                     </div>
                 </div>
@@ -119,7 +122,7 @@
                             <table class="table">
                                 <thead>
                                     <tr>
-                                        <th>N° NV</th>
+                                        <th>{{ request('tipo_documento') === 'nota_venta' ? 'N° NVV' : 'N° COT' }}</th>
                                         <th>Cliente</th>
                                         <th>Fecha</th>
                                         <th>Total (c/IVA)</th>
@@ -138,12 +141,11 @@
                                     <tr>
                                         <td>
                                             <strong>
-                                                @if(isset($cotizacion['numero_nvv']) && !empty($cotizacion['numero_nvv']))
-                                                    NVV-{{ $cotizacion['numero_nvv'] }}
-                                                @elseif(isset($cotizacion['fuente']) && $cotizacion['fuente'] === 'local')
-                                                    COT#{{ $cotizacion['numero'] }}
+                                                @php $tipo = $cotizacion['tipo_documento'] ?? (request('tipo_documento') ?: 'nota_venta'); @endphp
+                                                @if($tipo === 'nota_venta')
+                                                    NVV#{{ $cotizacion['numero'] ?? $cotizacion['id'] }}
                                                 @else
-                                                    NV#{{ $cotizacion['numero'] }}
+                                                    COT#{{ $cotizacion['numero'] ?? $cotizacion['id'] }}
                                                 @endif
                                             </strong><br>
                                             <small class="text-muted">ID: {{ $cotizacion['id'] }}</small>
@@ -235,11 +237,11 @@
                                                 @if($esEditable)
                                                     <!-- Botones para cotizaciones editables (borrador o rechazadas) -->
                                                     <div class="btn-group" role="group">
-                                                        <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
+                                                        <a href="{{ ($cotizacion['tipo_documento'] === 'nota_venta') ? route('nota-venta.ver', $cotizacion['id']) : route('cotizacion.ver', $cotizacion['id']) }}" 
                                                            class="btn btn-sm btn-info" title="Ver">
                                                             <i class="material-icons">visibility</i>
                                                         </a>
-                                                        <a href="{{ route('cotizacion.editar', $cotizacion['id']) }}" 
+                                                        <a href="{{ ($cotizacion['tipo_documento'] === 'nota_venta') ? route('nota-venta.editar', $cotizacion['id']) : route('cotizacion.editar', $cotizacion['id']) }}" 
                                                            class="btn btn-sm btn-warning" title="Editar">
                                                             <i class="material-icons">edit</i>
                                                         </a>
@@ -265,7 +267,7 @@
                                                 @elseif($cotizacion['estado'] === 'aprobada')
                                                     <!-- Botón para generar nota de venta -->
                                                     <div class="btn-group" role="group">
-                                                        <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
+                                                        <a href="{{ $cotizacion['tipo_documento'] === 'nota_venta' ? route('nota-venta.ver', $cotizacion['id']) : route('cotizacion.ver', $cotizacion['id']) }}" 
                                                            class="btn btn-sm btn-info" title="Ver">
                                                             <i class="material-icons">visibility</i>
                                                         </a>
@@ -281,7 +283,7 @@
                                                 @else
                                                     <!-- Solo ver para cotizaciones ya aprobadas o procesadas -->
                                                     <div class="btn-group" role="group">
-                                                        <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
+                                                        <a href="{{ $cotizacion['tipo_documento'] === 'nota_venta' ? route('nota-venta.ver', $cotizacion['id']) : route('cotizacion.ver', $cotizacion['id']) }}" 
                                                            class="btn btn-sm btn-info" title="Ver">
                                                             <i class="material-icons">visibility</i>
                                                         </a>
@@ -305,7 +307,7 @@
                                             @else
                                                 <!-- Cotizaciones de SQL Server - solo ver -->
                                                 <div class="btn-group" role="group">
-                                                    <a href="{{ route('cotizacion.ver', $cotizacion['id']) }}" 
+                                                    <a href="{{ $cotizacion['tipo_documento'] === 'nota_venta' ? route('nota-venta.ver', $cotizacion['id']) : route('cotizacion.ver', $cotizacion['id']) }}" 
                                                        class="btn btn-sm btn-info" title="Ver">
                                                         <i class="material-icons">visibility</i>
                                                     </a>
@@ -325,11 +327,7 @@
                         <div class="text-center py-4">
                             <i class="material-icons" style="font-size: 64px; color: #ccc;">description</i>
                             <h5 class="text-muted mt-3">No se encontraron cotizaciones</h5>
-                            <p class="text-muted">Intenta ajustar los filtros o crear una nueva cotización</p>
-                            <a href="{{ route('cotizacion.nueva') }}" class="btn btn-primary">
-                                <i class="material-icons">add</i>
-                                Crear Cotización
-                            </a>
+                            <p class="text-muted">Intenta ajustar los filtros de búsqueda</p>
                         </div>
                     @endif
                 </div>
@@ -409,9 +407,16 @@ function eliminarCotizacion(cotizacionId) {
 }
 
 function convertirANotaVenta(cotizacionId) {
-    if (!confirm('¿Estás seguro de convertir esta cotización a Nota de Venta?\n\nUna vez convertida, entrará al flujo de aprobaciones (Supervisor, Compras, Picking).')) {
-        return;
-    }
+    // Abrir modal de conversión
+    $('#modalConvertirNVV').data('cotizacion-id', cotizacionId);
+    $('#modalConvertirNVV').modal('show');
+}
+
+function confirmarConversionNVV() {
+    const cotizacionId = $('#modalConvertirNVV').data('cotizacion-id');
+    const numeroOrdenCompra = $('#numero_orden_compra_nvv').val();
+    const observacionVendedor = $('#observacion_vendedor_nvv').val();
+    const solicitarDescuentoExtra = $('#solicitar_descuento_extra_nvv').is(':checked');
     
     $.ajax({
         url: `/cotizacion/convertir-a-nota-venta/${cotizacionId}`,
@@ -419,7 +424,13 @@ function convertirANotaVenta(cotizacionId) {
         headers: {
             'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
         },
+        data: {
+            numero_orden_compra: numeroOrdenCompra,
+            observacion_vendedor: observacionVendedor,
+            solicitar_descuento_extra: solicitarDescuentoExtra
+        },
         success: function(response) {
+            $('#modalConvertirNVV').modal('hide');
             alert('Cotización convertida exitosamente a Nota de Venta');
             location.reload();
         },
@@ -519,5 +530,79 @@ $('#btnConfirmarEliminar').click(function() {
         }
     });
 });
+
+// Las funciones de selección de cliente se han movido a las páginas de cliente
+
+// Las funciones de búsqueda de clientes se han movido a las páginas de cliente
 </script>
+
+<!-- Modal de selección de cliente removido - se usa en páginas de cliente -->
+
+<!-- Modal de Conversión a NVV -->
+<div class="modal fade" id="modalConvertirNVV" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="material-icons">description</i>
+                    Convertir a Nota de Venta
+                </h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="material-icons">info</i>
+                    <strong>Información:</strong> Una vez convertida, la cotización entrará al flujo de aprobaciones (Supervisor, Compras, Picking).
+                </div>
+                
+                <div class="form-group">
+                    <label for="numero_orden_compra_nvv">Número de Orden de Compra</label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="numero_orden_compra_nvv" 
+                           maxlength="40"
+                           placeholder="Número de orden de compra del cliente (opcional)">
+                    <small class="form-text text-muted">
+                        <i class="material-icons" style="font-size: 14px; vertical-align: middle;">info</i>
+                        Campo opcional - Máximo 40 caracteres
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="observacion_vendedor_nvv">Observación del Vendedor</label>
+                    <textarea class="form-control" 
+                              id="observacion_vendedor_nvv" 
+                              rows="3" 
+                              maxlength="250"
+                              placeholder="Observación personal del vendedor (opcional)"></textarea>
+                    <small class="form-text text-muted">
+                        <i class="material-icons" style="font-size: 14px; vertical-align: middle;">info</i>
+                        Campo opcional - Máximo 250 caracteres
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <div class="form-check">
+                        <label class="form-check-label">
+                            <input class="form-check-input" type="checkbox" id="solicitar_descuento_extra_nvv">
+                            <span class="form-check-sign"><span class="check"></span></span>
+                            <strong>Solicitar descuento extra</strong>
+                        </label>
+                    </div>
+                    <small class="form-text text-muted">
+                        Si está marcado, la NVV requerirá aprobación de Supervisor aunque el cliente no tenga problemas de crédito.
+                    </small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="confirmarConversionNVV()">
+                    <i class="material-icons">check</i> Convertir a NVV
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 @endpush 

@@ -186,9 +186,14 @@ class CobranzaService
     {
         try {
             // Obtener los clientes directamente de la base de datos local
-            $clientes = \App\Models\Cliente::where('codigo_vendedor', $codigoVendedor)
-                ->where('activo', true)
-                ->get();
+            // Si codigoVendedor es null, obtener todos los clientes activos
+            $query = \App\Models\Cliente::where('activo', true);
+            
+            if ($codigoVendedor !== null) {
+                $query->where('codigo_vendedor', $codigoVendedor);
+            }
+            
+            $clientes = $query->get();
             
             // Obtener todos los datos de facturación en una sola consulta
             $datosFacturacion = $this->getDatosFacturacionTodosClientes($codigoVendedor);
@@ -454,7 +459,7 @@ class CobranzaService
             
             // Construir la consulta SQL para obtener cotizaciones del vendedor
             $query = "
-                SELECT TOP {$limit}
+                SELECT DISTINCT TOP {$limit}
                     dbo.MAEEDO.TIDO AS TIPO_DOCTO,
                     dbo.MAEEDO.NUDO AS NRO_DOCTO,
                     dbo.MAEEDO.ENDO AS CODIGO_CLIENTE,
@@ -534,10 +539,146 @@ class CobranzaService
             throw new \Exception('No se obtuvieron cotizaciones del vendedor');
             
         } catch (\Exception $e) {
-            // Log del error para debugging
-            \Log::error('Error en CobranzaService::getCotizacionesPorVendedor: ' . $e->getMessage());
+            \Log::error('Error obteniendo cotizaciones por vendedor: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Obtener TODAS las facturas emitidas (no solo pendientes)
+     */
+    public function getFacturasEmitidas($codigoVendedor = null, $limit = 20)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
             
-            // Retornar array vacío en caso de error
+            // Consulta para obtener TODAS las facturas emitidas (sin filtrar por saldo pendiente)
+            $query = "
+                SELECT TOP {$limit}
+                    CAST(dbo.MAEEDO.TIDO AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEEDO.NUDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEEDO.ENDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEEN.NOKOEN AS VARCHAR(100)) + '|' +
+                    CAST(dbo.MAEEDO.SUDO AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEEDO.FEEMDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEEDO.FE01VEDO AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEEDO.FEULVEDO AS VARCHAR(20)) + '|' +
+                    CAST(CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEEN.FOEN AS VARCHAR(20)) + '|' +
+                    CAST(dbo.MAEEN.DIEN AS VARCHAR(100)) + '|' +
+                    CAST('' AS VARCHAR(50)) + '|' +
+                    CAST('' AS VARCHAR(50)) + '|' +
+                    CAST(ISNULL(dbo.TABFU.NOKOFU, 'SIN VENDEDOR ASIG.') AS VARCHAR(50)) + '|' +
+                    CAST(CASE WHEN dbo.MAEEDO.TIDO = 'NCV' THEN dbo.MAEEDO.VANEDO * - 1 ELSE dbo.MAEEDO.VANEDO END AS VARCHAR(20)) + '|' +
+                    CAST(CASE WHEN dbo.MAEEDO.TIDO = 'NCV' THEN dbo.MAEEDO.VABRDO * - 1 ELSE dbo.MAEEDO.VABRDO END AS VARCHAR(20)) + '|' +
+                    CAST(CASE WHEN dbo.MAEEDO.TIDO = 'NCV' THEN dbo.MAEEDO.VAABDO * - 1 ELSE dbo.MAEEDO.VAABDO END AS VARCHAR(20)) + '|' +
+                    CAST(0 AS VARCHAR(20)) + '|' +
+                    CAST(0 AS VARCHAR(20)) + '|' +
+                    CAST(0 AS VARCHAR(20)) + '|' +
+                    CAST(CASE WHEN dbo.MAEEDO.TIDO = 'NCV' THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * - 1 ELSE (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) END AS VARCHAR(20)) + '|' +
+                    CAST(CASE WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) < - 8 THEN 'VIGENTE' WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN - 7 AND - 1 THEN 'POR VENCER' WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN 0 AND 7 THEN 'VENCIDO' WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN 8 AND 30 THEN 'MOROSO' ELSE 'BLOQUEAR' END AS VARCHAR(20)) + '|' +
+                    CAST(dbo.TABFU.KOFU AS VARCHAR(10)) + '|' +
+                    CAST(dbo.MAEEN.KOFUEN AS VARCHAR(10)) AS DATOS
+                FROM dbo.MAEEDO
+                LEFT JOIN dbo.MAEEN ON dbo.MAEEDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEEN.SUEN = dbo.MAEEDO.SUENDO
+                LEFT JOIN dbo.TABFU ON dbo.MAEEN.KOFUEN = dbo.TABFU.KOFU
+                WHERE dbo.MAEEDO.TIDO IN ('FCV', 'NCV', 'FDV')
+                    AND (dbo.MAEEDO.EMPRESA = '01' OR dbo.MAEEDO.EMPRESA = '02')";
+            
+            if ($codigoVendedor) {
+                $query .= " AND dbo.TABFU.KOFU = '{$codigoVendedor}'";
+            }
+            
+            $query .= " ORDER BY dbo.MAEEDO.FEEMDO DESC";
+            
+            // Usar función optimizada con timeout
+            $output = $this->ejecutarConsultaSQLServer($query, 15);
+            
+            if (!$output || str_contains($output, 'error')) {
+                throw new \Exception('Error ejecutando consulta tsql: ' . $output);
+            }
+            
+            // Procesar la salida (misma lógica que getFacturasPendientes)
+            $lines = explode("\n", $output);
+            $result = [];
+            $inDataSection = false;
+            $headerFound = false;
+            
+            foreach ($lines as $lineNumber => $line) {
+                $line = trim($line);
+                
+                // Saltar líneas vacías o de configuración
+                if (empty($line) || 
+                    strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || 
+                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'Warning:') !== false ||
+                    preg_match('/^\d+>$/', $line)) {
+                    continue;
+                }
+                
+                // Saltar líneas con múltiples números SOLO si no contienen DATOS
+                if (preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) && strpos($line, 'DATOS') === false) {
+                    continue;
+                }
+                
+                // Detectar el header de la tabla
+                if (strpos($line, 'DATOS') !== false) {
+                    $headerFound = true;
+                    $inDataSection = true;
+                    continue;
+                }
+                
+                // También detectar si la línea termina con DATOS
+                if (trim($line) === 'DATOS') {
+                    $headerFound = true;
+                    $inDataSection = true;
+                    continue;
+                }
+                
+                // Procesar líneas de datos
+                if ($inDataSection && $headerFound && strpos($line, '|') !== false) {
+                    $fields = explode('|', $line);
+                    
+                    if (count($fields) >= 24) {
+                        $result[] = [
+                            'TIPO_DOCTO' => trim($fields[0]),
+                            'NRO_DOCTO' => trim($fields[1]),
+                            'CODIGO_CLIENTE' => trim($fields[2]),
+                            'NOMBRE_CLIENTE' => trim($fields[3]),
+                            'SUCURSAL' => trim($fields[4]),
+                            'EMISION' => trim($fields[5]),
+                            'VENCIMIENTO' => trim($fields[6]),
+                            'ULTIMA_VENTA' => trim($fields[7]),
+                            'DIAS_VENCIDO' => (int)trim($fields[8]),
+                            'TELEFONO' => trim($fields[9]),
+                            'DIRECCION' => trim($fields[10]),
+                            'REGION' => trim($fields[11]),
+                            'COMUNA' => trim($fields[12]),
+                            'NOMBRE_VENDEDOR' => trim($fields[13]),
+                            'VALOR_NETO' => (float)trim($fields[14]),
+                            'VALOR_TOTAL' => (float)trim($fields[15]),
+                            'ABONOS' => (float)trim($fields[16]),
+                            'POR_VENCER' => (float)trim($fields[17]),
+                            'VIGENTE' => (float)trim($fields[18]),
+                            'VENCIDO' => (float)trim($fields[19]),
+                            'SALDO' => (float)trim($fields[20]),
+                            'ESTADO' => trim($fields[21]),
+                            'CODIGO_VENDEDOR' => trim($fields[22]),
+                            'VENDEDOR_ASIGNADO' => trim($fields[23])
+                        ];
+                    }
+                }
+            }
+            
+            return $result;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo facturas emitidas: ' . $e->getMessage());
             return [];
         }
     }
@@ -785,6 +926,94 @@ class CobranzaService
         } catch (\Exception $e) {
             \Log::error('Error en getNotasVentaCliente: ' . $e->getMessage());
             return [];
+        }
+    }
+
+    /**
+     * Obtener el total de NVV no facturadas (pendientes) para un cliente
+     * Esta función suma el valor pendiente de todas las NVV que aún no han sido facturadas
+     */
+    public function getTotalNvvNoFacturadasCliente($codigoCliente)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            // Verificar que las credenciales estén configuradas
+            if (!$host || !$database || !$username || !$password) {
+                throw new \Exception('Credenciales SQL Server no configuradas en .env');
+            }
+            
+            // Consulta para obtener el total de NVV no facturadas del cliente
+            // Sumamos el VALOR_PENDIENTE de todas las NVV que tienen cantidad pendiente
+            $query = "
+                SELECT 
+                    SUM((dbo.MAEDDO.VANELI / NULLIF(dbo.MAEDDO.CAPRCO1, 0)) * (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1)) AS TOTAL_PENDIENTE
+                FROM dbo.MAEDDO 
+                INNER JOIN dbo.MAEEN ON dbo.MAEDDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEDDO.SUENDO = dbo.MAEEN.SUEN 
+                WHERE (dbo.MAEDDO.TIDO = 'NVV') 
+                    AND (dbo.MAEDDO.LILG = 'SI') 
+                    AND (dbo.MAEDDO.CAPRCO1 - dbo.MAEDDO.CAPRAD1 - dbo.MAEDDO.CAPREX1 > 0) 
+                    AND (dbo.MAEDDO.KOPRCT <> 'D') 
+                    AND (dbo.MAEDDO.KOPRCT <> 'FLETE')
+                    AND dbo.MAEDDO.ENDO = '{$codigoCliente}'
+            ";
+            
+            // Crear archivo temporal con la consulta
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            // Ejecutar consulta usando tsql
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+            
+            // Limpiar archivo temporal
+            unlink($tempFile);
+            
+            if ($output === null) {
+                throw new \Exception('Error ejecutando consulta tsql');
+            }
+            
+            // Procesar la salida
+            $lines = explode("\n", $output);
+            $totalPendiente = 0;
+            
+            foreach ($lines as $line) {
+                $line = trim($line);
+                
+                // Saltar líneas de configuración
+                if (empty($line) || 
+                    strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || 
+                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'Warning:') !== false ||
+                    preg_match('/^\d+>$/', $line) ||
+                    preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
+                    strpos($line, 'rows affected') !== false ||
+                    strpos($line, 'TOTAL_PENDIENTE') !== false) {
+                    continue;
+                }
+                
+                // Buscar línea con el total
+                // Puede venir como número o como NULL
+                if (preg_match('/^([\d\.-]+)$/', $line, $matches)) {
+                    $totalPendiente = (float)$matches[1];
+                    break;
+                } elseif (strpos($line, 'NULL') !== false || empty($line)) {
+                    $totalPendiente = 0;
+                    break;
+                }
+            }
+            
+            // Asegurar que no sea negativo
+            return max(0, $totalPendiente);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo total NVV no facturadas para cliente ' . $codigoCliente . ': ' . $e->getMessage());
+            return 0;
         }
     }
 
@@ -1710,14 +1939,20 @@ class CobranzaService
     {
         try {
             // Cachear los datos por 5 minutos para evitar consultas repetidas
-            $cacheKey = "datos_facturacion_vendedor_{$codigoVendedor}";
+            $cacheKey = "datos_facturacion_vendedor_" . ($codigoVendedor ?? 'todos');
             $cachedData = \Cache::get($cacheKey);
             
             if ($cachedData !== null) {
                 return $cachedData;
             }
             
-            // Consulta optimizada para obtener datos de facturación de todos los clientes del vendedor
+            // Consulta optimizada para obtener datos de facturación de todos los clientes
+            // Si codigoVendedor es null, obtener datos de todos los clientes del sistema
+            $whereClause = '';
+            if ($codigoVendedor !== null) {
+                $whereClause = "WHERE MAEEN.KOFUEN = '{$codigoVendedor}'";
+            }
+            
             $query = "
                 SELECT 
                     MAEEN.KOEN AS CODIGO_CLIENTE,
@@ -1728,7 +1963,7 @@ class CobranzaService
                     AND (MAEEDO.TIDO = 'FCV' OR MAEEDO.TIDO = 'NCV' OR MAEEDO.TIDO = 'FDV')
                     AND (MAEEDO.VABRDO > MAEEDO.VAABDO)
                     AND (MAEEDO.EMPRESA = '01' OR MAEEDO.EMPRESA = '02')
-                WHERE MAEEN.KOFUEN = '{$codigoVendedor}'
+                {$whereClause}
                 GROUP BY MAEEN.KOEN
                 ORDER BY MAEEN.KOEN
             ";
@@ -3824,6 +4059,20 @@ class CobranzaService
                     \Log::info('Campo 15 (estado): ' . ($fields[15] ?? 'NO_ENCONTRADO'));
                     \Log::info('Campo 14 (ultima_venta): ' . ($fields[14] ?? 'NO_ENCONTRADO'));
                     
+                    // CÓDIGO ORIGINAL - FUNCIONABA BIEN (MANTENER COMENTADO COMO BACKUP)
+                    // $creditoInfo['credito_sin_doc'] = $safeFloat($fields[6] ?? 0); // CRSD
+                    // $creditoInfo['credito_sin_doc_util'] = $safeFloat($fields[5] ?? 0); // SALDO
+                    // $creditoInfo['credito_sin_doc_disp'] = $safeFloat($fields[7] ?? 0); // DISP_SD
+                    // $creditoInfo['credito_cheques'] = $safeFloat($fields[9] ?? 0); // CRCH
+                    // $creditoInfo['credito_cheques_util'] = $safeFloat($fields[8] ?? 0); // CART
+                    // $creditoInfo['credito_cheques_disp'] = $safeFloat($fields[10] ?? 0); // DISP_CH
+                    // $creditoInfo['credito_total'] = $safeFloat($fields[12] ?? 0); // CRTO
+                    // $creditoInfo['credito_total_util'] = $safeFloat($fields[11] ?? 0); // DEUDA
+                    // $creditoInfo['credito_total_disp'] = $safeFloat($fields[13] ?? 0); // DISP
+                    
+                    // NUEVO CÁLCULO: Incluye NVV no facturadas en el crédito utilizado
+                    // Crédito disponible = (crédito total) - (facturas y notas de crédito pendientes) - (notas de venta SQL NO facturadas)
+                    
                     $creditoInfo['credito_sin_doc'] = $safeFloat($fields[6] ?? 0); // CRSD
                     $creditoInfo['credito_sin_doc_util'] = $safeFloat($fields[5] ?? 0); // SALDO
                     $creditoInfo['credito_sin_doc_disp'] = $safeFloat($fields[7] ?? 0); // DISP_SD
@@ -3831,15 +4080,35 @@ class CobranzaService
                     $creditoInfo['credito_cheques_util'] = $safeFloat($fields[8] ?? 0); // CART
                     $creditoInfo['credito_cheques_disp'] = $safeFloat($fields[10] ?? 0); // DISP_CH
                     $creditoInfo['credito_total'] = $safeFloat($fields[12] ?? 0); // CRTO
-                    $creditoInfo['credito_total_util'] = $safeFloat($fields[11] ?? 0); // DEUDA
-                    $creditoInfo['credito_total_disp'] = $safeFloat($fields[13] ?? 0); // DISP
+                    
+                    // Obtener el total de NVV no facturadas desde SQL Server
+                    $totalNvvNoFacturadas = $this->getTotalNvvNoFacturadasCliente($codigoCliente);
+                    $creditoInfo['total_nvv_no_facturadas'] = $totalNvvNoFacturadas;
+                    
+                    // Crédito utilizado ahora incluye: DEUDA (facturas y notas de crédito pendientes) + NVV no facturadas
+                    $deudaOriginal = $safeFloat($fields[11] ?? 0); // DEUDA original (facturas y NC pendientes)
+                    $creditoInfo['credito_total_util'] = $deudaOriginal + $totalNvvNoFacturadas;
+                    
+                    // Crédito disponible = Crédito total - Crédito utilizado (ahora incluye NVV)
+                    $creditoInfo['credito_total_disp'] = $creditoInfo['credito_total'] - $creditoInfo['credito_total_util'];
+                    
+                    // Si el crédito disponible es negativo, asegurar que sea 0 o mantener el negativo según lógica de negocio
+                    // Por ahora lo mantenemos como está (puede ser negativo si se excede el crédito)
+                    
                     $creditoInfo['ultima_venta'] = trim($fields[14] ?? ''); // ULT_VTA
                     $estado = trim($fields[15] ?? 'VIGENTE'); // ESTADO
                     $creditoInfo['estado'] = ($estado === 'BLOQUEADO') ? 'BLOQUEADO' : 'VIGENTE';
                     $creditoInfo['venta_mes'] = $safeFloat($fields[16] ?? 0); // Venta_Mes
                     $creditoInfo['venta_3m'] = $safeFloat($fields[17] ?? 0); // Venta_3M
                     
-                    \Log::info('Datos procesados: ' . json_encode($creditoInfo));
+                    \Log::info('Datos procesados con NVV: ' . json_encode([
+                        'codigo_cliente' => $codigoCliente,
+                        'credito_total' => $creditoInfo['credito_total'],
+                        'deuda_original' => $deudaOriginal,
+                        'total_nvv_no_facturadas' => $totalNvvNoFacturadas,
+                        'credito_total_util' => $creditoInfo['credito_total_util'],
+                        'credito_total_disp' => $creditoInfo['credito_total_disp']
+                    ]));
                 }
             }
             
@@ -4438,6 +4707,217 @@ class CobranzaService
             
         } catch (\Exception $e) {
             \Log::error('Error obteniendo facturas ingresadas: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Obtener facturas pendientes del mes actual
+     */
+    public function getFacturasPendientesMesActual($codigoVendedor = null)
+    {
+        try {
+            $mesActual = date('Y-m');
+            $facturasPendientes = $this->getFacturasPendientes($codigoVendedor, 1000);
+            
+            // Filtrar por mes actual
+            $facturasMesActual = array_filter($facturasPendientes, function($factura) use ($mesActual) {
+                if (isset($factura['EMISION'])) {
+                    $fechaFactura = date('Y-m', strtotime($factura['EMISION']));
+                    return $fechaFactura === $mesActual;
+                }
+                return false;
+            });
+            
+            return array_values($facturasMesActual);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo facturas pendientes del mes actual: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Obtener total de notas de venta del mes actual
+     */
+    public function getTotalNotasVentaMesActual()
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            if (!$host || !$database || !$username || !$password) {
+                throw new \Exception('Credenciales SQL Server no configuradas en .env');
+            }
+            
+            $mesActualInicio = date('Y-m-01');
+            $mesActualFin = date('Y-m-t');
+            
+            $query = "
+                SELECT COUNT(DISTINCT dbo.MAEEDO.NUDO) as total
+                FROM dbo.MAEEDO 
+                WHERE TIDO = 'NVV' 
+                AND FEEMDO >= '{$mesActualInicio}'
+                AND FEEMDO <= '{$mesActualFin}'
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            if ($output === null) {
+                throw new \Exception('Error ejecutando consulta tsql');
+            }
+            
+            $lines = explode("\n", $output);
+            $total = 0;
+            
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if (empty($line) || 
+                    strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || 
+                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'Warning:') !== false ||
+                    preg_match('/^\d+>$/', $line) ||
+                    preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
+                    strpos($line, 'rows affected') !== false ||
+                    strpos($line, 'total') !== false) {
+                    continue;
+                }
+                
+                if (is_numeric($line)) {
+                    $total = (int)$line;
+                    break;
+                }
+            }
+            
+            return $total;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo total notas de venta del mes actual: ' . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Obtener cheques protestados
+     */
+    public function getChequesProtestados($codigoVendedor = null)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            if (!$host || !$database || !$username || !$password) {
+                throw new \Exception('Credenciales SQL Server no configuradas en .env');
+            }
+
+            // Consulta similar a getChequesEnCartera pero filtrando por cheques protestados
+            // Esto puede variar según cómo se marquen los cheques protestados en tu sistema
+            // Por ahora, retornamos 0 hasta que confirmes el campo/condición
+            // TODO: Ajustar según el esquema real de la tabla de cheques
+            
+            \Log::warning('getChequesProtestados: Método pendiente de implementación según esquema de BD');
+            return 0;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo cheques protestados: ' . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Obtener lista de vendedores desde SQL Server
+     */
+    public function getVendedores()
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            if (!$host || !$database || !$username || !$password) {
+                throw new \Exception('Credenciales SQL Server no configuradas en .env');
+            }
+
+            $query = "
+                SELECT 
+                    CAST(dbo.TABFU.KOFU AS VARCHAR(10)) + '|' +
+                    CAST(dbo.TABFU.NOKOFU AS VARCHAR(100)) + '|' +
+                    CAST(ISNULL(dbo.TABFU.EMAIL, '') AS VARCHAR(100)) + '|' +
+                    CAST(ISNULL(dbo.TABFU.RTFU, '') AS VARCHAR(20)) AS DATOS
+                FROM dbo.TABFU 
+                WHERE dbo.TABFU.KOFU IS NOT NULL 
+                AND dbo.TABFU.NOKOFU IS NOT NULL
+                ORDER BY dbo.TABFU.NOKOFU
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            if (!$output || str_contains($output, 'error')) {
+                \Log::warning('Error obteniendo vendedores: ' . $output);
+                return [];
+            }
+            
+            $lines = explode("\n", $output);
+            $vendedores = [];
+            $inDataSection = false;
+            $headerFound = false;
+            
+            foreach ($lines as $line) {
+                $line = trim($line);
+                
+                if (empty($line) || 
+                    strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || 
+                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'Warning:') !== false ||
+                    preg_match('/^\d+>$/', $line)) {
+                    continue;
+                }
+                
+                if (strpos($line, 'DATOS') !== false) {
+                    $headerFound = true;
+                    $inDataSection = true;
+                    continue;
+                }
+                
+                if ($inDataSection && $headerFound && strpos($line, '|') !== false) {
+                    $fields = explode('|', $line);
+                    if (count($fields) >= 4) {
+                        $vendedores[] = [
+                            'codigo' => trim($fields[0]),
+                            'nombre' => trim($fields[1]),
+                            'email' => trim($fields[2]) ?: '',
+                            'rut' => trim($fields[3]) ?: ''
+                        ];
+                    }
+                }
+            }
+            
+            return $vendedores;
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo vendedores: ' . $e->getMessage());
             return [];
         }
     }

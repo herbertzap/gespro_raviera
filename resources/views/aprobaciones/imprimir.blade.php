@@ -177,7 +177,7 @@
                 <td>{{ $producto->codigo_producto }}</td>
                 <td>{{ number_format($producto->cantidad, 2, ',', '.') }}</td>
                 <td>UN</td>
-                <td>{{ $producto->descripcion_producto }}</td>
+                <td>{{ $producto->nombre_producto }}</td>
                 <td>${{ number_format($producto->precio_unitario, 0, ',', '.') }}</td>
                 <td>
                     @if($descuentoPorcentaje > 0)

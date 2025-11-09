@@ -34,6 +34,34 @@
                                 <a href="{{ route('aprobaciones.historial', $cotizacion->id) }}" class="btn btn-info ml-2">
                                     <i class="material-icons">history</i> Historial
                                 </a>
+                                <button type="button" class="btn btn-warning ml-2" onclick="sincronizarStock()" id="btnSincronizarStock">
+                                    <i class="material-icons">refresh</i> Sincronizar Productos
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal de Sincronización -->
+        <div class="modal fade" id="modalSincronizacion" tabindex="-1" role="dialog" aria-labelledby="modalSincronizacionLabel" aria-hidden="true" data-backdrop="static" data-keyboard="false">
+            <div class="modal-dialog modal-dialog-centered" role="document">
+                <div class="modal-content">
+                    <div class="modal-header bg-warning">
+                        <h5 class="modal-title" id="modalSincronizacionLabel">
+                            <i class="material-icons">refresh</i> Sincronizando Stock
+                        </h5>
+                    </div>
+                    <div class="modal-body text-center">
+                        <div class="spinner-border text-warning" role="status" style="width: 3rem; height: 3rem;">
+                            <span class="sr-only">Sincronizando...</span>
+                        </div>
+                        <h5 class="mt-3" id="mensajeSincronizacion">Sincronizando productos desde SQL Server...</h5>
+                        <p class="text-muted" id="detalleSincronizacion">Por favor, espere. Esto puede tomar varios minutos.</p>
+                        <div class="progress mt-3" style="height: 25px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" role="progressbar" style="width: 100%" id="progressBar">
+                                <span id="progressText">Procesando...</span>
                             </div>
                         </div>
                     </div>
@@ -149,14 +177,31 @@
                                             <span class="badge badge-secondary">{{ $cotizacion->estado_aprobacion }}</span>
                                     @endswitch
                                 </p>
+                                @if($cotizacion->tiene_problemas_credito)
+                                    <p><strong>Solicita Descuento Extra:</strong> <span class="badge badge-warning">SÍ</span></p>
+                                @endif
                             </div>
                             <div class="col-md-6">
                                 <p><strong>Cliente:</strong> {{ $cotizacion->cliente_codigo }}</p>
                                 <p><strong>Nombre:</strong> {{ $cotizacion->cliente_nombre }}</p>
                                 <p><strong>Dirección:</strong> {{ $cotizacion->cliente_direccion ?: 'No especificada' }}</p>
                                 <p><strong>Teléfono:</strong> {{ $cotizacion->cliente_telefono ?: 'No especificado' }}</p>
+                                @if($cotizacion->numero_orden_compra)
+                                    <p><strong>Orden de Compra:</strong> {{ $cotizacion->numero_orden_compra }}</p>
+                                @endif
                             </div>
                         </div>
+                        
+                        @if($cotizacion->observacion_vendedor)
+                            <div class="row mt-3">
+                                <div class="col-md-12">
+                                    <div class="alert alert-info">
+                                        <h6><i class="material-icons">message</i> Observación del Vendedor</h6>
+                                        <p class="mb-0">{{ $cotizacion->observacion_vendedor }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -172,9 +217,9 @@
                     <div class="card-body">
                         <div class="row">
                             <div class="col-md-6">
-                                <p><strong>Subtotal:</strong> ${{ number_format($cotizacion->subtotal, 0) }}</p>
-                                <p><strong>Descuento:</strong> ${{ number_format($cotizacion->descuento_global, 0) }}</p>
-                                <p><strong>Total:</strong> ${{ number_format($cotizacion->total, 0) }}</p>
+                                <p><strong>Subtotal:</strong> <span id="resumen-subtotal">${{ number_format($cotizacion->subtotal, 0) }}</span></p>
+                                <p><strong>Descuento:</strong> <span id="resumen-descuento">${{ number_format($cotizacion->descuento_global, 0) }}</span></p>
+                                <p><strong>Total:</strong> <span id="resumen-total">${{ number_format($cotizacion->total, 0) }}</span></p>
                             </div>
                             <div class="col-md-6">
                                 <p><strong>Observaciones:</strong></p>
@@ -235,11 +280,20 @@
                             <div class="col-md-3">
                                 <div class="text-center">
                                     <h5>Picking</h5>
-                                    @if($cotizacion->aprobado_por_picking)
-                                        <span class="badge badge-success">Aprobada</span>
-                                        <br><small>{{ $cotizacion->fecha_aprobacion_picking ? $cotizacion->fecha_aprobacion_picking->format('d/m/Y H:i') : '' }}</small>
-                                        <br><small>Por: {{ $cotizacion->aprobadoPorPicking->name ?? 'N/A' }}</small>
-                                    @elseif($cotizacion->estado_aprobacion === 'pendiente_picking')
+                            @if($cotizacion->aprobado_por_picking)
+                                @if($cotizacion->estado_aprobacion === 'aprobada_picking')
+                                    <span class="badge badge-success">Aprobada</span>
+                                    <br><small>{{ $cotizacion->fecha_aprobacion_picking ? $cotizacion->fecha_aprobacion_picking->format('d/m/Y H:i') : '' }}</small>
+                                    <br><small>Por: {{ $cotizacion->aprobadoPorPicking->name ?? 'N/A' }}</small>
+                                @elseif($cotizacion->estado_aprobacion === 'pendiente_entrega')
+                                    <span class="badge badge-warning">Pendiente de Entrega</span>
+                                    <br><small>{{ $cotizacion->fecha_aprobacion_picking ? $cotizacion->fecha_aprobacion_picking->format('d/m/Y H:i') : '' }}</small>
+                                    <br><small>Por: {{ $cotizacion->aprobadoPorPicking->name ?? 'N/A' }}</small>
+                                    @if($cotizacion->observaciones_picking)
+                                        <br><small class="text-info"><i class="material-icons">info</i> {{ Str::limit($cotizacion->observaciones_picking, 50) }}</small>
+                                    @endif
+                                @endif
+                            @elseif($cotizacion->estado_aprobacion === 'pendiente_picking')
                                         <span class="badge badge-warning">Pendiente</span>
                                     @elseif($cotizacion->aprobado_por_compras && $cotizacion->tiene_problemas_stock)
                                         <span class="badge badge-warning">Pendiente</span>
@@ -362,7 +416,7 @@
                                     </thead>
                                     <tbody>
                                         @foreach($cotizacion->productos as $producto)
-                                            <tr>
+                                            <tr data-producto-id="{{ $producto->id }}" data-cantidad="{{ $producto->cantidad }}" data-precio="{{ $producto->precio_unitario }}">
                                                 @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock)
                                                     <td>
                                                         <input type="checkbox" class="product-checkbox" value="{{ $producto->id }}" 
@@ -397,14 +451,20 @@
                                                 </td>
                                                 <td>
                                                     @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking')))
+                                                        @php
+                                                            $multiploVenta = optional(\App\Models\Producto::where('KOPR', $producto->codigo_producto)->first())->multiplo_venta ?? 1;
+                                                            if ($multiploVenta <= 0) { $multiploVenta = 1; }
+                                                        @endphp
                                                         <div class="input-group input-group-sm">
                                                             <input type="number" class="form-control separar-input" 
                                                                    value="{{ $producto->cantidad_separar ?? 0 }}" 
-                                                                   min="0" 
+                                                                   min="{{ $multiploVenta }}" 
+                                                                   step="{{ $multiploVenta }}" 
                                                                    max="{{ $producto->cantidad }}"
                                                                    data-producto-id="{{ $producto->id }}"
                                                                    data-precio="{{ $producto->precio_unitario }}"
-                                                                   data-cantidad-original="{{ $producto->cantidad }}">
+                                                                   data-cantidad-original="{{ $producto->cantidad }}"
+                                                                   data-multiplo="{{ $multiploVenta }}">
                                                             <div class="input-group-append">
                                                                 <button class="btn btn-outline-warning btn-sm" 
                                                                         onclick="guardarSeparar({{ $producto->id }})">
@@ -420,16 +480,34 @@
                                                     ${{ number_format($producto->precio_unitario, 0) }}
                                                 </td>
                                                 <td>
-                                                    <span class="badge badge-warning">{{ $producto->descuento_porcentaje ?? 0 }}%</span>
+                                                    @if(Auth::user()->hasRole('Supervisor') && $cotizacion->puedeAprobarSupervisor())
+                                                        <input type="number" 
+                                                               class="form-control form-control-sm descuento-porcentaje" 
+                                                               value="{{ $producto->descuento_porcentaje ?? 0 }}" 
+                                                               min="0" 
+                                                               max="100" 
+                                                               step="0.01"
+                                                               data-producto-id="{{ $producto->id }}"
+                                                               onchange="actualizarDescuento({{ $producto->id }})"
+                                                               style="width: 80px;">
+                                                    @else
+                                                        <span class="badge badge-warning">{{ $producto->descuento_porcentaje ?? 0 }}%</span>
+                                                    @endif
                                                 </td>
                                                 <td>
-                                                    ${{ number_format($producto->descuento_valor ?? 0, 0) }}
+                                                    <span class="descuento-valor-{{ $producto->id }}">
+                                                        ${{ number_format($producto->descuento_valor ?? 0, 0) }}
+                                                    </span>
                                                 </td>
                                                 <td>
-                                                    ${{ number_format($producto->subtotal_con_descuento ?? ($producto->cantidad * $producto->precio_unitario), 0) }}
+                                                    <span class="subtotal-con-descuento-{{ $producto->id }}">
+                                                        ${{ number_format($producto->subtotal_con_descuento ?? ($producto->cantidad * $producto->precio_unitario), 0) }}
+                                                    </span>
                                                 </td>
                                                 <td>
-                                                    ${{ number_format($producto->iva_valor ?? 0, 0) }}
+                                                    <span class="iva-valor-{{ $producto->id }}">
+                                                        ${{ number_format($producto->iva_valor ?? 0, 0) }}
+                                                    </span>
                                                 </td>
                                                 <td>
                                                     <strong class="total-{{ $producto->id }}">
@@ -544,7 +622,8 @@
         <!-- Botones de Acción -->
         @if(($cotizacion->puedeAprobarSupervisor() && Auth::user()->hasRole('Supervisor')) || 
             ($cotizacion->puedeAprobarCompras() && Auth::user()->hasRole('Compras')) || 
-            ($cotizacion->puedeAprobarPicking() && Auth::user()->hasRole('Picking')))
+            ($cotizacion->puedeAprobarPicking() && Auth::user()->hasRole('Picking')) ||
+            ($cotizacion->estado_aprobacion === 'pendiente_entrega' && Auth::user()->hasRole('Picking')))
             <div class="row">
                 <div class="col-md-12">
                     <div class="card">
@@ -558,8 +637,12 @@
                             @if($cotizacion->puedeAprobarSupervisor() && Auth::user()->hasRole('Supervisor'))
                                 <div class="alert alert-info">
                                     <h6><i class="material-icons">supervisor_account</i> Requiere Aprobación del Supervisor</h6>
-                                    <p>Esta nota de venta requiere tu aprobación.</p>
+                                    <p>Esta nota de venta requiere tu aprobación. Puedes modificar los descuentos antes de aprobar.</p>
                                 </div>
+                                <button type="button" class="btn btn-warning btn-lg" id="btnGuardarDescuentos" onclick="guardarCambiosDescuentos({{ $cotizacion->id }})">
+                                    <i class="material-icons">save</i> Guardar Cambios de Descuentos
+                                </button>
+                                <br><br>
                                 <button type="button" class="btn btn-success btn-lg" onclick="aprobarNota({{ $cotizacion->id }}, 'supervisor')">
                                     <i class="material-icons">check</i> Aprobar
                                 </button>
@@ -577,12 +660,23 @@
                                 <button type="button" class="btn btn-danger btn-lg ml-3" onclick="rechazarNota({{ $cotizacion->id }})">
                                     <i class="material-icons">close</i> Rechazar
                                 </button>
-                            @elseif($cotizacion->puedeAprobarPicking() && Auth::user()->hasRole('Picking'))
-                                <div class="alert alert-warning">
-                                    <h6><i class="material-icons">local_shipping</i> Requiere Aprobación Final de Picking</h6>
-                                    <p>Esta nota de venta requiere tu aprobación.</p>
-                                    <p><strong>⚠️ IMPORTANTE:</strong> Al aprobar se insertará la NVV en la base de datos de producción.</p>
-                                </div>
+                            @elseif(($cotizacion->puedeAprobarPicking() || $cotizacion->estado_aprobacion === 'pendiente_entrega') && Auth::user()->hasRole('Picking'))
+                                @if($cotizacion->estado_aprobacion === 'pendiente_entrega')
+                                    <div class="alert alert-info">
+                                        <h6><i class="material-icons">local_shipping</i> Nota de Venta Pendiente de Entrega</h6>
+                                        <p>Esta nota de venta está marcada como pendiente de entrega. Puedes aprobarla cuando esté lista.</p>
+                                        @if($cotizacion->observaciones_picking)
+                                            <p><strong>Observaciones:</strong> {{ $cotizacion->observaciones_picking }}</p>
+                                        @endif
+                                        <p><strong>⚠️ IMPORTANTE:</strong> Al aprobar se insertará la NVV en la base de datos de producción.</p>
+                                    </div>
+                                @else
+                                    <div class="alert alert-warning">
+                                        <h6><i class="material-icons">local_shipping</i> Requiere Aprobación Final de Picking</h6>
+                                        <p>Esta nota de venta requiere tu aprobación.</p>
+                                        <p><strong>⚠️ IMPORTANTE:</strong> Al aprobar se insertará la NVV en la base de datos de producción.</p>
+                                    </div>
+                                @endif
                                 <form id="formAprobarPicking" action="{{ route('aprobaciones.picking', $cotizacion->id) }}" method="POST" style="display: inline;">
                                     @csrf
                                     <input type="hidden" name="validar_stock_real" value="0">
@@ -591,7 +685,16 @@
                                         <i class="material-icons">check</i> <span id="textoBotonAprobar">Aprobar</span>
                                     </button>
                                 </form>
-                                <button type="button" class="btn btn-danger btn-lg ml-3" onclick="rechazarNota({{ $cotizacion->id }})">
+                                @if($cotizacion->estado_aprobacion !== 'pendiente_entrega')
+                                    <button type="button" class="btn btn-warning btn-lg ml-2" onclick="mostrarModalGuardarPendiente()">
+                                        <i class="material-icons">save</i> Guardar Pendiente
+                                    </button>
+                                @else
+                                    <button type="button" class="btn btn-warning btn-lg ml-2" onclick="mostrarModalGuardarPendiente()">
+                                        <i class="material-icons">edit</i> Actualizar Pendiente
+                                    </button>
+                                @endif
+                                <button type="button" class="btn btn-danger btn-lg ml-2" onclick="rechazarNota({{ $cotizacion->id }})">
                                     <i class="material-icons">close</i> Rechazar
                                 </button>
                             @endif
@@ -647,7 +750,92 @@ $(document).ready(function() {
 </script>
 @endpush
 
-@endsection
+<!-- Modal para Guardar Pendiente de Entrega -->
+<div class="modal fade" id="modalGuardarPendiente" tabindex="-1" role="dialog" aria-labelledby="modalGuardarPendienteLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-white">
+                <h5 class="modal-title" id="modalGuardarPendienteLabel">
+                    <i class="material-icons">save</i>
+                    Guardar como Pendiente de Entrega
+                </h5>
+                <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="material-icons">info</i>
+                    <strong>Información:</strong> Esta acción marcará la nota de venta como "Pendiente de Entrega" para uso interno.
+                    Los productos que no están disponibles se entregarán cuando lleguen al almacén.
+                </div>
+                
+                <form id="formGuardarPendiente" action="{{ route('aprobaciones.guardar-pendiente-entrega', $cotizacion->id) }}" method="POST">
+                    @csrf
+                    <div class="form-group">
+                        <label for="observaciones_picking" class="bmd-label-floating">
+                            <i class="material-icons">comment</i>
+                            Observaciones Internas <span class="text-danger">*</span>
+                        </label>
+                        <textarea 
+                            class="form-control" 
+                            id="observaciones_picking" 
+                            name="observaciones_picking" 
+                            rows="4" 
+                            maxlength="1000"
+                            placeholder="Ejemplo: Producto ABC123 llegará mañana, Producto XYZ789 llegará en 3 días..."
+                            required>{{ old('observaciones_picking', $cotizacion->observaciones_picking) }}</textarea>
+                        <small class="form-text text-muted">
+                            <i class="material-icons">info</i>
+                            Describe qué productos están pendientes y cuándo llegarán (máximo 1000 caracteres)
+                        </small>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;">Pend.</th>
+                                    <th>Producto</th>
+                                    <th class="text-right">Cant.</th>
+                                    <th class="text-right">Stock Disp.</th>
+                                    <th>Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($cotizacion->productos as $producto)
+                                <tr>
+                                    <td>
+                                        <input type="checkbox" name="productos_pendientes[]" value="{{ $producto->id }}" @if($producto->pendiente_entrega ?? false) checked @endif>
+                                    </td>
+                                    <td>{{ $producto->codigo_producto }} - {{ $producto->nombre_producto }}</td>
+                                    <td class="text-right">{{ number_format($producto->cantidad, 0) }}</td>
+                                    <td class="text-right">{{ number_format($producto->stock_disponible ?? 0, 0) }}</td>
+                                    <td>
+                                        @if($producto->pendiente_entrega ?? false)
+                                            <span class="badge badge-warning">Pendiente</span>
+                                        @else
+                                            <span class="badge badge-success">Embalado</span>
+                                        @endif
+                                    </td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                    <i class="material-icons">close</i> Cancelar
+                </button>
+                <button type="button" class="btn btn-warning" onclick="guardarPendienteEntrega()">
+                    <i class="material-icons">save</i> Guardar Pendiente
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
 @push('js')
 <script>
@@ -825,6 +1013,33 @@ function confirmarAprobacionPicking(event) {
     return false; // Prevenir el envío automático ya que lo hacemos manualmente
 }
 
+// Función para mostrar modal de guardar pendiente
+function mostrarModalGuardarPendiente() {
+    $('#modalGuardarPendiente').modal('show');
+}
+
+// Función para guardar como pendiente de entrega
+function guardarPendienteEntrega() {
+    const observaciones = document.getElementById('observaciones_picking').value.trim();
+    
+    if (!observaciones) {
+        alert('Por favor, ingresa las observaciones sobre los productos pendientes.');
+        return;
+    }
+    
+    if (observaciones.length < 10) {
+        alert('Las observaciones deben tener al menos 10 caracteres.');
+        return;
+    }
+    
+    if (!confirm('¿Estás seguro de guardar esta nota de venta como pendiente de entrega?')) {
+        return;
+    }
+    
+    // Enviar el formulario
+    document.getElementById('formGuardarPendiente').submit();
+}
+
 // Ver detalle de NVV en sistema SQL Server
 function verDetalleNVV(numeroNVV) {
     alert('🔍 Consultando NVV N° ' + numeroNVV + ' en SQL Server...\n\n' +
@@ -916,8 +1131,23 @@ function guardarCantidad(productoId) {
 // Guardar cantidad a separar
 function guardarSeparar(productoId) {
     const separarInput = document.querySelector(`input[data-producto-id="${productoId}"].separar-input`);
-    const cantidadSeparar = parseFloat(separarInput.value) || 0;
+    const cantidadSepararRaw = parseFloat(separarInput.value) || 0;
     const cantidadMaxima = parseFloat(separarInput.max) || 0;
+    const multiplo = parseInt(separarInput.getAttribute('data-multiplo')) || 1;
+
+    // Ajustar a múltiplos válidos
+    let cantidadSeparar = cantidadSepararRaw;
+    if (multiplo > 1) {
+        cantidadSeparar = Math.floor(cantidadSepararRaw / multiplo) * multiplo;
+        if (cantidadSeparar === 0 && cantidadSepararRaw > 0) {
+            cantidadSeparar = multiplo; // mínimo el primer múltiplo
+        }
+        // No exceder máximo
+        if (cantidadSeparar > cantidadMaxima) {
+            cantidadSeparar = Math.floor(cantidadMaxima / multiplo) * multiplo;
+        }
+        separarInput.value = cantidadSeparar; // reflejar ajuste
+    }
     
     if (cantidadSeparar < 0) {
         showNotification('La cantidad a separar no puede ser negativa', 'warning');
@@ -1006,7 +1236,14 @@ function guardarTodasLasCantidades() {
 // Separar producto individual
 function separarProductoIndividual(productoId) {
     const separarInput = document.querySelector(`input[data-producto-id="${productoId}"].separar-input`);
-    const cantidadSeparar = parseFloat(separarInput?.value) || 0;
+    const cantidadSepararRaw = parseFloat(separarInput?.value) || 0;
+    const multiplo = parseInt(separarInput?.getAttribute('data-multiplo')) || 1;
+    let cantidadSeparar = cantidadSepararRaw;
+    if (multiplo > 1) {
+        cantidadSeparar = Math.floor(cantidadSepararRaw / multiplo) * multiplo;
+        if (cantidadSeparar === 0 && cantidadSepararRaw > 0) cantidadSeparar = multiplo;
+        separarInput.value = cantidadSeparar;
+    }
     
     console.log('Producto ID:', productoId);
     console.log('Input encontrado:', separarInput);
@@ -1171,6 +1408,150 @@ function separarProductosSeleccionados() {
     }
 }
 
+// Función para actualizar descuento en tiempo real
+function actualizarDescuento(productoId) {
+    const input = document.querySelector(`input[data-producto-id="${productoId}"]`);
+    if (!input) {
+        console.error('No se encontró el input para el producto:', productoId);
+        return;
+    }
+    
+    const porcentaje = parseFloat(input.value) || 0;
+    
+    // Validar que el porcentaje esté entre 0 y 100
+    if (porcentaje < 0 || porcentaje > 100) {
+        alert('El descuento debe estar entre 0 y 100%');
+        input.value = 0;
+        return;
+    }
+    
+    // Obtener datos del producto desde la fila de la tabla
+    const row = input.closest('tr');
+    if (!row) {
+        console.error('No se encontró la fila para el producto:', productoId);
+        return;
+    }
+    
+    // Obtener cantidad y precio desde data-* del <tr>
+    const cantidad = parseFloat(row?.dataset?.cantidad || '0');
+    const precioUnitario = parseFloat(row?.dataset?.precio || '0');
+    
+    // Calcular valores
+    const subtotal = cantidad * precioUnitario;
+    const descuentoValor = (subtotal * porcentaje) / 100;
+    const subtotalConDescuento = subtotal - descuentoValor;
+    const iva = subtotalConDescuento * 0.19;
+    const total = subtotalConDescuento + iva;
+    
+    // Actualizar valores en la tabla usando clases específicas
+    const descuentoValorEl = row.querySelector(`.descuento-valor-${productoId}`);
+    const subtotalEl = row.querySelector(`.subtotal-con-descuento-${productoId}`);
+    const ivaEl = row.querySelector(`.iva-valor-${productoId}`);
+    const totalEl = row.querySelector(`.total-${productoId}`);
+    
+    if (descuentoValorEl) {
+        descuentoValorEl.textContent = '$' + Math.round(descuentoValor).toLocaleString('es-CL');
+    } else {
+        console.warn('No se encontró el elemento de descuento valor para el producto:', productoId);
+    }
+    
+    if (subtotalEl) {
+        subtotalEl.textContent = '$' + Math.round(subtotalConDescuento).toLocaleString('es-CL');
+    } else {
+        console.warn('No se encontró el elemento de subtotal para el producto:', productoId);
+    }
+    
+    if (ivaEl) {
+        ivaEl.textContent = '$' + Math.round(iva).toLocaleString('es-CL');
+    } else {
+        console.warn('No se encontró el elemento de IVA para el producto:', productoId);
+    }
+    
+    if (totalEl) {
+        totalEl.textContent = '$' + Math.round(total).toLocaleString('es-CL');
+    } else {
+        console.warn('No se encontró el elemento de total para el producto:', productoId);
+    }
+}
+
+// Función para guardar cambios de descuentos
+function guardarCambiosDescuentos(notaId) {
+    const descuentos = [];
+    
+    // Recopilar todos los descuentos modificados
+    document.querySelectorAll('.descuento-porcentaje').forEach(input => {
+        const productoId = input.dataset.productoId;
+        const porcentaje = parseFloat(input.value) || 0;
+        
+        descuentos.push({
+            producto_id: productoId,
+            descuento_porcentaje: porcentaje
+        });
+    });
+    
+    if (descuentos.length === 0) {
+        alert('No hay descuentos para guardar');
+        return;
+    }
+    
+    // Buscar el botón de guardar
+    const btn = document.getElementById('btnGuardarDescuentos');
+    let originalText = '';
+    if (btn) {
+        originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="material-icons">hourglass_empty</i> Guardando...';
+    }
+    
+    // Enviar petición AJAX
+    fetch(`/aprobaciones/${notaId}/modificar-descuentos`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+        },
+        body: JSON.stringify({
+            descuentos: descuentos
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.text().then(text => {
+                throw new Error(text);
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            showNotification('Descuentos actualizados correctamente', 'success');
+            if (data.totales) {
+                const resumenSub = document.getElementById('resumen-subtotal');
+                const resumenDesc = document.getElementById('resumen-descuento');
+                const resumenTotal = document.getElementById('resumen-total');
+                if (resumenSub) resumenSub.textContent = '$' + Math.round(data.totales.subtotal_neto || 0).toLocaleString('es-CL');
+                if (resumenDesc) resumenDesc.textContent = '$' + Math.round(data.totales.descuento || 0).toLocaleString('es-CL');
+                if (resumenTotal) resumenTotal.textContent = '$' + Math.round(data.totales.total || 0).toLocaleString('es-CL');
+            }
+            if (btn) { btn.disabled = false; btn.innerHTML = originalText; }
+        } else {
+            showNotification('Error al actualizar descuentos: ' + (data.message || 'Error desconocido'), 'error');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Error al actualizar descuentos: ' + error.message, 'error');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    });
+}
+
 // Mostrar notificación
 function showNotification(message, type = 'info') {
     // Crear elemento de notificación
@@ -1198,5 +1579,99 @@ function showNotification(message, type = 'info') {
         }
     }, 5000);
 }
+
+// Función para sincronizar stock desde SQL Server
+function sincronizarStock() {
+    const btn = document.getElementById('btnSincronizarStock');
+    
+    if (!btn) {
+        console.error('Error: No se encontró el botón de sincronización');
+        showNotification('Error: No se encontró el botón de sincronización', 'error');
+        return;
+    }
+    
+    // Confirmar antes de sincronizar
+    if (!confirm('¿Está seguro de que desea sincronizar el stock de productos desde SQL Server? Esto puede tomar varios minutos si hay muchos productos.')) {
+        return;
+    }
+    
+    const originalText = btn.innerHTML;
+    
+    // Deshabilitar botón y mostrar estado de carga
+    btn.disabled = true;
+    btn.innerHTML = '<i class="material-icons">hourglass_empty</i> Sincronizando...';
+    
+    // Mostrar modal de sincronización
+    const modal = document.getElementById('modalSincronizacion');
+    const mensajeSincronizacion = document.getElementById('mensajeSincronizacion');
+    const detalleSincronizacion = document.getElementById('detalleSincronizacion');
+    const progressText = document.getElementById('progressText');
+    
+    if (modal) {
+        mensajeSincronizacion.textContent = 'Sincronizando productos desde SQL Server...';
+        detalleSincronizacion.textContent = 'Por favor, espere. Esto puede tomar varios minutos.';
+        progressText.textContent = 'Iniciando sincronización...';
+        $(modal).modal('show');
+    }
+    
+    // Iniciar tiempo de sincronización
+    const startTime = Date.now();
+    
+    fetch('{{ route("aprobaciones.sincronizar-stock", $cotizacion->id) }}', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(0);
+        
+        // Cerrar modal
+        if (modal) {
+            $(modal).modal('hide');
+        }
+        
+        if (data.success) {
+            // Mostrar mensaje de éxito con detalles
+            const productosSync = data.productos_sincronizados || 0;
+            const mensaje = `Stock sincronizado exitosamente.\n${productosSync} productos actualizados.\nTiempo: ${elapsedTime} segundos`;
+            showNotification(mensaje, 'success');
+            
+            // Recargar la página para ver los cambios de stock
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            showNotification(data.message || 'Error al sincronizar stock', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        
+        // Cerrar modal
+        if (modal) {
+            $(modal).modal('hide');
+        }
+        
+        showNotification('Error al sincronizar stock: ' + (error.message || 'Por favor, intente nuevamente.'), 'error');
+    })
+    .finally(() => {
+        // Restaurar botón
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    });
+}
 </script>
 @endpush
+
+@endsection

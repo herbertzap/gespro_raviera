@@ -20,60 +20,96 @@
             </div>
         </div>
 
-        <!-- Solo 3 Tarjetas Principales -->
+        <!-- Primera fila: Cards principales -->
         <div class="row">
-            <!-- 1. Facturas Pendientes -->
-            <div class="col-lg-4 col-md-6 col-sm-6">
-                <div class="card card-stats">
-                    <div class="card-header card-header-danger card-header-icon">
-                        <div class="card-icon">
-                            <i class="material-icons">receipt</i>
-                        </div>
-                        <p class="card-category">Facturas Pendientes</p>
-                        <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_FACTURAS_PENDIENTES'] ?? 0) }}</h3>
-                    </div>
-                    <div class="card-footer">
-                        <div class="stats">
-                            <i class="material-icons text-danger">receipt</i>
-                            <a href="{{ route('facturas-pendientes.index') }}" class="text-danger">Ver detalles</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 2. Total Notas de Venta en SQL -->
-            <div class="col-lg-4 col-md-6 col-sm-6">
-                <div class="card card-stats">
-                    <div class="card-header card-header-info card-header-icon">
-                        <div class="card-icon">
-                            <i class="material-icons">storage</i>
-                        </div>
-                        <p class="card-category">NVV en Sistema</p>
-                        <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_NOTAS_VENTA_SQL'] ?? 0) }}</h3>
-                    </div>
-                    <div class="card-footer">
-                        <div class="stats">
-                            <i class="material-icons text-info">storage</i>
-                            <a href="#notas-sql" class="text-info">Ver en sistema</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 3. Notas Pendientes por Validar -->
-            <div class="col-lg-4 col-md-6 col-sm-6">
+            <!-- 1. NVV Por Validar -->
+            <div class="col-lg-2 col-md-4 col-sm-6">
                 <div class="card card-stats">
                     <div class="card-header card-header-warning card-header-icon">
                         <div class="card-icon">
                             <i class="material-icons">pending_actions</i>
                         </div>
-                        <p class="card-category">Por Validar</p>
+                        <p class="card-category">NVV Por Validar</p>
                         <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_NOTAS_PENDIENTES_VALIDAR'] ?? 0) }}</h3>
                     </div>
                     <div class="card-footer">
                         <div class="stats">
                             <i class="material-icons text-warning">pending_actions</i>
                             <a href="{{ route('aprobaciones.index') }}" class="text-warning">Ver aprobaciones</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. NVV en Sistema Este Mes -->
+            <div class="col-lg-2 col-md-4 col-sm-6">
+                <div class="card card-stats">
+                    <div class="card-header card-header-info card-header-icon">
+                        <div class="card-icon">
+                            <i class="material-icons">storage</i>
+                        </div>
+                        <p class="card-category">NVV en Sistema Este Mes</p>
+                        <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_NOTAS_VENTA_MES_ACTUAL'] ?? 0) }}</h3>
+                    </div>
+                    <div class="card-footer">
+                        <div class="stats">
+                            <i class="material-icons text-info">date_range</i>
+                            {{ date('M Y') }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. Facturas Este Mes -->
+            <div class="col-lg-2 col-md-4 col-sm-6">
+                <div class="card card-stats">
+                    <div class="card-header card-header-danger card-header-icon">
+                        <div class="card-icon">
+                            <i class="material-icons">receipt</i>
+                        </div>
+                        <p class="card-category">Facturas Este Mes</p>
+                        <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_FACTURAS_MES_ACTUAL'] ?? 0) }}</h3>
+                    </div>
+                    <div class="card-footer">
+                        <div class="stats">
+                            <i class="material-icons text-danger">date_range</i>
+                            {{ date('M Y') }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- 4. Cheques en Cartera (Informativo) -->
+            <div class="col-lg-2 col-md-4 col-sm-6">
+                <div class="card card-stats">
+                    <div class="card-header card-header-success card-header-icon">
+                        <div class="card-icon">
+                            <i class="material-icons">account_balance</i>
+                        </div>
+                        <p class="card-category">Cheques en Cartera</p>
+                        <h3 class="card-title">${{ number_format($resumenCobranza['CHEQUES_EN_CARTERA'] ?? 0, 0) }}</h3>
+                    </div>
+                    <div class="card-footer">
+                        <div class="stats">
+                            <i class="material-icons text-success">account_balance_wallet</i>
+                            En cartera
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- 5. Cheques Protestados (Informativo) -->
+            <div class="col-lg-2 col-md-4 col-sm-6">
+                <div class="card card-stats">
+                    <div class="card-header card-header-danger card-header-icon">
+                        <div class="card-icon">
+                            <i class="material-icons">warning</i>
+                        </div>
+                        <p class="card-category">Cheques Protestados</p>
+                        <h3 class="card-title">${{ number_format($resumenCobranza['CHEQUES_PROTESTADOS'] ?? 0, 0) }}</h3>
+                    </div>
+                    <div class="card-footer">
+                        <div class="stats">
+                            <i class="material-icons text-danger">block</i>
+                            Requieren atención
                         </div>
                     </div>
                 </div>
@@ -185,7 +221,7 @@
             <div class="col-md-12">
                 <div class="card">
                     <div class="card-header card-header-danger">
-                        <h4 class="card-title">Facturas Pendientes</h4>
+                        <h4 class="card-title">Últimas 10 Facturas Pendientes</h4>
                         <p class="card-category">Facturas por cobrar del sistema SQL Server</p>
                     </div>
                     <div class="card-body">

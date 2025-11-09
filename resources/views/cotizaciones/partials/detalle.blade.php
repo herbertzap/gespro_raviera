@@ -39,14 +39,14 @@
     </div>
     @endif
 
-    <!-- Información de la Cotización -->
+    <!-- Información de la Nota de Venta -->
     <div class="row mb-4">
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header">
                     <h4 class="card-title">
                         <i class="tim-icons icon-notes"></i>
-                        Información de la Cotización
+                        Información de la Nota de Venta
                     </h4>
                 </div>
                 <div class="card-body">
@@ -64,21 +64,41 @@
                                 <br><small class="text-success"><i class="tim-icons icon-check-2"></i> NVV #{{ $cotizacion->numero_nvv }} en SQL</small>
                             @endif
                         </div>
+                        @php
+                            // Calcular totales para la información general
+                            $totalDescuentoGeneral = 0;
+                            $totalSubtotalGeneral = 0;
+                            $totalIvaGeneral = 0;
+                            $totalGeneralFinal = 0;
+                            
+                            foreach($productosCotizacion as $producto) {
+                                $descuentoPorcentaje = $producto['descuento'] ?? 0;
+                                $descuentoValor = $producto['descuento_valor'] ?? (($producto['cantidad'] * $producto['precio']) * ($descuentoPorcentaje / 100));
+                                $subtotalConDescuento = $producto['subtotal_con_descuento'] ?? (($producto['cantidad'] * $producto['precio']) - $descuentoValor);
+                                $ivaValor = $producto['iva_valor'] ?? ($subtotalConDescuento * 0.19);
+                                $totalProducto = $producto['total_producto'] ?? ($subtotalConDescuento + $ivaValor);
+                                
+                                $totalDescuentoGeneral += $descuentoValor;
+                                $totalSubtotalGeneral += $subtotalConDescuento;
+                                $totalIvaGeneral += $ivaValor;
+                                $totalGeneralFinal += $totalProducto;
+                            }
+                        @endphp
                         <div class="col-md-2">
                             <strong>Subtotal:</strong><br>
-                            ${{ number_format($cotizacion->subtotal ?? 0, 0, ',', '.') }}
+                            ${{ number_format($totalSubtotalGeneral, 0, ',', '.') }}
                         </div>
                         <div class="col-md-2">
                             <strong>Descuento:</strong><br>
-                            <span class="text-danger">${{ number_format($cotizacion->descuento_global ?? 0, 0, ',', '.') }}</span>
+                            <span class="text-danger">${{ number_format($totalDescuentoGeneral, 0, ',', '.') }}</span>
                         </div>
                         <div class="col-md-2">
                             <strong>IVA (19%):</strong><br>
-                            <span class="text-info">${{ number_format($cotizacion->iva ?? 0, 0, ',', '.') }}</span>
+                            <span class="text-info">${{ number_format($totalIvaGeneral, 0, ',', '.') }}</span>
                         </div>
                         <div class="col-md-2">
                             <strong>Total (c/IVA):</strong><br>
-                            <span class="h5 text-success">${{ number_format($cotizacion->total ?? 0, 0, ',', '.') }}</span>
+                            <span class="h5 text-success">${{ number_format($totalGeneralFinal, 0, ',', '.') }}</span>
                         </div>
                     </div>
                     @if($cotizacion->observaciones)
@@ -145,12 +165,32 @@
                                 @endforeach
                             </tbody>
                             <tfoot>
+                                @php
+                                    // Calcular totales sumando los valores de los productos
+                                    $totalDescuento = 0;
+                                    $totalSubtotal = 0;
+                                    $totalIva = 0;
+                                    $totalGeneral = 0;
+                                    
+                                    foreach($productosCotizacion as $producto) {
+                                        $descuentoPorcentaje = $producto['descuento'] ?? 0;
+                                        $descuentoValor = $producto['descuento_valor'] ?? (($producto['cantidad'] * $producto['precio']) * ($descuentoPorcentaje / 100));
+                                        $subtotalConDescuento = $producto['subtotal_con_descuento'] ?? (($producto['cantidad'] * $producto['precio']) - $descuentoValor);
+                                        $ivaValor = $producto['iva_valor'] ?? ($subtotalConDescuento * 0.19);
+                                        $totalProducto = $producto['total_producto'] ?? ($subtotalConDescuento + $ivaValor);
+                                        
+                                        $totalDescuento += $descuentoValor;
+                                        $totalSubtotal += $subtotalConDescuento;
+                                        $totalIva += $ivaValor;
+                                        $totalGeneral += $totalProducto;
+                                    }
+                                @endphp
                                 <tr class="table-info">
                                     <td colspan="5" class="text-right"><strong>TOTALES:</strong></td>
-                                    <td class="text-danger"><strong>${{ number_format($cotizacion->descuento_global ?? 0, 0, ',', '.') }}</strong></td>
-                                    <td><strong>${{ number_format($cotizacion->subtotal_neto ?? 0, 0, ',', '.') }}</strong></td>
-                                    <td class="text-info"><strong>${{ number_format($cotizacion->iva ?? 0, 0, ',', '.') }}</strong></td>
-                                    <td class="text-success"><strong>${{ number_format($cotizacion->total ?? 0, 0, ',', '.') }}</strong></td>
+                                    <td class="text-danger"><strong>${{ number_format($totalDescuento, 0, ',', '.') }}</strong></td>
+                                    <td><strong>${{ number_format($totalSubtotal, 0, ',', '.') }}</strong></td>
+                                    <td class="text-info"><strong>${{ number_format($totalIva, 0, ',', '.') }}</strong></td>
+                                    <td class="text-success"><strong>${{ number_format($totalGeneral, 0, ',', '.') }}</strong></td>
                                 </tr>
                             </tfoot>
                         </table>

@@ -149,52 +149,67 @@ class DashboardController extends Controller
     private function getSupervisorDashboard($user)
     {
         try {
-            // 1. FACTURAS PENDIENTES (cantidad y listado) - Solo 10 más recientes
-            $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 10); // Sin filtro de vendedor, limitado a 10
-            $totalFacturasPendientes = count($facturasPendientes);
+            // 1. FACTURAS PENDIENTES (listado) - Solo 10 más recientes para la tabla
+            $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 10);
+            
+            // 2. RESUMEN DE FACTURAS PENDIENTES - TOTAL REAL de todas las facturas del sistema
+            $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes(null);
+            $totalFacturasPendientes = $resumenFacturasPendientes['total_facturas'] ?? 0;
+            
+            // 3. FACTURAS DEL MES ACTUAL
+            $facturasMesActual = $this->cobranzaService->getFacturasPendientesMesActual(null);
+            
+            // 4. TOTAL NOTAS DE VENTAS PENDIENTES POR VALIDAR (cantidad) - TODAS las notas pendientes
+            $notasPendientesSupervisor = Cotizacion::where(function($query) {
+                $query->where('estado_aprobacion', 'pendiente')
+                      ->orWhere('estado_aprobacion', 'pendiente_picking')
+                      ->orWhere('estado_aprobacion', 'aprobada_supervisor');
+            })->count();
 
-            // 2. TOTAL NOTAS DE VENTAS EN SQL (cantidad) - TODAS las notas del sistema
-            $totalNotasVentaSQL = $this->cobranzaService->getTotalNotasVentaSQL();
-
-            // 3. TOTAL NOTAS DE VENTAS PENDIENTES POR VALIDAR (cantidad) - TODAS las notas pendientes
-            $notasPendientesSupervisor = Cotizacion::where('estado_aprobacion', 'pendiente')
-                ->orWhere('estado_aprobacion', 'pendiente_picking')
-                ->orWhere('estado_aprobacion', 'aprobada_supervisor')
-                ->count();
-
-            // 4. NOTAS DE VENTA PENDIENTES (listado limitado) - Solo 10 más recientes
-            $notasPendientes = Cotizacion::where('estado_aprobacion', 'pendiente')
-                ->orWhere('estado_aprobacion', 'pendiente_picking')
-                ->orWhere('estado_aprobacion', 'aprobada_supervisor')
+            // 5. NOTAS DE VENTA PENDIENTES (listado limitado) - Solo 10 más recientes
+            $notasPendientes = Cotizacion::where(function($query) {
+                $query->where('estado_aprobacion', 'pendiente')
+                      ->orWhere('estado_aprobacion', 'pendiente_picking')
+                      ->orWhere('estado_aprobacion', 'aprobada_supervisor');
+            })
                 ->with(['user', 'cliente'])
                 ->latest()
                 ->take(10)
                 ->get();
 
-            // 5. NOTAS DE VENTA EN SQL (listado limitado) - Solo 10 más recientes
+            // 6. NOTAS DE VENTA EN SQL (listado limitado) - Solo 10 más recientes
             $notasVentaSQL = $this->cobranzaService->getNotasVentaSQL(10);
+            
+            // 7. NVV DEL MES ACTUAL (cantidad)
+            $nvvMesActual = $this->cobranzaService->getTotalNotasVentaMesActual();
 
-            // 6. CHEQUES EN CARTERA - TODOS los cheques del sistema
-            $chequesEnCartera = $this->cobranzaService->getChequesEnCartera(null); // Sin filtro de vendedor
+            // 8. CHEQUES EN CARTERA - TODOS los cheques del sistema
+            $chequesEnCartera = $this->cobranzaService->getChequesEnCartera(null);
 
-            // 7. RESUMEN DE FACTURAS PENDIENTES - TODAS las facturas del sistema
-            $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes(null); // Sin filtro de vendedor
+            // 9. CHEQUES PROTESTADOS - TODOS los cheques protestados del sistema
+            $chequesProtestados = $this->cobranzaService->getChequesProtestados(null);
 
             // Resumen para las tarjetas principales
             $resumenCobranza = [
-                'TOTAL_FACTURAS_PENDIENTES' => $totalFacturasPendientes,
-                'TOTAL_NOTAS_VENTA_SQL' => $totalNotasVentaSQL,
+                'TOTAL_FACTURAS_PENDIENTES' => $totalFacturasPendientes, // Total real, no solo 10
+                'TOTAL_NOTAS_VENTA_SQL' => $this->cobranzaService->getTotalNotasVentaSQL(),
+                'TOTAL_NOTAS_VENTA_MES_ACTUAL' => $nvvMesActual,
+                'TOTAL_FACTURAS_MES_ACTUAL' => count($facturasMesActual),
                 'TOTAL_NOTAS_PENDIENTES_VALIDAR' => $notasPendientesSupervisor,
                 'TOTAL_FACTURAS' => $totalFacturasPendientes,
-                'TOTAL_NOTAS_VENTA' => $totalNotasVentaSQL,
+                'TOTAL_NOTAS_VENTA' => $this->cobranzaService->getTotalNotasVentaSQL(),
                 'CHEQUES_EN_CARTERA' => $chequesEnCartera,
-                'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor'] + $resumenFacturasPendientes['por_estado']['BLOQUEAR']['valor']
+                'CHEQUES_PROTESTADOS' => $chequesProtestados,
+                'SALDO_VENCIDO' => ($resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] ?? 0) + 
+                                   ($resumenFacturasPendientes['por_estado']['MOROSO']['valor'] ?? 0) + 
+                                   ($resumenFacturasPendientes['por_estado']['BLOQUEAR']['valor'] ?? 0)
             ];
 
             return [
                 'notasPendientes' => $notasPendientes,
                 'notasVentaSQL' => $notasVentaSQL,
-                'facturasPendientes' => $facturasPendientes, // Agregado para la tabla
+                'facturasPendientes' => $facturasPendientes, // Solo 10 para la tabla
+                'resumenFacturasPendientes' => $resumenFacturasPendientes, // Resumen completo
                 'resumenCobranza' => $resumenCobranza,
                 'tipoUsuario' => 'Supervisor'
             ];
@@ -207,13 +222,27 @@ class DashboardController extends Controller
                 'notasPendientes' => collect(),
                 'notasVentaSQL' => [],
                 'facturasPendientes' => [],
+                'resumenFacturasPendientes' => [
+                    'total_facturas' => 0,
+                    'total_saldo' => 0,
+                    'por_estado' => [
+                        'VIGENTE' => ['cantidad' => 0, 'valor' => 0],
+                        'POR VENCER' => ['cantidad' => 0, 'valor' => 0],
+                        'VENCIDO' => ['cantidad' => 0, 'valor' => 0],
+                        'MOROSO' => ['cantidad' => 0, 'valor' => 0],
+                        'BLOQUEAR' => ['cantidad' => 0, 'valor' => 0]
+                    ]
+                ],
                 'resumenCobranza' => [
                     'TOTAL_FACTURAS_PENDIENTES' => 0,
                     'TOTAL_NOTAS_VENTA_SQL' => 0,
+                    'TOTAL_NOTAS_VENTA_MES_ACTUAL' => 0,
+                    'TOTAL_FACTURAS_MES_ACTUAL' => 0,
                     'TOTAL_NOTAS_PENDIENTES_VALIDAR' => 0,
                     'TOTAL_FACTURAS' => 0,
                     'TOTAL_NOTAS_VENTA' => 0,
-                    'CHEQUES_EN_CARTERA' => 0
+                    'CHEQUES_EN_CARTERA' => 0,
+                    'CHEQUES_PROTESTADOS' => 0
                 ],
                 'tipoUsuario' => 'Supervisor'
             ];

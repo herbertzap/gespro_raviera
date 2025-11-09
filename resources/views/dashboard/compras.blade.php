@@ -22,26 +22,7 @@
 
         <!-- Solo 3 Tarjetas Principales -->
         <div class="row">
-            <!-- 1. Facturas Pendientes -->
-            <div class="col-lg-4 col-md-6 col-sm-6">
-                <div class="card card-stats">
-                    <div class="card-header card-header-danger card-header-icon">
-                        <div class="card-icon">
-                            <i class="material-icons">receipt</i>
-                        </div>
-                        <p class="card-category">Facturas Pendientes</p>
-                        <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_FACTURAS_PENDIENTES'] ?? 0) }}</h3>
-                    </div>
-                    <div class="card-footer">
-                        <div class="stats">
-                            <i class="material-icons text-danger">receipt</i>
-                            <a href="{{ route('facturas-pendientes.index') }}" class="text-danger">Ver detalles</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 2. Total Notas de Venta en SQL -->
+            <!-- 1. Total Notas de Venta en SQL -->
             <div class="col-lg-4 col-md-6 col-sm-6">
                 <div class="card card-stats">
                     <div class="card-header card-header-info card-header-icon">
@@ -180,81 +161,7 @@
             </div>
         </div>
 
-        <!-- Facturas Pendientes (col-12) -->
-        <div class="row">
-            <div class="col-md-12">
-                <div class="card">
-                    <div class="card-header card-header-danger">
-                        <h4 class="card-title">Facturas Pendientes</h4>
-                        <p class="card-category">Facturas por cobrar del sistema SQL Server</p>
-                    </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table">
-                                <thead class="text-danger">
-                                    <tr>
-                                        <th>Tipo</th>
-                                        <th>Número</th>
-                                        <th>Cliente</th>
-                                        <th>Vendedor</th>
-                                        <th>Valor</th>
-                                        <th>Abonos</th>
-                                        <th>Saldo</th>
-                                        <th>Días</th>
-                                        <th>Estado</th>
-                                        <th>Acción</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @forelse($facturasPendientes ?? [] as $factura)
-                                    <tr>
-                                        <td><span class="badge badge-danger">{{ $factura['TIPO_DOCTO'] }}</span></td>
-                                        <td>{{ $factura['NRO_DOCTO'] }}</td>
-                                        <td>{{ $factura['CLIENTE'] }}</td>
-                                        <td>{{ $factura['VENDEDOR'] }}</td>
-                                        <td>${{ number_format($factura['VALOR'], 0) }}</td>
-                                        <td>${{ number_format($factura['ABONOS'], 0) }}</td>
-                                        <td>
-                                            <span class="badge badge-{{ $factura['SALDO'] > 0 ? 'warning' : 'success' }}">
-                                                ${{ number_format($factura['SALDO'], 0) }}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="badge badge-{{ 
-                                                $factura['DIAS'] < 8 ? 'success' : 
-                                                ($factura['DIAS'] < 31 ? 'warning' : 
-                                                ($factura['DIAS'] < 61 ? 'danger' : 'dark')) 
-                                            }}">
-                                                {{ $factura['DIAS'] }}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="badge badge-{{ 
-                                                $factura['ESTADO'] == 'VIGENTE' ? 'success' : 
-                                                ($factura['ESTADO'] == 'POR VENCER' ? 'warning' : 
-                                                ($factura['ESTADO'] == 'VENCIDO' ? 'danger' : 'dark')) 
-                                            }}">
-                                                {{ $factura['ESTADO'] }}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <a href="{{ route('facturas-pendientes.ver', [$factura['TIPO_DOCTO'], $factura['NRO_DOCTO']]) }}" class="btn btn-sm btn-primary">
-                                                <i class="material-icons">visibility</i> Ver
-                                            </a>
-                                        </td>
-                                    </tr>
-                                    @empty
-                                    <tr>
-                                        <td colspan="10" class="text-center">No hay facturas pendientes</td>
-                                    </tr>
-                                    @endforelse
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <!-- (Sección de Facturas Pendientes removida para Compras) -->
 
         <!-- Acciones Rápidas -->
         <div class="row">
@@ -271,11 +178,7 @@
                                     <i class="material-icons">pending_actions</i> Notas Pendientes
                                 </a>
                             </div>
-                            <div class="col-md-3">
-                                <a href="{{ route('facturas-pendientes.index') }}" class="btn btn-danger btn-block">
-                                    <i class="material-icons">receipt</i> Facturas Sistema
-                                </a>
-                            </div>
+                            <!-- Botón Facturas Sistema removido para Compras -->
                             <div class="col-md-3">
                                 <a href="{{ route('productos.index') }}" class="btn btn-success btn-block">
                                     <i class="material-icons">inventory</i> Gestión Productos

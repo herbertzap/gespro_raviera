@@ -112,8 +112,8 @@
             </li>
             @endif
 
-            <!-- Informes -->
-            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Picking'))
+            <!-- Informes (oculto para Compras y Picking) -->
+            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Supervisor'))
             <li>
                 <a data-toggle="collapse" href="#Informes" aria-expanded="false">
                     <i class="tim-icons icon-chart-bar-32"></i>
@@ -128,12 +128,21 @@
                                 <p>{{ __('Estado Notas de Ventas por aprobadas por facturar') }}</p>
                             </a>
                         </li>
+                        <hr>
                         <li @if (($pageSlug ?? '') == 'facturas-pendientes') class="active " @endif>
                             <a href="{{ route('facturas-pendientes.index') }}">
                                 <i class="tim-icons icon-money-coins"></i>
                                 <p>{{ __('Estado de Facturas') }}</p>
                             </a>
                         </li>
+                        <hr>
+                        <li @if (($pageSlug ?? '') == 'facturas-emitidas') class="active " @endif>
+                            <a href="{{ route('facturas-emitidas.index') }}">
+                                <i class="tim-icons icon-chart-bar-32"></i>
+                                <p>{{ __('Informe de Facturas Emitidas') }}</p>
+                            </a>
+                        </li>
+                        <hr>
                     </ul>
                 </div>
             </li>

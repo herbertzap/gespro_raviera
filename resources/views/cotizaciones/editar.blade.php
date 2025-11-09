@@ -2,6 +2,102 @@
 
 @section('title', 'Editar Nota de Venta')
 
+@push('css')
+<style>
+    /* Fix específico para el problema de scroll en editar cotizaciones */
+    html, body {
+        overflow-y: auto !important;
+        height: auto !important;
+        min-height: 100vh !important;
+        max-height: none !important;
+        overflow: auto !important;
+    }
+    
+    .wrapper {
+        height: auto !important;
+        min-height: 100vh !important;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+    
+    .main-panel {
+        height: auto !important;
+        min-height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+    
+    /* Sobrescribir el CSS específico del dashboard que causa el problema */
+    .main-panel > .content {
+        height: auto !important;
+        min-height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        overflow-y: visible !important;
+        overflow-x: visible !important;
+        /* Mantener padding original del dashboard */
+        padding: 78px 30px 30px 280px;
+    }
+    
+    .content {
+        height: auto !important;
+        min-height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        overflow-y: visible !important;
+        overflow-x: visible !important;
+    }
+    
+    .container-fluid {
+        height: auto !important;
+        overflow: visible !important;
+    }
+    
+    /* Asegurar que las tarjetas no interfieran con el scroll */
+    .card {
+        overflow: visible !important;
+    }
+    
+    /* Fix para el navbar fijo */
+    .navbar {
+        position: relative !important;
+    }
+    
+    /* Asegurar que el scroll funcione en todos los elementos */
+    * {
+        box-sizing: border-box;
+    }
+    
+    /* Fix adicional específico para editar cotizaciones - Forzar scroll en body */
+    body {
+        overflow: auto !important;
+        overflow-y: auto !important;
+        height: auto !important;
+    }
+    
+    html {
+        overflow: auto !important;
+        overflow-y: auto !important;
+        height: auto !important;
+    }
+    
+    /* Forzar que el contenido no tenga scroll interno */
+    .main-panel > .content {
+        overflow: visible !important;
+        overflow-y: visible !important;
+        overflow-x: visible !important;
+        height: auto !important;
+        max-height: none !important;
+    }
+    
+    /* Asegurar que el wrapper permita scroll */
+    .wrapper {
+        overflow: visible !important;
+        height: auto !important;
+    }
+</style>
+@endpush
+
 @section('content')
 <div class="container-fluid">
     <div class="row">
@@ -82,7 +178,7 @@
                                 <div class="card-header card-header-primary">
                                     <h4 class="card-title">
                                         <i class="material-icons">shopping_cart</i>
-                                        Detalle de la Cotización
+                                        {{ $cotizacion->tipo_documento === 'nota_venta' ? 'Detalle de la Nota de Venta' : 'Detalle de la Cotización' }}
                                     </h4>
                                     <p class="card-category">Agregar productos a la cotización</p>
                                 </div>
@@ -154,19 +250,10 @@
                                                 <textarea class="form-control" id="observaciones" rows="3" placeholder="Observaciones adicionales..."></textarea>
                                             </div>
                                             
-                                            <div class="form-group">
-                                                <label for="fecha_despacho">Fecha de Despacho <span class="text-danger">*</span></label>
-                                                <input type="date" 
-                                                       class="form-control" 
-                                                       id="fecha_despacho" 
-                                                       name="fecha_despacho" 
-                                                       value="{{ $cotizacion->fecha_despacho ? $cotizacion->fecha_despacho->format('Y-m-d') : '' }}"
-                                                       required
-                                                       min="{{ $cotizacion->created_at->addDays(2)->format('Y-m-d') }}">
-                                                <small class="form-text text-muted">
-                                                    <i class="material-icons" style="font-size: 14px; vertical-align: middle;">info</i>
-                                                    La fecha de despacho debe ser al menos 2 días después de la creación ({{ $cotizacion->created_at->format('d/m/Y') }})
-                                                </small>
+                                            <input type="hidden" id="fecha_despacho" name="fecha_despacho" value="{{ $cotizacion->fecha ? $cotizacion->fecha->format('Y-m-d') : date('Y-m-d') }}">
+                                            <div class="form-group" style="display:none;">
+                                                <label for="fecha_despacho">Fecha de Despacho</label>
+                                                <input type="date" class="form-control" value="{{ $cotizacion->fecha ? $cotizacion->fecha->format('Y-m-d') : date('Y-m-d') }}" disabled>
                                             </div>
                                         </div>
                                         <div class="col-md-6">
@@ -221,10 +308,19 @@
                                     <!-- Botones de Acción -->
                                     <div class="row mt-4">
                                         <div class="col-md-12 text-center">
-                                            <button type="button" id="btnGuardarNotaVenta" class="btn btn-success btn-lg" onclick="guardarNotaVenta()" {{ !$puedeGenerarNotaVenta ? 'disabled' : '' }}>
-                                                <i class="material-icons">save</i> Guardar Cotización
-                                            </button>
-                                            <a href="{{ route('cotizaciones.index') }}" class="btn btn-secondary btn-lg">
+                                            @if($cotizacion->tipo_documento === 'cotizacion')
+                                                <button type="button" id="btnGuardarNotaVenta" class="btn btn-success btn-lg" onclick="guardarNotaVenta()" {{ !$puedeGenerarNotaVenta ? 'disabled' : '' }}>
+                                                    <i class="material-icons">save</i> Actualizar Cotización
+                                                </button>
+                                                <button type="button" id="btnGuardarComoNVV" class="btn btn-warning btn-lg ml-2" onclick="guardarComoNVV()">
+                                                    <i class="material-icons">transform</i> Guardar como NVV
+                                                </button>
+                                            @else
+                                                <button type="button" id="btnGuardarNotaVenta" class="btn btn-success btn-lg" onclick="guardarNotaVenta()" {{ !$puedeGenerarNotaVenta ? 'disabled' : '' }}>
+                                                    <i class="material-icons">save</i> Actualizar NVV
+                                                </button>
+                                            @endif
+                                            <a href="{{ route('cotizaciones.index') }}" class="btn btn-secondary btn-lg ml-2">
                                                 <i class="material-icons">cancel</i> Cancelar
                                             </a>
                                         </div>
@@ -927,8 +1023,12 @@ function guardarNotaVenta() {
         _token: document.querySelector('meta[name="csrf-token"]').getAttribute('content')
     };
 
-    fetch('/cotizacion/actualizar/{{ $cotizacion->id }}', {
-        method: 'PUT',
+    // Determinar la URL según el tipo de documento
+    const url = '{{ $cotizacion->tipo_documento === "nota_venta" ? "/nota-venta/actualizar/" : "/cotizacion/actualizar/" }}{{ $cotizacion->id }}';
+    const method = 'PUT'; // Ambos usan PUT
+    
+    fetch(url, {
+        method: method,
         headers: {
             'Content-Type': 'application/json',
             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
@@ -938,8 +1038,10 @@ function guardarNotaVenta() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            alert('Nota de venta guardada exitosamente');
-            window.location.href = '/cotizaciones';
+            const mensaje = '{{ $cotizacion->tipo_documento === "nota_venta" ? "NVV actualizada exitosamente" : "Cotización actualizada exitosamente" }}';
+            alert(mensaje);
+            const redirectUrl = '{{ $cotizacion->tipo_documento === "nota_venta" ? "/cotizaciones?tipo_documento=nota_venta" : "/cotizaciones?tipo_documento=cotizacion" }}';
+            window.location.href = redirectUrl;
         } else {
             alert('Error: ' + data.message);
             // Restaurar botón en caso de error
@@ -963,9 +1065,148 @@ function guardarCotizacion() {
     guardarNotaVenta();
 }
 
+// Función para guardar como NVV
+function guardarComoNVV() {
+    // Verificar si ya se está procesando
+    if (guardandoNotaVenta) {
+        alert('Ya se está procesando una solicitud, por favor espere...');
+        return;
+    }
+
+    // Verificar que hay productos
+    if (productosCotizacion.length === 0) {
+        alert('Debe agregar al menos un producto antes de guardar como NVV');
+        return;
+    }
+
+    // Verificar que hay cliente
+    if (!clienteData || !clienteData.codigo) {
+        alert('No hay cliente seleccionado');
+        return;
+    }
+
+    // Confirmar conversión
+    if (!confirm('¿Estás seguro de convertir esta cotización a Nota de Venta?\n\nUna vez convertida, entrará al flujo de aprobaciones (Supervisor, Compras, Picking).')) {
+        return;
+    }
+
+    // Marcar como procesando y deshabilitar botón
+    guardandoNotaVenta = true;
+    const btn = document.getElementById('btnGuardarComoNVV');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="material-icons">hourglass_empty</i> Guardando como NVV...';
+
+    const observaciones = document.getElementById('observaciones').value;
+    
+    const cotizacionData = {
+        cliente_codigo: clienteData.codigo,
+        cliente_nombre: clienteData.nombre,
+        productos: productosCotizacion,
+        observaciones: observaciones,
+        // Campos específicos para NVV
+        numero_orden_compra: document.getElementById('numero_orden_compra') ? document.getElementById('numero_orden_compra').value : '',
+        observacion_vendedor: document.getElementById('observacion_vendedor') ? document.getElementById('observacion_vendedor').value : '',
+        solicitar_descuento_extra: document.getElementById('solicitar_descuento_extra') ? document.getElementById('solicitar_descuento_extra').checked : false,
+        tipo_documento: 'nota_venta',
+        _token: document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+    };
+
+    fetch('/nota-venta/guardar', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        },
+        body: JSON.stringify(cotizacionData)
+    })
+    .then(response => {
+        // Detectar error 419 (CSRF token expirado)
+        if (response.status === 419) {
+            alert('⚠️ Tu sesión ha expirado. La página se recargará automáticamente.');
+            window.location.reload();
+            return;
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (!data) return; // Si hubo error 419, ya se manejó arriba
+        
+        if (data.success) {
+            const mensaje = 'Cotización convertida exitosamente a Nota de Venta';
+            alert(mensaje);
+            window.location.href = '/cotizaciones?tipo_documento=nota_venta';
+        } else {
+            alert('Error: ' + data.message);
+            // Restaurar botón en caso de error
+            guardandoNotaVenta = false;
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error al guardar como NVV');
+        // Restaurar botón en caso de error
+        guardandoNotaVenta = false;
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
+}
+
 // Configurar input de búsqueda cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🔍 DOM cargado, configurando input de búsqueda...');
+    
+    // Fix para el scroll - asegurar que funcione correctamente
+    document.body.style.overflow = 'auto';
+    document.body.style.height = 'auto';
+    document.body.style.minHeight = '100vh';
+    document.body.style.maxHeight = 'none';
+    
+    document.documentElement.style.overflow = 'auto';
+    document.documentElement.style.height = 'auto';
+    document.documentElement.style.minHeight = '100vh';
+    document.documentElement.style.maxHeight = 'none';
+    
+    // Remover cualquier altura fija que pueda estar causando problemas
+    const mainPanel = document.querySelector('.main-panel');
+    if (mainPanel) {
+        mainPanel.style.height = 'auto';
+        mainPanel.style.minHeight = 'auto';
+        mainPanel.style.maxHeight = 'none';
+        mainPanel.style.overflow = 'visible';
+    }
+    
+    const content = document.querySelector('.content');
+    if (content) {
+        content.style.height = 'auto';
+        content.style.minHeight = 'auto';
+        content.style.maxHeight = 'none';
+        content.style.overflow = 'visible';
+    }
+    
+    // Forzar que el wrapper no tenga altura fija (solo en páginas de cotizaciones)
+    if (window.location.pathname.includes('/cotizacion/') || window.location.pathname.includes('/nota-venta/')) {
+        const wrapper = document.querySelector('.wrapper');
+        if (wrapper) {
+            wrapper.style.height = 'auto';
+            wrapper.style.minHeight = '100vh';
+            wrapper.style.maxHeight = 'none';
+            wrapper.style.overflow = 'visible';
+        }
+    }
+    
+    // Aplicar estilos después de un pequeño delay para asegurar que se apliquen
+    setTimeout(() => {
+        document.body.style.overflow = 'auto';
+        document.documentElement.style.overflow = 'auto';
+        if (mainPanel) mainPanel.style.overflow = 'visible';
+        if (content) content.style.overflow = 'visible';
+        if (wrapper && (window.location.pathname.includes('/cotizacion/') || window.location.pathname.includes('/nota-venta/'))) {
+            wrapper.style.overflow = 'visible';
+        }
+    }, 100);
     
     // Verificar si el cliente tiene lista de precios
     if (clienteData && (!clienteData.lista_precios_codigo || clienteData.lista_precios_codigo === '00' || clienteData.lista_precios_codigo === '0')) {
@@ -1005,12 +1246,18 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Inicializar tabla de productos si hay productos existentes
     if (productosCotizacion.length > 0) {
+        console.log('📦 Cargando productos existentes:', productosCotizacion.length);
+        // Recalcular subtotales para todos los productos existentes
+        productosCotizacion.forEach((producto, index) => {
+            actualizarSubtotal(index);
+        });
         actualizarTablaProductos();
         calcularTotales();
+    } else {
+        console.log('📦 No hay productos para cargar');
+        // Inicializar totales aunque no haya productos
+        calcularTotales();
     }
-    
-    // Inicializar totales
-    calcularTotales();
     
     console.log('✅ Configuración completada');
 });

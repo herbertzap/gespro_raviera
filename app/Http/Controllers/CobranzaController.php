@@ -32,8 +32,14 @@ class CobranzaController extends Controller
             'cheques_protestados' => request()->get('cheques_protestados', '')
         ];
         
-        // Obtener clientes asignados al vendedor
-        $clientes = $this->cobranzaService->getClientesPorVendedor($user->codigo_vendedor);
+        // Determinar código de vendedor: si es Supervisor, Compras, Picking o Super Admin, usar null para obtener todos los clientes
+        $codigoVendedor = null;
+        if ($user->hasRole('Vendedor') && $user->codigo_vendedor) {
+            $codigoVendedor = $user->codigo_vendedor;
+        }
+        
+        // Obtener clientes (todos si codigoVendedor es null, o solo del vendedor)
+        $clientes = $this->cobranzaService->getClientesPorVendedor($codigoVendedor);
         
         // Aplicar filtros
         $clientesFiltrados = $this->aplicarFiltrosClientes($clientes, $filtros);

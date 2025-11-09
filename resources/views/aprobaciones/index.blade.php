@@ -49,46 +49,67 @@
             <div class="col-md-12">
                 <div class="card">
                     <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-4">
-                                <div class="form-group">
-                                    <label for="buscar">Buscar por Cliente o Código</label>
-                                    <input type="text" id="buscar" class="form-control" placeholder="Buscar...">
+                        <form method="GET" action="{{ route('aprobaciones.index') }}" id="filtrosForm">
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="form-group">
+                                        <label for="buscar">Buscar por Cliente o Código</label>
+                                        <input type="text" id="buscar" name="buscar" class="form-control" placeholder="Buscar..." value="{{ request('buscar') }}">
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="form-group">
+                                        <label for="region">Región</label>
+                                        <select id="region" name="region" class="form-control">
+                                            <option value="">Todas</option>
+                                            @foreach($regiones ?? [] as $region)
+                                                <option value="{{ $region }}" {{ request('region') == $region ? 'selected' : '' }}>{{ $region }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="form-group">
+                                        <label for="comuna">Comuna</label>
+                                        <select id="comuna" name="comuna" class="form-control">
+                                            <option value="">Todas</option>
+                                            @foreach($comunas ?? [] as $comuna)
+                                                <option value="{{ $comuna }}" {{ request('comuna') == $comuna ? 'selected' : '' }}>{{ $comuna }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="form-group">
+                                        <label for="fecha_desde">Fecha Desde</label>
+                                        <input type="date" id="fecha_desde" name="fecha_desde" class="form-control" value="{{ request('fecha_desde') }}">
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="form-group">
+                                        <label for="fecha_hasta">Fecha Hasta</label>
+                                        <input type="date" id="fecha_hasta" name="fecha_hasta" class="form-control" value="{{ request('fecha_hasta') }}">
+                                    </div>
+                                </div>
+                                <div class="col-md-1">
+                                    <div class="form-group">
+                                        <label>&nbsp;</label>
+                                        <button type="submit" class="btn btn-primary btn-block">
+                                            <i class="material-icons">search</i> Filtrar
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="col-md-3">
-                                <div class="form-group">
-                                    <label for="estado">Estado</label>
-                                    <select id="estado" class="form-control">
-                                        <option value="">Todos</option>
-                                        <option value="pendiente">Pendiente</option>
-                                        <option value="pendiente_picking">Pendiente Picking</option>
-                                        <option value="aprobada_supervisor">Aprobada Supervisor</option>
-                                        <option value="aprobada_compras">Aprobada Compras</option>
-                                        <option value="rechazada">Rechazada</option>
-                                    </select>
+                            @if(request()->hasAny(['region', 'comuna', 'fecha_desde', 'fecha_hasta', 'buscar']))
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <a href="{{ route('aprobaciones.index') }}" class="btn btn-sm btn-secondary">
+                                        <i class="material-icons">clear</i> Limpiar Filtros
+                                    </a>
                                 </div>
                             </div>
-                            <div class="col-md-3">
-                                <div class="form-group">
-                                    <label for="vendedor">Vendedor</label>
-                                    <select id="vendedor" class="form-control">
-                                        <option value="">Todos</option>
-                                        @foreach($cotizaciones->pluck('user.name')->unique() as $vendedor)
-                                            <option value="{{ $vendedor }}">{{ $vendedor }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="col-md-2">
-                                <div class="form-group">
-                                    <label>&nbsp;</label>
-                                    <button type="button" class="btn btn-primary btn-block" onclick="aplicarFiltros()">
-                                        <i class="material-icons">search</i> Filtrar
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+                            @endif
+                        </form>
                     </div>
                 </div>
             </div>
@@ -127,6 +148,11 @@
                                                     <div>
                                                         <strong>{{ $cotizacion->cliente_codigo }}</strong><br>
                                                         <small>{{ Str::limit($cotizacion->cliente_nombre, 30) }}</small>
+                                                        @if($cotizacion->cliente)
+                                                            <br><small class="text-muted">
+                                                                {{ $cotizacion->cliente->comuna ?? '' }}{{ $cotizacion->cliente->region ? ', ' . $cotizacion->cliente->region : '' }}
+                                                            </small>
+                                                        @endif
                                                     </div>
                                                 </td>
                                                 <td>
@@ -142,6 +168,12 @@
                                                             @break
                                                         @case('pendiente_picking')
                                                             <span class="badge badge-info">Pendiente Picking</span>
+                                                            @break
+                                                        @case('pendiente_entrega')
+                                                            <span class="badge badge-warning">Pendiente de Entrega</span>
+                                                            @if($cotizacion->observaciones_picking)
+                                                                <br><small class="text-muted"><i class="material-icons">info</i> {{ Str::limit($cotizacion->observaciones_picking, 40) }}</small>
+                                                            @endif
                                                             @break
                                                         @case('aprobada_supervisor')
                                                             <span class="badge badge-success">Aprobada Supervisor</span>
@@ -206,74 +238,27 @@
 
 @push('js')
 <script>
-let cotizaciones = @json($cotizaciones);
-
-// Aplicar filtros
-function aplicarFiltros() {
-    const buscar = document.getElementById('buscar').value.toLowerCase();
-    const estado = document.getElementById('estado').value;
-    const vendedor = document.getElementById('vendedor').value;
-    
-    const filas = document.querySelectorAll('tbody tr');
-    
-    filas.forEach(fila => {
-        const clienteCodigo = fila.querySelector('td:nth-child(2) strong').textContent.toLowerCase();
-        const clienteNombre = fila.querySelector('td:nth-child(2) small').textContent.toLowerCase();
-        const vendedorFila = fila.querySelector('td:nth-child(3) .badge').textContent;
-        const estadoFila = fila.querySelector('td:nth-child(5) .badge').textContent.toLowerCase();
-        
-        let mostrar = true;
-        
-        // Filtro de búsqueda
-        if (buscar && !clienteCodigo.includes(buscar) && !clienteNombre.includes(buscar)) {
-            mostrar = false;
-        }
-        
-        // Filtro de estado
-        if (estado && !estadoFila.includes(estado.toLowerCase())) {
-            mostrar = false;
-        }
-        
-        // Filtro de vendedor
-        if (vendedor && vendedorFila !== vendedor) {
-            mostrar = false;
-        }
-        
-        fila.style.display = mostrar ? '' : 'none';
-    });
-}
-
-
-// Mostrar notificación
-function showNotification(type, message) {
-    const alertClass = type === 'success' ? 'alert-success' : type === 'warning' ? 'alert-warning' : 'alert-danger';
-    const icon = type === 'success' ? 'check_circle' : type === 'warning' ? 'warning' : 'error';
-    
-    const alert = document.createElement('div');
-    alert.className = `alert ${alertClass} alert-dismissible fade show`;
-    alert.innerHTML = `
-        <i class="material-icons">${icon}</i>
-        ${message}
-        <button type="button" class="close" data-dismiss="alert">
-            <span>&times;</span>
-        </button>
-    `;
-    
-    document.querySelector('.content').insertBefore(alert, document.querySelector('.content').firstChild);
-    
-    setTimeout(() => {
-        alert.remove();
-    }, 5000);
-}
-
-// Event listeners
+// Búsqueda en tiempo real (filtrado local si no se envía el formulario)
 document.addEventListener('DOMContentLoaded', function() {
-    // Búsqueda en tiempo real
-    document.getElementById('buscar').addEventListener('input', aplicarFiltros);
+    const buscarInput = document.getElementById('buscar');
+    if (buscarInput) {
+        buscarInput.addEventListener('keyup', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('filtrosForm').submit();
+            }
+        });
+    }
     
-    // Filtros
-    document.getElementById('estado').addEventListener('change', aplicarFiltros);
-    document.getElementById('vendedor').addEventListener('change', aplicarFiltros);
+    // Filtrar comunas basado en región seleccionada (opcional, si se quiere implementar)
+    const regionSelect = document.getElementById('region');
+    const comunaSelect = document.getElementById('comuna');
+    
+    if (regionSelect && comunaSelect) {
+        regionSelect.addEventListener('change', function() {
+            // Si cambia la región, se puede limpiar la comuna o mantenerla según necesidad
+            // Por ahora solo permitimos que el usuario seleccione manualmente
+        });
+    }
 });
 </script>
 @endpush

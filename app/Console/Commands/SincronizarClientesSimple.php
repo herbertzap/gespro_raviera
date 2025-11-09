@@ -111,6 +111,10 @@ class SincronizarClientesSimple extends Command
                 // Buscar si ya existe en local
                 $clienteLocal = Cliente::where('codigo_cliente', $clienteExterno['CODIGO_CLIENTE'])->first();
                 
+                // Determinar si el cliente está bloqueado (comparar valor desde SQL Server)
+                $bloqueadoSQL = isset($clienteExterno['BLOQUEADO']) ? trim($clienteExterno['BLOQUEADO']) : '0';
+                $estaBloqueado = ($bloqueadoSQL == '1' || $bloqueadoSQL == 1 || $bloqueadoSQL === true);
+                
                 $datosCliente = [
                     'codigo_cliente' => $clienteExterno['CODIGO_CLIENTE'],
                     'nombre_cliente' => $clienteExterno['NOMBRE_CLIENTE'],
@@ -120,7 +124,7 @@ class SincronizarClientesSimple extends Command
                     'codigo_vendedor' => $clienteExterno['CODIGO_VENDEDOR'],
                     'region' => $clienteExterno['REGION'] ?? '',
                     'comuna' => $clienteExterno['COMUNA'] ?? '',
-                    'bloqueado' => !empty($clienteExterno['BLOQUEADO']) && $clienteExterno['BLOQUEADO'] != '0',
+                    'bloqueado' => $estaBloqueado, // Siempre actualizar desde SQL Server
                     'condicion_pago' => $clienteExterno['CONDICION_PAGO'] ?? '',
                     'dias_credito' => intval($clienteExterno['DIAS_CREDITO'] ?? 0),
                     'comentario_administracion' => $clienteExterno['COMENTARIO_ADMIN'] ?? '',
@@ -133,9 +137,15 @@ class SincronizarClientesSimple extends Command
                 ];
                 
                 if ($clienteLocal) {
-                    // Actualizar cliente existente
+                    // SIEMPRE actualizar cliente existente, especialmente el campo bloqueado
+                    // Esto asegura que si el cliente fue bloqueado en SQL Server, se refleje localmente
                     $clienteLocal->update($datosCliente);
                     $actualizados++;
+                    
+                    // Log para debugging si el cliente cambió de estado
+                    if ($clienteLocal->wasChanged('bloqueado')) {
+                        \Log::info("Cliente {$clienteExterno['CODIGO_CLIENTE']} cambió estado bloqueado: " . ($estaBloqueado ? 'BLOQUEADO' : 'DESBLOQUEADO'));
+                    }
                 } else {
                     // Crear nuevo cliente
                     Cliente::create($datosCliente);
@@ -179,11 +189,12 @@ class SincronizarClientesSimple extends Command
             // Separar los campos por el delimitador |
             $campos = explode('|', $datosCompletos);
             
-            if (count($campos) < 8) {
+            if (count($campos) < 11) {
                 return null;
             }
             
             // Extraer cada campo según el orden de la consulta SQL (sin el código cliente que ya se extrajo)
+            // Orden: NOKOEN, DIEN, FOEN, KOFUEN, NOKOFU, NOKOCI, NOKOCM, CRTO, SUEN, BLOQUEADO
             $nombreCliente = trim($campos[0] ?? '');
             $direccion = trim($campos[1] ?? '');
             $telefono = trim($campos[2] ?? '');
@@ -193,7 +204,7 @@ class SincronizarClientesSimple extends Command
             $comuna = trim($campos[6] ?? '');
             $creditoTotal = floatval(trim($campos[7] ?? 0));  // CRTO
             $saldoUtilizado = floatval(trim($campos[8] ?? 0));  // SUEN (puede venir vacío)
-            $bloqueado = trim($campos[9] ?? '0');
+            $bloqueado = trim($campos[9] ?? '0');  // BLOQUEADO - índice 9
             
             // Limpiar campos NULL y espacios
             if ($nombreCliente === 'NULL') $nombreCliente = '';
@@ -275,7 +286,7 @@ class SincronizarClientesSimple extends Command
                     CAST(ISNULL(TABCM.NOKOCM, '') AS VARCHAR(50)) + '|' +
                     CAST(ISNULL(MAEEN.CRTO, 0) AS VARCHAR(20)) + '|' +
                     CAST(ISNULL(MAEEN.SUEN, 0) AS VARCHAR(20)) + '|' +
-                    CAST(0 AS VARCHAR(1)) AS DATOS_CLIENTE
+                    CAST(ISNULL(MAEEN.BLOQUEADO, 0) AS VARCHAR(1)) AS DATOS_CLIENTE
                 FROM dbo.MAEEN 
                 LEFT JOIN dbo.TABFU ON MAEEN.KOFUEN = TABFU.KOFU
                 LEFT JOIN dbo.TABCI ON MAEEN.PAEN = TABCI.KOPA AND MAEEN.CIEN = TABCI.KOCI
@@ -343,6 +354,10 @@ class SincronizarClientesSimple extends Command
                 // Buscar si ya existe en local
                 $clienteLocal = Cliente::where('codigo_cliente', $clienteExterno['CODIGO_CLIENTE'])->first();
                 
+                // Determinar si el cliente está bloqueado (comparar valor desde SQL Server)
+                $bloqueadoSQL = isset($clienteExterno['BLOQUEADO']) ? trim($clienteExterno['BLOQUEADO']) : '0';
+                $estaBloqueado = ($bloqueadoSQL == '1' || $bloqueadoSQL == 1 || $bloqueadoSQL === true);
+                
                 $datosCliente = [
                     'codigo_cliente' => $clienteExterno['CODIGO_CLIENTE'],
                     'nombre_cliente' => $clienteExterno['NOMBRE_CLIENTE'],
@@ -352,7 +367,7 @@ class SincronizarClientesSimple extends Command
                     'codigo_vendedor' => $clienteExterno['CODIGO_VENDEDOR'],
                     'region' => $clienteExterno['REGION'] ?? '',
                     'comuna' => $clienteExterno['COMUNA'] ?? '',
-                    'bloqueado' => !empty($clienteExterno['BLOQUEADO']) && $clienteExterno['BLOQUEADO'] != '0',
+                    'bloqueado' => $estaBloqueado, // Siempre actualizar desde SQL Server
                     'condicion_pago' => $clienteExterno['CONDICION_PAGO'] ?? '',
                     'dias_credito' => intval($clienteExterno['DIAS_CREDITO'] ?? 0),
                     'comentario_administracion' => $clienteExterno['COMENTARIO_ADMIN'] ?? '',
@@ -365,9 +380,15 @@ class SincronizarClientesSimple extends Command
                 ];
                 
                 if ($clienteLocal) {
-                    // Actualizar cliente existente
+                    // SIEMPRE actualizar cliente existente, especialmente el campo bloqueado
+                    // Esto asegura que si el cliente fue bloqueado en SQL Server, se refleje localmente
                     $clienteLocal->update($datosCliente);
                     $actualizados++;
+                    
+                    // Log para debugging si el cliente cambió de estado
+                    if ($clienteLocal->wasChanged('bloqueado')) {
+                        \Log::info("Cliente {$clienteExterno['CODIGO_CLIENTE']} cambió estado bloqueado: " . ($estaBloqueado ? 'BLOQUEADO' : 'DESBLOQUEADO'));
+                    }
                 } else {
                     // Crear nuevo cliente
                     Cliente::create($datosCliente);
@@ -498,7 +519,7 @@ class SincronizarClientesSimple extends Command
                     'comuna' => $clienteExterno['COMUNA'] ?? '',
                     'lista_precios_codigo' => '01',
                     'lista_precios_nombre' => 'Lista General',
-                    'bloqueado' => !empty($clienteExterno['BLOQUEADO']) && $clienteExterno['BLOQUEADO'] != '0',
+                    'bloqueado' => (isset($clienteExterno['BLOQUEADO']) && (trim($clienteExterno['BLOQUEADO']) == '1' || trim($clienteExterno['BLOQUEADO']) == 1 || trim($clienteExterno['BLOQUEADO']) === true)),
                     'activo' => true,
                     'ultima_sincronizacion' => now()
                 ];

@@ -20,21 +20,20 @@ class StockService
             $password = env('SQLSRV_EXTERNAL_PASSWORD');
             
             $query = "
-                SELECT TOP 20
-                    MAEPR.KOPR AS CODIGO_PRODUCTO,
-                    MAEPR.NOKOPR AS NOMBRE_PRODUCTO,
-                    ISNULL(MAEST.KOBO, '01') AS CODIGO_BODEGA,
-                    ISNULL(TABBO.NOKOBO, 'BODEGA PRINCIPAL') AS NOMBRE_BODEGA,
-                    ISNULL(MAEST.STFI1, 0) AS STOCK_FISICO,
-                    ISNULL(MAEST.STOCNV1, 0) AS STOCK_COMPROMETIDO,
-                    ISNULL(MAEST.STFI1 - MAEST.STOCNV1, 0) AS STOCK_DISPONIBLE,
-                    ISNULL(MAEPR.UD01PR, 'UN') AS UNIDAD_MEDIDA,
-                    ISNULL(TABPRE.PP01UD, 0) AS PRECIO_VENTA
-                FROM MAEPR
-                LEFT JOIN MAEST ON MAEPR.KOPR = MAEST.KOPR AND MAEST.KOBO = '01'
+                SELECT 
+                    CAST(MAEPR.KOPR AS VARCHAR(4000)) + '|' +
+                    CAST(MAEPR.NOKOPR AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(TABBO.NOKOBO, 'BODEGA LIB') AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(MAEST.KOBO, 'LIB') AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(MAEST.STFI1, 0) AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(MAEST.STOCNV1, 0) AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(MAEPR.UD01PR, 'UN') AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(TABPRE.PP01UD, 0) AS VARCHAR(4000)) AS DATOS
+                FROM MAEST
+                LEFT JOIN MAEPR ON MAEPR.KOPR = MAEST.KOPR
                 LEFT JOIN TABBO ON MAEST.KOBO = TABBO.KOBO
                 LEFT JOIN TABPRE ON MAEPR.KOPR = TABPRE.KOPR AND TABPRE.KOLT = '01'
-                WHERE MAEPR.ATPR = 'SI' AND MAEPR.ATPR != 'OCU' AND MAEPR.KOPR LIKE '000001%'
+                WHERE MAEST.KOBO = 'LIB'
                 ORDER BY MAEPR.KOPR
             ";
             
@@ -47,6 +46,11 @@ class StockService
             unlink($tempFile);
             
             $productos = $this->parsearProductosStock($output);
+            
+            Log::info('Productos parseados: ' . count($productos));
+            if (count($productos) > 0) {
+                Log::info('Primer producto: ' . json_encode($productos[0]));
+            }
             
             foreach ($productos as $producto) {
                 $this->actualizarStockLocal($producto);
@@ -74,26 +78,46 @@ class StockService
             
             // Saltar líneas de configuración
             if (empty($line) || strpos($line, 'locale') !== false || 
-                strpos($line, 'Setting') !== false || strpos($line, '1>') !== false ||
-                strpos($line, '2>') !== false || strpos($line, 'rows affected') !== false ||
+                strpos($line, 'Setting') !== false || strpos($line, 'rows affected') !== false ||
                 strpos($line, 'Msg ') !== false || strpos($line, 'Warning:') !== false ||
-                strpos($line, 'CODIGO_PRODUCTO') !== false) {
+                strpos($line, 'DATOS') !== false || strpos($line, '1>') !== false) {
                 continue;
             }
             
-            // Parsear línea de producto
-            if (preg_match('/^([A-Z0-9]+)\s+"?([^"]+)"?\s+"?([^"]*)"?\s+"?([^"]*)"?\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.-]+)\s+"?([^"]*)"?\s+([0-9.]+)/', $line, $matches)) {
-                $productos[] = [
-                    'codigo_producto' => trim($matches[1]),
-                    'nombre_producto' => trim($matches[2]),
-                    'codigo_bodega' => trim($matches[3]) ?: '01',
-                    'nombre_bodega' => trim($matches[4]) ?: 'BODEGA PRINCIPAL',
-                    'stock_fisico' => (float)$matches[5],
-                    'stock_comprometido' => (float)$matches[6],
-                    'stock_disponible' => (float)$matches[7],
-                    'unidad_medida' => trim($matches[8]) ?: 'UN',
-                    'precio_venta' => (float)$matches[9]
-                ];
+            // Parsear línea de producto usando '|'
+            if (strpos($line, '|') !== false) {
+                $fields = explode('|', $line);
+                
+                if (count($fields) >= 8) {
+                    $stockFisico = (float)$fields[4];
+                    $stockComprometidoSQL = (float)$fields[5];
+                    
+                    // Obtener stock NVV comprometido local (MySQL) para este producto
+                    $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido(trim($fields[0]));
+                    
+                    // Calcular stock disponible: STFI1 - (STOCNV1 + stock_nvv_mysql)
+                    $stockDisponible = $stockFisico - ($stockComprometidoSQL + $stockComprometidoLocal);
+                    
+                    $producto = [
+                        'codigo_producto' => trim($fields[0]),
+                        'nombre_producto' => trim($fields[1]),
+                        'nombre_bodega' => (trim($fields[2]) ?: 'BODEGA LIB'),
+                        'codigo_bodega' => (trim($fields[3]) ?: 'LIB'),
+                        'stock_fisico' => $stockFisico,
+                        'stock_comprometido' => $stockComprometidoSQL,
+                        'stock_disponible' => $stockDisponible,
+                        'unidad_medida' => trim($fields[6]) ?: 'UN',
+                        'precio_venta' => (float)$fields[7]
+                    ];
+                    
+                    // Log para debuggear el primer producto problemático
+                    if (strpos($fields[0], '1002225000000') !== false) {
+                        Log::info('Producto problemático parseado: ' . json_encode($producto));
+                        Log::info('Fields originales: ' . json_encode($fields));
+                    }
+                    
+                    $productos[] = $producto;
+                }
             }
         }
         
@@ -122,6 +146,22 @@ class StockService
             ]
         );
         
+        // Actualizar la tabla productos (usada por el cotizador)
+        try {
+            \DB::table('productos')
+                ->where('KOPR', $producto['codigo_producto'])
+                ->update([
+                    'NOKOPR' => $producto['nombre_producto'],
+                    'UD01PR' => $producto['unidad_medida'],
+                    'stock_fisico' => $producto['stock_fisico'],
+                    'stock_comprometido' => $producto['stock_comprometido'] ?? 0,
+                    'stock_disponible' => $producto['stock_disponible'],
+                    'updated_at' => now()
+                ]);
+        } catch (\Exception $e) {
+            Log::warning('No se pudo actualizar tabla productos para ' . $producto['codigo_producto'] . ': ' . $e->getMessage());
+        }
+        
         return $stockLocal;
     }
     
@@ -139,7 +179,7 @@ class StockService
         
         foreach ($productos as $producto) {
             $stockLocal = StockLocal::where('codigo_producto', $producto['codigo'])
-                                   ->where('codigo_bodega', '01')
+                                   ->where('codigo_bodega', 'LIB')
                                    ->first();
             
             if (!$stockLocal) {
@@ -201,7 +241,7 @@ class StockService
         
         foreach ($productos as $producto) {
             $stockLocal = StockLocal::where('codigo_producto', $producto['codigo'])
-                                   ->where('codigo_bodega', '01')
+                                   ->where('codigo_bodega', 'LIB')
                                    ->first();
             
             if ($stockLocal && $stockLocal->reservarStock($producto['cantidad'])) {
@@ -230,7 +270,7 @@ class StockService
     {
         foreach ($productos as $producto) {
             $stockLocal = StockLocal::where('codigo_producto', $producto['codigo'])
-                                   ->where('codigo_bodega', '01')
+                                   ->where('codigo_bodega', 'LIB')
                                    ->first();
             
             if ($stockLocal) {

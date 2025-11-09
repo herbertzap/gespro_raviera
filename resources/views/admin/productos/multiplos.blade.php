@@ -1,5 +1,11 @@
 @extends('layouts.app', ['pageSlug' => $pageSlug ?? 'multiplos-productos'])
 
+@push('css')
+<!-- DataTables CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap4.min.css">
+@endpush
+
 @section('content')
 <div class="row">
     <div class="col-md-12">
@@ -82,14 +88,38 @@
                 <!-- Tabla de Productos con Múltiplos -->
                 <div class="row">
                     <div class="col-md-12">
-                        <h5 class="mb-3">
-                            <i class="material-icons">list</i>
-                            Productos con Múltiplos Configurados ({{ $productosConMultiplo->count() }})
-                        </h5>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="mb-0">
+                                <i class="material-icons">list</i>
+                                Productos con Múltiplos Configurados (<span id="contadorProductos">{{ $productosConMultiplo->count() }}</span>)
+                            </h5>
+                            <div class="form-group mb-0" style="max-width: 400px; width: 100%;">
+                                <div class="input-group">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text">
+                                            <i class="material-icons">search</i>
+                                        </span>
+                                    </div>
+                                    <input type="text" 
+                                           class="form-control" 
+                                           id="buscadorProductos" 
+                                           placeholder="Buscar por nombre de producto...">
+                                    <div class="input-group-append">
+                                        <button class="btn btn-secondary" type="button" id="limpiarBusqueda" style="display: none;">
+                                            <i class="material-icons">clear</i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <small class="form-text text-muted">
+                                    Escribe palabras separadas por espacios para buscar entre ellas
+                                </small>
+                            </div>
+                        </div>
                         
                         @if($productosConMultiplo->count() > 0)
-                            <div class="table-responsive">
-                                <table class="table table-striped table-hover" id="tablaMultiplos">
+                            <div id="tablaContainer">
+                                <div class="table-responsive">
+                                    <table class="table table-striped table-hover" id="tablaMultiplos">
                                     <thead>
                                         <tr>
                                             <th style="width: 15%">SKU</th>
@@ -100,7 +130,7 @@
                                     </thead>
                                     <tbody>
                                         @foreach($productosConMultiplo as $producto)
-                                            <tr>
+                                            <tr data-nombre-producto="{{ strtoupper($producto->NOKOPR) }}" data-sku="{{ strtoupper($producto->KOPR) }}">
                                                 <td><code>{{ $producto->KOPR }}</code></td>
                                                 <td>{{ $producto->NOKOPR }}</td>
                                                 <td class="text-center">
@@ -120,6 +150,13 @@
                                         @endforeach
                                     </tbody>
                                 </table>
+                                </div>
+                            </div>
+                            
+                            <!-- Mensaje cuando no hay resultados -->
+                            <div id="mensajeSinResultados" class="alert alert-info text-center" style="display: none;">
+                                <i class="material-icons">search_off</i>
+                                No se encontraron productos que coincidan con la búsqueda
                             </div>
                         @else
                             <div class="alert alert-info">
@@ -173,7 +210,13 @@
 @endsection
 
 @push('js')
+<!-- DataTables JS -->
+<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap4.min.js"></script>
+
 <script>
+let dataTableInstance = null;
+
 $(document).ready(function() {
     // Actualizar nombre del archivo seleccionado
     $('.custom-file-input').on('change', function() {
@@ -181,21 +224,134 @@ $(document).ready(function() {
         $(this).next('.custom-file-label').html(fileName);
     });
 
-    // Inicializar DataTable
+    // Inicializar DataTable solo si hay productos y si DataTable está disponible
     @if($productosConMultiplo->count() > 0)
-    $('#tablaMultiplos').DataTable({
-        language: {
-            url: '//cdn.datatables.net/plug-ins/1.13.7/i18n/es-ES.json'
-        },
-        order: [[0, 'asc']],
-        pageLength: 25
-    });
+    if (typeof $.fn.DataTable !== 'undefined') {
+        try {
+            dataTableInstance = $('#tablaMultiplos').DataTable({
+                language: {
+                    url: '//cdn.datatables.net/plug-ins/1.13.7/i18n/es-ES.json'
+                },
+                order: [[0, 'asc']],
+                pageLength: 1000,
+                dom: 'rt<"row"<"col-sm-12 col-md-5"i>>',
+                searching: false, // usamos filtrado manual
+                info: true,
+                paging: false // mantener todas las filas en el DOM para filtrado manual
+            });
+            console.log('DataTable inicializado correctamente');
+        } catch (error) {
+            console.error('Error inicializando DataTable:', error);
+            dataTableInstance = null;
+        }
+    } else {
+        console.warn('DataTable no está disponible, usando filtrado manual');
+        dataTableInstance = null;
+    }
     @endif
 
     // Deshabilitar botón al enviar formulario
     $('#formCargarExcel').on('submit', function() {
         $('#btnCargar').prop('disabled', true).html('<i class="material-icons">hourglass_empty</i> Procesando...');
     });
+
+    // Funcionalidad de búsqueda en tiempo real
+    const buscador = $('#buscadorProductos');
+    const limpiarBusqueda = $('#limpiarBusqueda');
+    const contadorProductos = $('#contadorProductos');
+    const mensajeSinResultados = $('#mensajeSinResultados');
+    const tablaContainer = $('#tablaContainer');
+
+    // Normalizador para comparar sin acentos y en mayúsculas
+    function normalizar(texto) {
+        if (!texto) return '';
+        return texto
+            .toString()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toUpperCase();
+    }
+
+    function filtrarTabla() {
+        const busqueda = normalizar(buscador.val().trim());
+        console.log('Filtrando con:', busqueda);
+        
+        if (busqueda === '') {
+            // Mostrar todas las filas
+            $('#tablaMultiplos tbody tr').show();
+            limpiarBusqueda.hide();
+            contadorProductos.text({{ $productosConMultiplo->count() }});
+            tablaContainer.show();
+            mensajeSinResultados.hide();
+            return;
+        }
+
+        // Dividir la búsqueda en términos individuales
+        const terminos = busqueda.split(/\s+/).filter(t => t.length > 0);
+        console.log('Términos de búsqueda:', terminos);
+
+        // Filtrado manual (independiente de DataTables)
+        let filasVisibles = 0;
+        $('#tablaMultiplos tbody tr').each(function() {
+            const nombreProducto = normalizar($(this).data('nombre-producto') || '');
+            const sku = normalizar($(this).data('sku') || '');
+
+            // Verificar que todos los términos estén presentes
+            const coincide = terminos.every(termino => {
+                return nombreProducto.includes(termino) || sku.includes(termino);
+            });
+
+            if (coincide) {
+                $(this).show();
+                filasVisibles++;
+            } else {
+                $(this).hide();
+            }
+        });
+
+        contadorProductos.text(filasVisibles);
+        
+        // Mostrar/ocultar mensaje de sin resultados
+        if (filasVisibles === 0) {
+            tablaContainer.hide();
+            mensajeSinResultados.show();
+        } else {
+            tablaContainer.show();
+            mensajeSinResultados.hide();
+        }
+
+        limpiarBusqueda.show();
+    }
+
+    // Evento de búsqueda mientras escribe
+    buscador.on('input', function() {
+        console.log('Buscando:', $(this).val());
+        filtrarTabla();
+    });
+
+    // Limpiar búsqueda
+    limpiarBusqueda.on('click', function() {
+        console.log('Limpiando búsqueda');
+        buscador.val('');
+        filtrarTabla();
+    });
+
+    // Evento de tecla Enter para buscar
+    buscador.on('keypress', function(e) {
+        if (e.which === 13) {
+            e.preventDefault();
+            filtrarTabla();
+        }
+    });
+
+    // Limpiar filtros cuando DataTable cambie de página
+    if (dataTableInstance) {
+        dataTableInstance.on('page.dt', function() {
+            // No limpiar filtros al cambiar página, solo actualizar contador
+            const filasVisibles = dataTableInstance.rows({search: 'applied'}).count();
+            contadorProductos.text(filasVisibles);
+        });
+    }
 });
 
 let productoIdActual = null;

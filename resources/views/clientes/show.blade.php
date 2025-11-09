@@ -20,11 +20,11 @@
                                     <i class="material-icons">arrow_back</i> Volver
                                 </a>
                                 @if($validacion['puede'] && auth()->user()->hasRole('Vendedor'))
-                                    <a href="{{ url('/cotizacion/nueva?cliente=' . $cliente->codigo_cliente . '&nombre=' . urlencode($cliente->nombre_cliente)) }}" 
+                                    <a href="{{ url('/cotizacion/nueva?cliente=' . $cliente->codigo_cliente . '&nombre=' . urlencode($cliente->nombre_cliente) . '&tipo_documento=cotizacion') }}" 
                                        class="btn btn-info">
                                         <i class="material-icons">description</i> Nueva Cotización
                                     </a>
-                                    <a href="{{ url('/cotizacion/nueva?cliente=' . $cliente->codigo_cliente . '&nombre=' . urlencode($cliente->nombre_cliente)) }}" 
+                                    <a href="{{ url('/nota-venta/nueva?cliente=' . $cliente->codigo_cliente . '&nombre=' . urlencode($cliente->nombre_cliente)) }}" 
                                        class="btn btn-primary">
                                         <i class="material-icons">add_shopping_cart</i> Nueva Nota De Venta
                                     </a>

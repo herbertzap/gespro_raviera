@@ -87,12 +87,23 @@ class SincronizarClientesMiddleware
         // Usar dispatch para ejecutar en segundo plano
         dispatch(function () use ($codigoVendedor, $cacheKey) {
             try {
+                // Sincronizar clientes
                 $resultado = \App\Console\Commands\SincronizarClientesSimple::sincronizarVendedorDirecto($codigoVendedor);
                 
                 if ($resultado['success']) {
-                    Log::info("✅ Sincronización automática completada: {$resultado['nuevos']} nuevos, {$resultado['actualizados']} actualizados");
+                    Log::info("✅ Sincronización automática de clientes completada: {$resultado['nuevos']} nuevos, {$resultado['actualizados']} actualizados");
+                    
+                    // Sincronizar productos después de sincronizar clientes
+                    try {
+                        $stockService = new \App\Services\StockService();
+                        $productosSincronizados = $stockService->sincronizarStockDesdeSQLServer();
+                        Log::info("✅ Sincronización automática de productos completada: {$productosSincronizados} productos actualizados");
+                    } catch (\Exception $e) {
+                        Log::error("❌ Error sincronizando productos: " . $e->getMessage());
+                        // No remover cache de clientes si falla productos
+                    }
                 } else {
-                    Log::error("❌ Error en sincronización automática: " . $resultado['message']);
+                    Log::error("❌ Error en sincronización automática de clientes: " . $resultado['message']);
                     // Remover cache para permitir reintento
                     Cache::forget($cacheKey);
                 }

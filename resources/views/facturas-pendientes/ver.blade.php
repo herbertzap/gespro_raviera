@@ -232,8 +232,10 @@
                                                 </td>
                                                 <td>
                                                     @if(!empty($relacion['NUMERO_NVV']))
-                                                        <a href="#" class="btn btn-sm btn-primary" title="Ver NVV {{ $relacion['NUMERO_NVV'] }}">
-                                                            <i class="material-icons">visibility</i>
+                                                        <a href="{{ route('nvv-pendientes.ver', str_pad($relacion['NUMERO_NVV'], 10, '0', STR_PAD_LEFT)) }}" 
+                                                           class="btn btn-sm btn-primary" 
+                                                           title="Ver NVV {{ $relacion['TIPO_NVV'] }}-{{ $relacion['NUMERO_NVV'] }}">
+                                                            <i class="material-icons">visibility</i> Ver NVV
                                                         </a>
                                                     @endif
                                                 </td>

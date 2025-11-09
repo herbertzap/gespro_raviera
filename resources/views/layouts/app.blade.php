@@ -23,6 +23,75 @@
         <link href="{{ asset('black') }}/css/theme.css" rel="stylesheet" />
         <link href="{{ asset('css/pagination.css') }}" rel="stylesheet" />
         <link href="{{ asset('css/custom-badges.css') }}" rel="stylesheet" />
+        <style>
+            /* Ocultar el fixed-plugin en todo el sitio */
+            .fixed-plugin {
+                display: none !important;
+            }
+
+            /* Estilos para selects con tema oscuro - fondo oscuro y texto visible */
+            select.form-control,
+            select.form-control:focus {
+                background-color: #2b3553 !important;
+                background-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 5'%3E%3Cpath fill='%23ffffff' d='M2 0L0 2h4zm0 5L0 3h4z'/%3E%3C/svg%3E") !important;
+                background-repeat: no-repeat !important;
+                background-position: right 0.75rem center !important;
+                background-size: 8px 10px !important;
+                color: rgba(255, 255, 255, 0.8) !important;
+                border: 1px solid #cad1d7 !important;
+                appearance: none !important;
+                -webkit-appearance: none !important;
+                -moz-appearance: none !important;
+            }
+
+            /* Estilos para las opciones dentro del select */
+            select.form-control option {
+                background-color: #2b3553 !important;
+                color: rgba(255, 255, 255, 0.8) !important;
+                padding: 8px 12px !important;
+            }
+
+            /* Opción seleccionada */
+            select.form-control option:checked,
+            select.form-control option:hover {
+                background-color: #1e88e5 !important;
+                color: #ffffff !important;
+            }
+
+            /* Estilos adicionales para selects múltiples */
+            select.form-control[multiple] {
+                background-color: #2b3553 !important;
+                background-image: none !important;
+            }
+
+            select.form-control[multiple] option {
+                background-color: #2b3553 !important;
+                color: rgba(255, 255, 255, 0.8) !important;
+            }
+
+            select.form-control[multiple] option:checked {
+                background-color: #1e88e5 !important;
+                color: #ffffff !important;
+            }
+
+            /* Estilos para select cuando tiene focus */
+            select.form-control:focus {
+                border-color: rgba(50, 151, 211, 0.5) !important;
+                box-shadow: 0 0 0 0.2rem rgba(50, 151, 211, 0.25) !important;
+                outline: 0 !important;
+            }
+
+            /* Compatibilidad con navegadores que no soportan option:hover */
+            select.form-control option {
+                background: #2b3553 !important;
+            }
+
+            /* Forzar color de texto en el select cuando está abierto (Chrome/Safari) */
+            select.form-control:active,
+            select.form-control:focus {
+                color: rgba(255, 255, 255, 0.8) !important;
+            }
+        </style>
     </head>
     <body class="{{ $class ?? '' }}">
 

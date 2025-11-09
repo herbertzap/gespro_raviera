@@ -26,7 +26,8 @@ class CotizacionProducto extends Model
         'iva_valor',
         'total_producto',
         'stock_disponible',
-        'stock_suficiente'
+        'stock_suficiente',
+        'pendiente_entrega'
     ];
 
     protected $casts = [
@@ -41,7 +42,8 @@ class CotizacionProducto extends Model
         'iva_valor' => 'decimal:2',
         'total_producto' => 'decimal:2',
         'stock_disponible' => 'integer',
-        'stock_suficiente' => 'boolean'
+        'stock_suficiente' => 'boolean',
+        'pendiente_entrega' => 'boolean'
     ];
 
     public function cotizacion()

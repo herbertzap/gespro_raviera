@@ -24,7 +24,7 @@ class SincronizarProductos extends Command
         $limit = (int) $this->option('limit');
         $offset = (int) $this->option('offset');
         
-        // Consulta SQL con paginación por OFFSET/FETCH - incluye todas las listas de precios
+        // Consulta SQL con paginación por OFFSET/FETCH - SOLO lista 01P (principal)
         $query = "
             SELECT 
                 CAST(MAEPR.KOPR AS VARCHAR(30)) + '|' +
@@ -36,18 +36,10 @@ class SincronizarProductos extends Command
                 CAST((ISNULL(MAEST.STFI1, 0) - ISNULL(MAEST.STOCNV1, 0)) AS VARCHAR(30)) + '|' +
                 CAST(ISNULL(TABPRE01.PP01UD, 0) AS VARCHAR(30)) + '|' +
                 CAST(ISNULL(TABPRE01.PP02UD, 0) AS VARCHAR(30)) + '|' +
-                CAST(ISNULL(TABPRE01.DTMA01UD, 0) AS VARCHAR(30)) + '|' +
-                CAST(ISNULL(TABPRE02.PP01UD, 0) AS VARCHAR(30)) + '|' +
-                CAST(ISNULL(TABPRE02.PP02UD, 0) AS VARCHAR(30)) + '|' +
-                CAST(ISNULL(TABPRE02.DTMA01UD, 0) AS VARCHAR(30)) + '|' +
-                CAST(ISNULL(TABPRE03.PP01UD, 0) AS VARCHAR(30)) + '|' +
-                CAST(ISNULL(TABPRE03.PP02UD, 0) AS VARCHAR(30)) + '|' +
-                CAST(ISNULL(TABPRE03.DTMA01UD, 0) AS VARCHAR(30)) AS LINEA
+                CAST(ISNULL(TABPRE01.DTMA01UD, 0) AS VARCHAR(30)) AS LINEA
             FROM MAEPR 
             LEFT JOIN MAEST ON MAEPR.KOPR = MAEST.KOPR AND MAEST.KOBO = '01'
             LEFT JOIN TABPRE AS TABPRE01 ON MAEPR.KOPR = TABPRE01.KOPR AND TABPRE01.KOLT = '01P'
-            LEFT JOIN TABPRE AS TABPRE02 ON MAEPR.KOPR = TABPRE02.KOPR AND TABPRE02.KOLT = '02P'
-            LEFT JOIN TABPRE AS TABPRE03 ON MAEPR.KOPR = TABPRE03.KOPR AND TABPRE03.KOLT = '03P'
             WHERE MAEPR.ATPR <> 'N' AND MAEPR.ATPR <> 'OCU'
             ORDER BY MAEPR.NOKOPR
             OFFSET {$offset} ROWS FETCH NEXT {$limit} ROWS ONLY
@@ -105,7 +97,7 @@ class SincronizarProductos extends Command
             // Ahora la salida viene delimitada por '|'
             $fields = explode('|', $line);
             
-            if (count($fields) < 16) {
+            if (count($fields) < 10) {
                 $this->warn('Línea con pocos campos: ' . count($fields) . ' - ' . substr($line, 0, 50));
                 continue;
             }
@@ -147,15 +139,13 @@ class SincronizarProductos extends Command
             $precio01pUd2 = $convertToFloat($fields[8] ?? '');
             $descuentoMaximo01p = $convertToFloat($fields[9] ?? '', true);
             
-            // Precios 02P
-            $precio02p = $convertToFloat($fields[10] ?? '');
-            $precio02pUd2 = $convertToFloat($fields[11] ?? '');
-            $descuentoMaximo02p = $convertToFloat($fields[12] ?? '', true);
-            
-            // Precios 03P
-            $precio03p = $convertToFloat($fields[13] ?? '');
-            $precio03pUd2 = $convertToFloat($fields[14] ?? '');
-            $descuentoMaximo03p = $convertToFloat($fields[15] ?? '', true);
+            // Listas 02P y 03P no se usan
+            $precio02p = 0.0;
+            $precio02pUd2 = 0.0;
+            $descuentoMaximo02p = 0.0;
+            $precio03p = 0.0;
+            $precio03pUd2 = 0.0;
+            $descuentoMaximo03p = 0.0;
 
             // Verificar si el producto ya existe
             $productoExistente = DB::table('productos')->where('KOPR', $codigoProducto)->first();

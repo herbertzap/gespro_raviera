@@ -276,11 +276,13 @@
                                                     @if(isset($cliente['BLOQUEADO']) && $cliente['BLOQUEADO'] == 1) disabled @endif>
                                                 <i class="material-icons">phone</i>
                                             </button>
+                                            @unless(auth()->user()->hasRole('Supervisor'))
                                             <button type="button" class="btn btn-sm btn-outline-warning" 
                                                     onclick="nuevaVenta('{{ $cliente['CODIGO_CLIENTE'] }}', '{{ $cliente['NOMBRE_CLIENTE'] }}')"
                                                     @if(isset($cliente['BLOQUEADO']) && $cliente['BLOQUEADO'] == 1) disabled @endif>
                                                 <i class="material-icons">add_shopping_cart</i>
                                             </button>
+                                            @endunless
                                         </div>
                                     </td>
                                 </tr>
@@ -550,6 +552,7 @@ function verCotizacion(numeroDocumento, codigoCliente) {
     }
 }
 
+@unless(auth()->user()->hasRole('Supervisor'))
 function nuevaVenta(codigoCliente, nombreCliente) {
     clienteSeleccionadoCobranza = {
         codigo: codigoCliente,
@@ -563,10 +566,11 @@ function nuevaVenta(codigoCliente, nombreCliente) {
 
 function confirmarNuevaVenta() {
     if (clienteSeleccionadoCobranza) {
-        // Redirigir a la página de cotización con los datos del cliente
-        window.location.href = `{{ url('/cotizacion/nueva') }}?cliente=${clienteSeleccionadoCobranza.codigo}&nombre=${encodeURIComponent(clienteSeleccionadoCobranza.nombre)}`;
+        // Redirigir a la página de Nota de Venta con los datos del cliente y solicitar recuperar borrador
+        window.location.href = `{{ url('/nota-venta/nueva') }}` + `?cliente=${clienteSeleccionadoCobranza.codigo}&nombre=${encodeURIComponent(clienteSeleccionadoCobranza.nombre)}&recuperar_borrador=1`;
     }
 }
+@endunless
 
 // Auto-submit del formulario cuando cambian los filtros de ordenamiento
 $(document).ready(function() {

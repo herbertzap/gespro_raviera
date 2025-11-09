@@ -67,6 +67,10 @@ class Cliente extends Model
                 // Buscar si ya existe en local
                 $clienteLocal = self::where('codigo_cliente', $clienteExterno['CODIGO_CLIENTE'])->first();
                 
+                // Determinar si el cliente está bloqueado (comparar valor desde SQL Server)
+                $bloqueadoSQL = isset($clienteExterno['BLOQUEADO']) ? trim($clienteExterno['BLOQUEADO']) : '0';
+                $estaBloqueado = ($bloqueadoSQL == '1' || $bloqueadoSQL == 1 || $bloqueadoSQL === true);
+                
                 $datosCliente = [
                     'codigo_cliente' => $clienteExterno['CODIGO_CLIENTE'],
                     'nombre_cliente' => $clienteExterno['NOMBRE_CLIENTE'],
@@ -75,15 +79,21 @@ class Cliente extends Model
                     'codigo_vendedor' => $clienteExterno['CODIGO_VENDEDOR'],
                     'region' => $clienteExterno['REGION'] ?? '',
                     'comuna' => $clienteExterno['COMUNA'] ?? '',
-                    'bloqueado' => !empty($clienteExterno['BLOQUEADO']) && $clienteExterno['BLOQUEADO'] != '0',
+                    'bloqueado' => $estaBloqueado, // Siempre actualizar desde SQL Server
                     'activo' => true, // Solo sincronizamos clientes activos
                     'ultima_sincronizacion' => now()
                 ];
                 
                 if ($clienteLocal) {
-                    // Actualizar cliente existente
+                    // SIEMPRE actualizar cliente existente, especialmente el campo bloqueado
+                    // Esto asegura que si el cliente fue bloqueado en SQL Server, se refleje localmente
                     $clienteLocal->update($datosCliente);
                     $actualizados++;
+                    
+                    // Log para debugging si el cliente cambió de estado
+                    if ($clienteLocal->wasChanged('bloqueado')) {
+                        \Log::info("Cliente {$clienteExterno['CODIGO_CLIENTE']} cambió estado bloqueado: " . ($estaBloqueado ? 'BLOQUEADO' : 'DESBLOQUEADO'));
+                    }
                 } else {
                     // Crear nuevo cliente
                     self::create($datosCliente);

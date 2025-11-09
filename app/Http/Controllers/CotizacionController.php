@@ -11,6 +11,7 @@ use App\Models\CotizacionProducto;
 use App\Models\StockComprometido;
 use App\Models\Cliente;
 use App\Services\ClienteValidacionService;
+use App\Services\StockService;
 
 class CotizacionController extends Controller
 {
@@ -36,6 +37,13 @@ class CotizacionController extends Controller
         
         $clienteCodigo = $request->get('cliente');
         $clienteNombre = $request->get('nombre');
+        
+        // VALIDACIÓN: Requerir que siempre haya un cliente asociado
+        if (!$clienteCodigo) {
+            \Log::warning('❌ Intento de crear cotización/NVV sin cliente asociado');
+            return redirect()->route('cotizaciones.index')
+                ->with('error', 'Debe seleccionar un cliente antes de crear una cotización o nota de venta.');
+        }
         
         \Log::info('🔍 Parámetros recibidos:');
         \Log::info('   - cliente: ' . $clienteCodigo);
@@ -375,22 +383,22 @@ class CotizacionController extends Controller
                     $descuentoMaximo = 0;
                     
                     if ($listaPrecios === '01P' || $listaPrecios === '01') {
-                        $precio = $producto->precio_01p;
-                        $precioUd2 = $producto->precio_01p_ud2;
-                        $descuentoMaximo = $producto->descuento_maximo_01p;
+                        $precio = $producto->precio_01p ?? 0;
+                        $precioUd2 = $producto->precio_01p_ud2 ?? 0;
+                        $descuentoMaximo = $producto->descuento_maximo_01p ?? 0;
                     } elseif ($listaPrecios === '02P' || $listaPrecios === '02') {
-                        $precio = $producto->precio_02p;
-                        $precioUd2 = $producto->precio_02p_ud2;
-                        $descuentoMaximo = $producto->descuento_maximo_02p;
+                        $precio = $producto->precio_02p ?? 0;
+                        $precioUd2 = $producto->precio_02p_ud2 ?? 0;
+                        $descuentoMaximo = $producto->descuento_maximo_02p ?? 0;
                     } elseif ($listaPrecios === '03P' || $listaPrecios === '03') {
-                        $precio = $producto->precio_03p;
-                        $precioUd2 = $producto->precio_03p_ud2;
-                        $descuentoMaximo = $producto->descuento_maximo_03p;
+                        $precio = $producto->precio_03p ?? 0;
+                        $precioUd2 = $producto->precio_03p_ud2 ?? 0;
+                        $descuentoMaximo = $producto->descuento_maximo_03p ?? 0;
                     } else {
                         // Por defecto usar 01P
-                        $precio = $producto->precio_01p;
-                        $precioUd2 = $producto->precio_01p_ud2;
-                        $descuentoMaximo = $producto->descuento_maximo_01p;
+                        $precio = $producto->precio_01p ?? 0;
+                        $precioUd2 = $producto->precio_01p_ud2 ?? 0;
+                        $descuentoMaximo = $producto->descuento_maximo_01p ?? 0;
                     }
                     
                     // Determinar si el producto se puede agregar (precio > 0)
@@ -422,30 +430,33 @@ class CotizacionController extends Controller
                 ]);
             }
             
-            // Optimizar información de stock (simplificado para mejor rendimiento)
+            // Calcular stock real dinámicamente: STFI1 - (STOCNV1 + NVV local)
+            $stockService = new \App\Services\StockComprometidoService();
             foreach ($productos as &$producto) {
-                $stockOriginal = $producto['STOCK_DISPONIBLE'] ?? 0;
-                
-                // Usar stock original directamente (ya viene de la tabla productos)
-                $producto['STOCK_DISPONIBLE_REAL'] = $stockOriginal;
-                $producto['STOCK_COMPROMETIDO'] = $producto['STOCK_COMPROMETIDO'] ?? 0;
-                $producto['STOCK_DISPONIBLE_ORIGINAL'] = $stockOriginal;
-                
-                // Determinar estado del stock
-                $stockReal = $stockOriginal;
-                $producto['TIENE_STOCK'] = $stockReal > 0;
-                $producto['STOCK_INSUFICIENTE'] = $stockReal < ($producto['CANTIDAD_MINIMA'] ?? 1);
-                
-                // Agregar clase CSS para indicar estado del stock
-                if ($stockReal <= 0) {
-                    $producto['CLASE_STOCK'] = 'text-danger';
-                    $producto['ESTADO_STOCK'] = 'Sin stock';
-                } elseif ($stockReal < 10) {
-                    $producto['CLASE_STOCK'] = 'text-warning';
-                    $producto['ESTADO_STOCK'] = 'Stock bajo';
-                } else {
-                    $producto['CLASE_STOCK'] = 'text-success';
-                    $producto['ESTADO_STOCK'] = 'Stock disponible';
+                try {
+                    $codigo = $producto['CODIGO_PRODUCTO'];
+                    $stockReal = $stockService->obtenerStockDisponibleReal($codigo);
+                    
+                    $producto['STOCK_DISPONIBLE_REAL'] = $stockReal;
+                    $producto['STOCK_DISPONIBLE'] = $stockReal;
+                    $producto['STOCK_DISPONIBLE_ORIGINAL'] = $producto['STOCK_DISPONIBLE_ORIGINAL'] ?? ($producto['STOCK_FISICO'] ?? 0);
+                    $producto['STOCK_COMPROMETIDO'] = $producto['STOCK_COMPROMETIDO'] ?? 0;
+                    
+                    // Estado visual
+                    $producto['TIENE_STOCK'] = $stockReal > 0;
+                    $producto['STOCK_INSUFICIENTE'] = $stockReal < ($producto['CANTIDAD_MINIMA'] ?? 1);
+                    if ($stockReal <= 0) {
+                        $producto['CLASE_STOCK'] = 'text-danger';
+                        $producto['ESTADO_STOCK'] = 'Sin stock';
+                    } elseif ($stockReal < 10) {
+                        $producto['CLASE_STOCK'] = 'text-warning';
+                        $producto['ESTADO_STOCK'] = 'Stock bajo';
+                    } else {
+                        $producto['CLASE_STOCK'] = 'text-success';
+                        $producto['ESTADO_STOCK'] = 'Stock disponible';
+                    }
+                } catch (\Exception $e) {
+                    \Log::warning('Error calculando stock para producto ' . ($producto['CODIGO_PRODUCTO'] ?? 'N/A') . ': ' . $e->getMessage());
                 }
             }
             
@@ -855,8 +866,7 @@ class CotizacionController extends Controller
             'productos' => 'required|array|min:1',
             'productos.*.codigo' => 'required',
             'productos.*.cantidad' => 'required|numeric|min:0.01',
-            'productos.*.precio' => 'required|numeric|min:0',
-            'fecha_despacho' => 'required|date|after_or_equal:' . now()->addDays(2)->format('Y-m-d')
+            'productos.*.precio' => 'required|numeric|min:0'
         ]);
         
         \Log::info('✅ Validación de datos completada');
@@ -901,9 +911,9 @@ class CotizacionController extends Controller
             // 3. Crear cotización en base de datos local
             \Log::info('📝 CREANDO COTIZACIÓN EN TABLA cotizaciones');
             
-            // Determinar tipo de documento según parámetro
-            $tipoDocumento = $request->input('tipo_documento', 'nota_venta');
-            $esCotizacion = ($tipoDocumento === 'cotizacion');
+            // Este controlador es específico para Cotizaciones
+            $tipoDocumento = 'cotizacion';
+            $esCotizacion = true;
             
             $cotizacionData = [
                 'tipo_documento' => $tipoDocumento,
@@ -920,11 +930,14 @@ class CotizacionController extends Controller
                 'iva' => $ivaTotal,
                 'total' => $total,
                 'observaciones' => $request->observaciones,
-                'fecha_despacho' => $request->fecha_despacho ? \Carbon\Carbon::parse($request->fecha_despacho)->startOfDay() : null,
-                'numero_orden_compra' => $request->numero_orden_compra,
-                'observacion_vendedor' => $request->observacion_vendedor,
+                // Fecha de despacho: usar fecha de creación (no se solicita al usuario)
+                'fecha_despacho' => now()->startOfDay(),
+                // Campos específicos para cotizaciones (simplificados)
+                'numero_orden_compra' => null,
+                'observacion_vendedor' => null,
                 'estado' => 'borrador',
-                'requiere_aprobacion' => !$esCotizacion // Solo requiere aprobación si es nota_venta
+                // Las cotizaciones no requieren aprobación
+                'requiere_aprobacion' => false
             ];
             \Log::info('📝 Datos de cotización a crear:', $cotizacionData);
             \Log::info('📋 Tipo de documento: ' . $tipoDocumento . ' - Es cotización: ' . ($esCotizacion ? 'SÍ' : 'NO'));
@@ -1026,13 +1039,11 @@ class CotizacionController extends Controller
             \Log::info("🔍 Validaciones automáticas: " . json_encode($validacionesAutomaticas));
             \Log::info("🔍 Validación stock: " . json_encode($validacionStock));
             
-            // 6. Determinar estado de la cotización basado en validaciones automáticas                                                                     
-            \Log::info('🔍 DETERMINANDO ESTADO DE LA COTIZACIÓN BASADO EN VALIDACIONES AUTOMÁTICAS');                                                       
+            // 6. Para cotizaciones simples, no aplicar validaciones automáticas
+            \Log::info('📝 COTIZACIÓN SIMPLE CREADA - No requiere validaciones automáticas');
             
-            $requiereAutorizacion = false;
-            $motivosAutorizacion = [];
-            $tieneProblemasCredito = $validacionesAutomaticas['requiere_autorizacion'];
-            $tieneProblemasStock = $validacionStock['requiere_autorizacion'];
+            // Las cotizaciones son simples y no requieren aprobación
+            $estadoFinal = 'borrador';
             
             // Verificar validaciones automáticas
             if ($validacionesAutomaticas['requiere_autorizacion']) {
@@ -1390,6 +1401,7 @@ class CotizacionController extends Controller
                 $resultado[] = [
                     'id' => $cotizacion->id,
                     'tipo' => 'COTIZACION_LOCAL',
+                    'tipo_documento' => $cotizacion->tipo_documento,
                     'numero' => $cotizacion->id,
                     'fecha_emision' => $cotizacion->fecha->format('Y-m-d H:i:s'),
                     'cliente_codigo' => $cotizacion->cliente_codigo,
@@ -2500,7 +2512,10 @@ class CotizacionController extends Controller
                 ];
                 
                 $mensaje = $mensajesEstado[$cotizacion->estado_aprobacion] ?? 'No se puede editar una cotización que ya ha sido aprobada';
-                abort(403, $mensaje . '. Solo se pueden editar NVV en estado borrador o rechazadas.');
+                
+                // Redirigir a la vista de solo lectura en lugar de mostrar error
+                return redirect()->route('cotizacion.ver', $cotizacion->id)
+                    ->with('info', $mensaje . '. Redirigido a la vista de solo lectura.');
             }
             
             // Obtener datos del cliente desde la cotización (solo mostrar, no editar)
@@ -2696,10 +2711,9 @@ class CotizacionController extends Controller
                 
                 $mensaje = $mensajesEstado[$cotizacion->estado_aprobacion] ?? 'No se puede editar una cotización que ya ha sido aprobada';
                 
-                return response()->json([
-                    'success' => false,
-                    'message' => $mensaje . '. Solo se pueden editar NVV en estado borrador o rechazadas.'
-                ], 403);
+                // Redirigir a la vista de solo lectura en lugar de mostrar error
+                return redirect()->route('cotizacion.ver', $cotizacion->id)
+                    ->with('info', $mensaje . '. Redirigido a la vista de solo lectura.');
             }
             
             // Calcular totales por producto y generales
@@ -2957,35 +2971,167 @@ class CotizacionController extends Controller
     /**
      * Convertir cotización a nota de venta
      */
-    public function convertirANotaVenta($id)
+    public function convertirANotaVenta(Request $request, $id)
     {
         try {
             $cotizacion = Cotizacion::findOrFail($id);
             
             // Verificar permisos
             if (!auth()->user()->hasRole(['Super Admin', 'Vendedor']) && auth()->id() !== $cotizacion->user_id) {
-                return redirect()->back()->with('error', 'No tienes permiso para convertir esta cotización');
+                return response()->json(['error' => 'No tienes permiso para convertir esta cotización'], 403);
             }
             
             // Verificar que sea una cotización
             if ($cotizacion->tipo_documento !== 'cotizacion') {
-                return redirect()->back()->with('error', 'Este documento ya es una Nota de Venta');
+                return response()->json(['error' => 'Este documento ya es una Nota de Venta'], 400);
             }
             
             DB::beginTransaction();
             
+            // Actualizar campos adicionales antes de convertir (solo los que existen en la tabla)
+            $cotizacion->numero_orden_compra = $request->numero_orden_compra;
+            $cotizacion->observacion_vendedor = $request->observacion_vendedor;
+            
             // Convertir a nota de venta
             $cotizacion->convertirANotaVenta(auth()->id());
             
+            // Si solicita descuento extra, forzar aprobación de supervisor DESPUÉS de la conversión
+            if ($request->solicitar_descuento_extra) {
+                $cotizacion->tiene_problemas_credito = true;
+                $cotizacion->save();
+            }
+            
             DB::commit();
             
-            return redirect()->route('cotizaciones.index')
-                ->with('success', 'Cotización convertida exitosamente a Nota de Venta. Ahora entrará al flujo de aprobaciones.');
+            return response()->json([
+                'success' => true,
+                'message' => 'Cotización convertida exitosamente a Nota de Venta. Ahora entrará al flujo de aprobaciones.'
+            ]);
                 
         } catch (\Exception $e) {
             DB::rollback();
             \Log::error('Error convirtiendo cotización a nota de venta: ' . $e->getMessage());
-            return redirect()->back()->with('error', 'Error al convertir cotización: ' . $e->getMessage());
+            return response()->json(['error' => 'Error al convertir cotización: ' . $e->getMessage()], 500);
+        }
+    }
+    
+    /**
+     * Generar PDF de cotización
+     */
+    public function generarPDF($id)
+    {
+        try {
+            $cotizacion = Cotizacion::with(['productos', 'user'])->findOrFail($id);
+            
+            // Verificar permisos
+            $user = auth()->user();
+            if ($user->hasRole('Vendedor') && $cotizacion->user_id !== $user->id) {
+                return redirect()->route('cotizaciones.index')->with('error', 'No tienes permisos para ver esta cotización');
+            }
+            
+            // Obtener información del cliente
+            $cliente = Cliente::where('codigo_cliente', $cotizacion->cliente_codigo)->first();
+            
+            // Generar PDF simple (por ahora solo HTML)
+            $html = view('cotizaciones.pdf', compact('cotizacion', 'cliente'))->render();
+            
+            return response($html)
+                ->header('Content-Type', 'text/html')
+                ->header('Content-Disposition', 'inline; filename="cotizacion_' . $cotizacion->id . '.html"');
+                
+        } catch (\Exception $e) {
+            \Log::error('Error generando PDF de cotización: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Error al generar el PDF: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Sincronizar stock desde SQL Server
+     */
+    public function sincronizarStock(Request $request, $id = null)
+    {
+        try {
+            $stockService = new StockService();
+            $productosSincronizados = $stockService->sincronizarStockDesdeSQLServer();
+            
+            $mensaje = "Stock sincronizado exitosamente. {$productosSincronizados} productos actualizados.";
+            
+            // Si es una petición AJAX, devolver JSON
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $mensaje,
+                    'productos_sincronizados' => $productosSincronizados
+                ]);
+            }
+            
+            if ($id) {
+                // Si viene desde una cotización/NVV específica, redirigir de vuelta
+                return redirect()->back()->with('success', $mensaje);
+            }
+            
+            // Si no viene desde una vista específica, redirigir a la lista de cotizaciones
+            return redirect()->route('cotizaciones.index')->with('success', $mensaje);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error sincronizando stock: ' . $e->getMessage());
+            $mensajeError = 'Error al sincronizar stock: ' . $e->getMessage();
+            
+            // Si es una petición AJAX, devolver JSON
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $mensajeError
+                ], 500);
+            }
+            
+            if ($id) {
+                return redirect()->back()->with('error', $mensajeError);
+            }
+            
+            return redirect()->route('cotizaciones.index')->with('error', $mensajeError);
+        }
+    }
+
+    /**
+     * Obtener stock actual de un producto específico
+     */
+    public function obtenerStockProducto($codigo)
+    {
+        try {
+            $stockService = new \App\Services\StockComprometidoService();
+            
+            // Obtener stock disponible real
+            $stockDisponibleReal = $stockService->obtenerStockDisponibleReal($codigo);
+            
+            // Obtener datos del producto
+            $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
+            
+            if (!$producto) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Producto no encontrado'
+                ]);
+            }
+            
+            return response()->json([
+                'success' => true,
+                'stock_disponible' => $stockDisponibleReal,
+                'stock_fisico' => $producto->stock_fisico ?? 0,
+                'stock_comprometido' => $producto->stock_comprometido ?? 0,
+                'producto' => [
+                    'codigo' => $producto->KOPR,
+                    'nombre' => $producto->NOKOPR,
+                    'unidad' => $producto->UD01PR ?? 'UN'
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error en obtenerStockProducto: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error obteniendo stock: ' . $e->getMessage()
+            ]);
         }
     }
 } 
