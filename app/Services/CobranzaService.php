@@ -4,6 +4,8 @@ namespace App\Services;
 
 use PDO;
 use PDOException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Database\QueryException;
 
 class CobranzaService
 {
@@ -36,87 +38,83 @@ class CobranzaService
         $this->useTestData = false;
     }
 
+    private function sqlsrv()
+    {
+        return DB::connection('sqlsrv_external');
+    }
+
     public function getCobranza($codigoVendedor = null)
     {
-        // En AWS usaremos conexión directa PDO
         try {
-            $host = env('SQLSRV_EXTERNAL_HOST');
-            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE');
-            $username = env('SQLSRV_EXTERNAL_USERNAME');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD');
-            
-            // Verificar que las credenciales estén configuradas
-            if (!$host || !$database || !$username || !$password) {
-                throw new \Exception('Credenciales SQL Server no configuradas en .env');
-            }
-            
-            // Intentar conexión directa PDO (funcionará en AWS)
-            $dsn = "sqlsrv:Server={$host},{$port};Database={$database};Encrypt=no;TrustServerCertificate=yes;ConnectionPooling=0;";
-            
-            $pdo = new PDO($dsn, $username, $password);
-            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            
-            $query = "
-                SELECT TOP 10 
-                    TIPO_DOCTO,
-                    NRO_DOCTO,
-                    CODIGO_CLIENTE AS CODIGO,
-                    NOMBRE_CLIENTE AS CLIENTE,
-                    NOMBRE_VENDEDOR AS VENDEDOR,
-                    CODIGO_VENDEDOR AS COD_VEN,
-                    VALOR_DOCUMENTO AS VALOR,
-                    ABONOS,
-                    SALDO,
-                    FECHA_EMISION AS EMISION,
-                    ULTIMO_VENCIMIENTO AS VENCIMIENTO,
-                    DIAS_VENCIDO AS DIAS,
-                    DIRECCION,
-                    REGION,
-                    COMUNA,
-                    ESTADO_DOCUMENTO AS ESTADO,
-                    EMPRESA
-                FROM vw_cobranza_por_vendedor";
-            
-            // Agregar filtro por vendedor si se especifica
+            $query = $this->sqlsrv()
+                ->table('vw_cobranza_por_vendedor')
+                ->select([
+                    'TIPO_DOCTO',
+                    'NRO_DOCTO',
+                    'CODIGO_CLIENTE',
+                    'NOMBRE_CLIENTE',
+                    'NOMBRE_VENDEDOR',
+                    'CODIGO_VENDEDOR',
+                    'VALOR_DOCUMENTO',
+                    'ABONOS',
+                    'SALDO',
+                    'FECHA_EMISION',
+                    'ULTIMO_VENCIMIENTO',
+                    'DIAS_VENCIDO',
+                    'DIRECCION',
+                    'REGION',
+                    'COMUNA',
+                    'ESTADO_DOCUMENTO',
+                    'EMPRESA',
+                ]);
+
             if ($codigoVendedor) {
-                $query .= " WHERE CODIGO_VENDEDOR = :codigoVendedor";
+                $query->where('CODIGO_VENDEDOR', $codigoVendedor);
             }
             
-            $query .= " ORDER BY DIAS_VENCIDO";
-            
-            $stmt = $pdo->prepare($query);
-            if ($codigoVendedor) {
-                $stmt->bindParam(':codigoVendedor', $codigoVendedor);
+            try {
+                $resultados = $query
+                    ->orderBy('DIAS_VENCIDO')
+                    ->limit(10)
+                    ->get();
+            } catch (QueryException $queryException) {
+                if (str_contains($queryException->getMessage(), "vw_cobranza_por_vendedor")) {
+                    $resultados = collect($this->consultarCobranzaDesdeTablas($codigoVendedor));
+                } else {
+                    throw $queryException;
+                }
             }
-            $stmt->execute();
-            
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-        } catch (PDOException $e) {
-            // Si falla la conexión directa, usar datos hardcodeados como fallback
-            if ($codigoVendedor === 'GOP') {
+
+            return $resultados->map(function ($fila) {
+                $emision = $fila->FECHA_EMISION ?? null;
+                $vencimiento = $fila->ULTIMO_VENCIMIENTO ?? null;
+
                 return [
-                    [
-                        'TIPO_DOCTO' => 'FCV',
-                        'NRO_DOCTO' => '0000041830',
-                        'CODIGO' => '77505101',
-                        'CLIENTE' => 'FERRETERIA VERSALLES SPA',
-                        'VENDEDOR' => 'GERARDO ORMEÑO PAREDES',
-                        'COD_VEN' => 'GOP',
-                        'VALOR' => 517764,
-                        'ABONOS' => 0,
-                        'SALDO' => 517764,
-                        'ESTADO' => 'VIGENTE',
-                        'DIAS' => -54,
-                        'EMISION' => '2025-07-25',
-                        'VENCIMIENTO' => '2025-09-23',
-                        'DIRECCION' => 'PANAMERICANA NORTE KM 19 1/2',
-                        'REGION' => 'REGION METROPOLITANA',
-                        'COMUNA' => 'COLINA'
-                    ]
+                    'TIPO_DOCTO' => trim((string)($fila->TIPO_DOCTO ?? '')),
+                    'NRO_DOCTO' => trim((string)($fila->NRO_DOCTO ?? '')),
+                    'CODIGO' => trim((string)($fila->CODIGO_CLIENTE ?? '')),
+                    'CLIENTE' => trim((string)($fila->NOMBRE_CLIENTE ?? '')),
+                    'VENDEDOR' => trim((string)($fila->NOMBRE_VENDEDOR ?? '')),
+                    'COD_VEN' => trim((string)($fila->CODIGO_VENDEDOR ?? '')),
+                    'VALOR' => (float)($fila->VALOR_DOCUMENTO ?? 0),
+                    'ABONOS' => (float)($fila->ABONOS ?? 0),
+                    'SALDO' => (float)($fila->SALDO ?? 0),
+                    'EMISION' => $emision instanceof \DateTimeInterface ? $emision->format('Y-m-d H:i:s') : (string)$emision,
+                    'VENCIMIENTO' => $vencimiento instanceof \DateTimeInterface ? $vencimiento->format('Y-m-d H:i:s') : (string)$vencimiento,
+                    'DIAS' => (int)($fila->DIAS_VENCIDO ?? 0),
+                    'DIRECCION' => trim((string)($fila->DIRECCION ?? '')),
+                    'REGION' => trim((string)($fila->REGION ?? '')),
+                    'COMUNA' => trim((string)($fila->COMUNA ?? '')),
+                    'ESTADO' => trim((string)($fila->ESTADO_DOCUMENTO ?? '')),
+                    'EMPRESA' => trim((string)($fila->EMPRESA ?? '')),
                 ];
-            }
+            })->toArray();
+
+        } catch (\Throwable $e) {
+            \Log::error('Error en CobranzaService::getCobranza: ' . $e->getMessage(), [
+                'codigo_vendedor' => $codigoVendedor,
+                'exception' => $e,
+            ]);
             
             return [];
         }
@@ -584,7 +582,7 @@ class CobranzaService
                     CAST(dbo.TABFU.KOFU AS VARCHAR(10)) + '|' +
                     CAST(dbo.MAEEN.KOFUEN AS VARCHAR(10)) AS DATOS
                 FROM dbo.MAEEDO
-                LEFT JOIN dbo.MAEEN ON dbo.MAEEDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEEN.SUEN = dbo.MAEEDO.SUENDO
+                LEFT JOIN dbo.MAEEN ON dbo.MAEEDO.ENDO = dbo.MAEEN.KOEN AND dbo.MAEEDO.SUENDO = dbo.MAEEN.SUENDO
                 LEFT JOIN dbo.TABFU ON dbo.MAEEN.KOFUEN = dbo.TABFU.KOFU
                 WHERE dbo.MAEEDO.TIDO IN ('FCV', 'NCV', 'FDV')
                     AND (dbo.MAEEDO.EMPRESA = '01' OR dbo.MAEEDO.EMPRESA = '02')";
@@ -695,93 +693,49 @@ class CobranzaService
         }
 
         try {
-            $host = env('SQLSRV_EXTERNAL_HOST');
-            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE');
-            $username = env('SQLSRV_EXTERNAL_USERNAME');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD');
-            
-            // Verificar que las credenciales estén configuradas
-            if (!$host || !$database || !$username || !$password) {
-                throw new \Exception('Credenciales SQL Server no configuradas en .env');
-            }
-            
-            $query = "
+            $sql = <<<'SQL'
                 SELECT 
-                    dbo.MAEEDO.TIDO AS TIPO_DOCTO,
-                    dbo.MAEEDO.NUDO AS NRO_DOCTO,
-                    dbo.MAEEDO.FEEMDO AS EMISION,
-                    dbo.MAEEDO.FEULVEDO AS VENCIMIENTO,
-                    CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) AS DIAS_VENCIDO,
-                    CASE WHEN dbo.MAEEDO.TIDO = 'NCV' THEN dbo.MAEEDO.VABRDO * - 1 ELSE dbo.MAEEDO.VABRDO END AS VALOR,
-                    CASE WHEN dbo.MAEEDO.TIDO = 'NCV' THEN dbo.MAEEDO.VAABDO * - 1 ELSE dbo.MAEEDO.VAABDO END AS ABONOS,
-                    CASE WHEN dbo.MAEEDO.TIDO = 'NCV' THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * - 1 ELSE (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) END AS SALDO,
-                    CASE WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) < - 8 THEN 'VIGENTE' 
-                         WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN - 7 AND - 1 THEN 'POR VENCER' 
-                         WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN 0 AND 7 THEN 'VENCIDO' 
-                         WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN 8 AND 30 THEN 'MOROSO' 
-                         ELSE 'BLOQUEAR' END AS ESTADO
+                    TIDO AS TIPO_DOCTO,
+                    NUDO AS NRO_DOCTO,
+                    FEEMDO AS EMISION,
+                    FEULVEDO AS VENCIMIENTO,
+                    CAST(DATEDIFF(DAY, FEULVEDO, GETDATE()) AS INT) AS DIAS_VENCIDO,
+                    CASE WHEN TIDO = 'NCV' THEN VABRDO * -1 ELSE VABRDO END AS VALOR,
+                    CASE WHEN TIDO = 'NCV' THEN VAABDO * -1 ELSE VAABDO END AS ABONOS,
+                    CASE WHEN TIDO = 'NCV' THEN (VABRDO - VAABDO) * -1 ELSE (VABRDO - VAABDO) END AS SALDO,
+                    CASE 
+                        WHEN CAST(DATEDIFF(DAY, FEULVEDO, GETDATE()) AS INT) < -8 THEN 'VIGENTE'
+                        WHEN CAST(DATEDIFF(DAY, FEULVEDO, GETDATE()) AS INT) BETWEEN -7 AND -1 THEN 'POR VENCER'
+                        WHEN CAST(DATEDIFF(DAY, FEULVEDO, GETDATE()) AS INT) BETWEEN 0 AND 7 THEN 'VENCIDO'
+                        WHEN CAST(DATEDIFF(DAY, FEULVEDO, GETDATE()) AS INT) BETWEEN 8 AND 30 THEN 'MOROSO'
+                        ELSE 'BLOQUEAR'
+                    END AS ESTADO
                 FROM dbo.MAEEDO
-                WHERE dbo.MAEEDO.ENDO = '{$codigoCliente}'
-                    AND (dbo.MAEEDO.EMPRESA = '01' OR dbo.MAEEDO.EMPRESA = '02') 
-                    AND (dbo.MAEEDO.TIDO = 'FCV' OR dbo.MAEEDO.TIDO = 'FDV') 
-                    AND (dbo.MAEEDO.VABRDO > dbo.MAEEDO.VAABDO)
-                ORDER BY DIAS_VENCIDO DESC";
+                WHERE ENDO = ?
+                    AND EMPRESA IN ('01', '02')
+                    AND TIDO IN ('FCV', 'FDV', 'NCV')
+                    AND VABRDO > VAABDO
+                ORDER BY DIAS_VENCIDO DESC
+            SQL;
 
-            // Crear archivo temporal con la consulta
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $query . "\ngo\nquit");
-            
-            // Ejecutar consulta usando tsql
-            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-            $output = shell_exec($command);
-            
-            // Limpiar archivo temporal
-            unlink($tempFile);
-            
-            if (!$output || str_contains($output, 'error')) {
-                throw new \Exception('Error ejecutando consulta tsql: ' . $output);
-            }
-            
-            // Procesar la salida
-            $lines = explode("\n", $output);
-            $result = [];
-            
-            foreach ($lines as $line) {
-                $line = trim($line);
-                
-                // Saltar líneas de configuración
-                if (empty($line) || 
-                    strpos($line, 'locale') !== false || 
-                    strpos($line, 'Setting') !== false || 
-                    strpos($line, 'Msg ') !== false || 
-                    strpos($line, 'Warning:') !== false ||
-                    preg_match('/^\d+>$/', $line) ||
-                    preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
-                    strpos($line, 'rows affected') !== false ||
-                    strpos($line, 'TIPO_DOCTO') !== false ||
-                    strpos($line, 'NRO_DOCTO') !== false ||
-                    strpos($line, 'EMISION') !== false) {
-                    continue;
-                }
-                
-                // Buscar líneas con datos de facturas
-                if (preg_match('/^(\w+)\s+(\d+)\s+(.+?)\s+(.+?)\s+(-?\d+)\s+([\d\.-]+)\s+([\d\.-]+)\s+([\d\.-]+)\s+(.+)$/', $line, $matches)) {
-                    $result[] = [
-                        'TIPO_DOCTO' => $matches[1],
-                        'NRO_DOCTO' => $matches[2],
-                        'EMISION' => $matches[3],
-                        'VENCIMIENTO' => $matches[4],
-                        'DIAS_VENCIDO' => (int)$matches[5],
-                        'VALOR' => (float)$matches[6],
-                        'ABONOS' => (float)$matches[7],
-                        'SALDO' => (float)$matches[8],
-                        'ESTADO' => trim($matches[9])
+            $registros = $this->sqlsrv()->select($sql, [$codigoCliente]);
+
+            return collect($registros)->map(function ($fila) {
+                $emision = $fila->EMISION ?? null;
+                $vencimiento = $fila->VENCIMIENTO ?? null;
+
+                return [
+                    'TIPO_DOCTO' => trim((string)($fila->TIPO_DOCTO ?? '')),
+                    'NRO_DOCTO' => trim((string)($fila->NRO_DOCTO ?? '')),
+                    'EMISION' => $emision instanceof \DateTimeInterface ? $emision->format('Y-m-d H:i:s') : (string)$emision,
+                    'VENCIMIENTO' => $vencimiento instanceof \DateTimeInterface ? $vencimiento->format('Y-m-d H:i:s') : (string)$vencimiento,
+                    'DIAS_VENCIDO' => (int)($fila->DIAS_VENCIDO ?? 0),
+                    'VALOR' => (float)($fila->VALOR ?? 0),
+                    'ABONOS' => (float)($fila->ABONOS ?? 0),
+                    'SALDO' => (float)($fila->SALDO ?? 0),
+                    'ESTADO' => trim((string)($fila->ESTADO ?? '')),
                     ];
-                }
-            }
-            
-            return $result;
+            })->toArray();
 
         } catch (\Exception $e) {
             \Log::error('Error obteniendo facturas pendientes del cliente ' . $codigoCliente . ': ' . $e->getMessage(), [
@@ -2027,108 +1981,35 @@ class CobranzaService
     public function getDatosFacturacionCliente($codigoCliente)
     {
         try {
-            $host = env('SQLSRV_EXTERNAL_HOST');
-            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE');
-            $username = env('SQLSRV_EXTERNAL_USERNAME');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD');
-            
-            // Consulta para obtener facturas pendientes del cliente
-            $queryFacturas = "
-                SELECT 
-                    COUNT(*) AS CANTIDAD_FACTURAS,
-                    SUM(CASE WHEN TIDO = 'NCV' THEN (VABRDO - VAABDO) * -1 ELSE (VABRDO - VAABDO) END) AS SALDO_TOTAL
-                FROM dbo.MAEEDO
-                WHERE ENDO = '{$codigoCliente}'
-                    AND (TIDO = 'FCV' OR TIDO = 'NCV' OR TIDO = 'FDV')
-                    AND (VABRDO > VAABDO)
-                    AND (EMPRESA = '01' OR EMPRESA = '02')
-            ";
-            
-            // Consulta para obtener crédito de compras (ventas de los últimos 3 meses)
-            $queryCredito = "
-                SELECT 
-                    ENDO,
-                    CASE WHEN TIDO = 'NCV' THEN SUM(VANEDO) * -1 ELSE SUM(VANEDO) * 1 END AS VENTA3M,
-                    CASE WHEN TIDO = 'NCV' THEN (SUM(VANEDO) / 3) * -1 ELSE (SUM(VANEDO) / 3) * 1 END AS VENTAM
-                FROM dbo.MAEEDO
-                WHERE (TIDO = 'FCV' OR TIDO = 'NCV') 
-                    AND (FEEMDO > GETDATE() - 90)
-                    AND ENDO = '{$codigoCliente}'
-                GROUP BY ENDO, TIDO
-            ";
-            
-            // Crear archivo temporal con las consultas
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $queryFacturas . "\ngo\n" . $queryCredito . "\ngo\nquit");
-            
-            // Ejecutar consulta usando tsql
-            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-            $output = shell_exec($command);
-            
-            // Limpiar archivo temporal
-            unlink($tempFile);
-            
-            if (!$output || str_contains($output, 'error')) {
-                throw new \Exception('Error ejecutando consulta tsql: ' . $output);
-            }
-            
-            // Procesar la salida
-            $lines = explode("\n", $output);
-            $cantidadFacturas = 0;
-            $saldoTotal = 0;
-            $venta3M = 0;
-            $ventaM = 0;
-            
-            \Log::info('Procesando salida de tsql para cliente ' . $codigoCliente . ': ' . substr($output, 0, 500));
-            
-            foreach ($lines as $lineNumber => $line) {
-                $line = trim($line);
-                
-                // Debug: mostrar todas las líneas
-                \Log::info("Línea {$lineNumber}: " . $line);
-                
-                // Saltar líneas de configuración
-                if (empty($line) || 
-                    strpos($line, 'locale') !== false || 
-                    strpos($line, 'Setting') !== false || 
-                    strpos($line, 'Msg ') !== false || 
-                    strpos($line, 'Warning:') !== false ||
-                    preg_match('/^\d+>$/', $line) ||
-                    preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
-                    strpos($line, 'rows affected') !== false ||
-                    strpos($line, 'CANTIDAD_FACTURAS') !== false ||
-                    strpos($line, 'SALDO_TOTAL') !== false ||
-                    strpos($line, 'ENDO') !== false ||
-                    strpos($line, 'VENTA3M') !== false ||
-                    strpos($line, 'VENTAM') !== false) {
-                    continue;
-                }
-                
-                // Buscar líneas con datos numéricos (más flexible)
-                if (preg_match('/^\s*(\d+)\s+([\d\.]+)\s*$/', $line, $matches)) {
-                    // Primera consulta: cantidad_facturas y saldo_total
-                    $cantidadFacturas = (int)$matches[1];
-                    $saldoTotal = (float)$matches[2];
-                    \Log::info("Datos de facturación encontrados: cantidad={$cantidadFacturas}, saldo={$saldoTotal}");
-                } elseif (preg_match('/^\s*([A-Z0-9]+)\s+([\d\.-]+)\s+([\d\.-]+)\s*$/', $line, $matches)) {
-                    // Segunda consulta: venta3M y ventaM
-                    $venta3M = (float)$matches[2];
-                    $ventaM = (float)$matches[3];
-                    \Log::info("Datos de crédito encontrados: venta3M={$venta3M}, ventaM={$ventaM}");
-                } elseif (preg_match('/^\s*([\d\.-]+)\s+([\d\.-]+)\s*$/', $line, $matches)) {
-                    // Formato alternativo sin código de cliente
-                    $venta3M = (float)$matches[1];
-                    $ventaM = (float)$matches[2];
-                    \Log::info("Datos de crédito encontrados (formato alternativo): venta3M={$venta3M}, ventaM={$ventaM}");
-                }
-            }
+            $facturacion = $this->sqlsrv()
+                ->table('MAEEDO')
+                ->selectRaw(
+                    "COUNT(*) AS cantidad_facturas, " .
+                    "COALESCE(SUM(CASE WHEN TIDO = 'NCV' THEN (VABRDO - VAABDO) * -1 ELSE (VABRDO - VAABDO) END), 0) AS saldo_total"
+                )
+                ->where('ENDO', $codigoCliente)
+                ->whereIn('TIDO', ['FCV', 'NCV', 'FDV'])
+                ->whereRaw('VABRDO > VAABDO')
+                ->whereIn('EMPRESA', ['01', '02'])
+                ->first();
+
+            $ventas = $this->sqlsrv()
+                ->table('MAEEDO')
+                ->selectRaw(
+                    "COALESCE(SUM(CASE WHEN TIDO = 'NCV' THEN VANEDO * -1 ELSE VANEDO END), 0) AS venta3m"
+                )
+                ->whereIn('TIDO', ['FCV', 'NCV'])
+                ->where('ENDO', $codigoCliente)
+                ->where('FEEMDO', '>', DB::raw('DATEADD(DAY, -90, GETDATE())'))
+                ->first();
+
+            $venta3M = (float)($ventas->venta3m ?? 0);
             
             return [
-                'cantidad_facturas' => $cantidadFacturas,
-                'saldo_total' => $saldoTotal,
+                'cantidad_facturas' => (int)($facturacion->cantidad_facturas ?? 0),
+                'saldo_total' => (float)($facturacion->saldo_total ?? 0),
                 'venta_3_meses' => $venta3M,
-                'venta_mensual_promedio' => $ventaM
+                'venta_mensual_promedio' => $venta3M / 3,
             ];
             
         } catch (\Exception $e) {
@@ -4920,6 +4801,55 @@ class CobranzaService
             \Log::error('Error obteniendo vendedores: ' . $e->getMessage());
             return [];
         }
+    }
+
+    private function consultarCobranzaDesdeTablas(?string $codigoVendedor): array
+    {
+        $sql = <<<'SQL'
+            SELECT TOP 10
+                ME.TIDO AS TIPO_DOCTO,
+                ME.NUDO AS NRO_DOCTO,
+                EN.KOEN AS CODIGO_CLIENTE,
+                EN.NOKOEN AS NOMBRE_CLIENTE,
+                FU.NOKOFU AS NOMBRE_VENDEDOR,
+                FU.KOFU AS CODIGO_VENDEDOR,
+                CASE WHEN ME.TIDO = 'NCV' THEN ME.VABRDO * -1 ELSE ME.VABRDO END AS VALOR_DOCUMENTO,
+                CASE WHEN ME.TIDO = 'NCV' THEN ME.VAABDO * -1 ELSE ME.VAABDO END AS ABONOS,
+                CASE WHEN ME.TIDO = 'NCV' THEN (ME.VABRDO - ME.VAABDO) * -1 ELSE (ME.VABRDO - ME.VAABDO) END AS SALDO,
+                ME.FEEMDO AS FECHA_EMISION,
+                ME.FEULVEDO AS ULTIMO_VENCIMIENTO,
+                CAST(DATEDIFF(DAY, ME.FEULVEDO, GETDATE()) AS INT) AS DIAS_VENCIDO,
+                EN.DIEN AS DIRECCION,
+                COALESCE(CI.NOKOCI, EN.CIEN) AS REGION,
+                COALESCE(CM.NOKOCM, EN.CMEN) AS COMUNA,
+                CASE 
+                    WHEN CAST(DATEDIFF(DAY, ME.FEULVEDO, GETDATE()) AS INT) < -8 THEN 'VIGENTE'
+                    WHEN CAST(DATEDIFF(DAY, ME.FEULVEDO, GETDATE()) AS INT) BETWEEN -7 AND -1 THEN 'POR VENCER'
+                    WHEN CAST(DATEDIFF(DAY, ME.FEULVEDO, GETDATE()) AS INT) BETWEEN 0 AND 7 THEN 'VENCIDO'
+                    WHEN CAST(DATEDIFF(DAY, ME.FEULVEDO, GETDATE()) AS INT) BETWEEN 8 AND 30 THEN 'MOROSO'
+                    ELSE 'BLOQUEAR'
+                END AS ESTADO_DOCUMENTO,
+                ME.EMPRESA
+            FROM dbo.MAEEDO AS ME
+            INNER JOIN dbo.MAEEN AS EN ON EN.KOEN = ME.ENDO AND EN.SUEN = ME.SUENDO
+            LEFT JOIN dbo.TABFU AS FU ON FU.KOFU = EN.KOFUEN
+            LEFT JOIN dbo.TABCI AS CI ON CI.KOCI = EN.CIEN
+            LEFT JOIN dbo.TABCM AS CM ON CM.KOCI = EN.CIEN AND CM.KOCM = EN.CMEN
+            WHERE ME.EMPRESA IN ('01', '02')
+              AND ME.TIDO IN ('FCV', 'FDV', 'NCV')
+              AND ME.VABRDO > ME.VAABDO
+        SQL;
+
+        $bindings = [];
+
+        if ($codigoVendedor) {
+            $sql .= " AND EN.KOFUEN = ?";
+            $bindings[] = $codigoVendedor;
+        }
+
+        $sql .= " ORDER BY DIAS_VENCIDO";
+
+        return $this->sqlsrv()->select($sql, $bindings);
     }
 
 } 

@@ -8,146 +8,79 @@ use Illuminate\Support\Facades\Log;
 
 class SincronizarProductos extends Command
 {
-    protected $signature = 'productos:sincronizar {--limit=1000 : Límite de productos a sincronizar} {--offset=0 : Desplazamiento inicial (OFFSET)}';
+    protected $signature = 'productos:sincronizar {--limit=1000 : Número de productos por lote} {--offset=0 : Desplazamiento inicial (OFFSET)} {--once : Procesar solo un lote y finalizar}';
     protected $description = 'Sincroniza productos desde SQL Server a MySQL';
 
     public function handle()
     {
         $this->info('Iniciando sincronización de productos...');
         
-        $host = env('SQLSRV_EXTERNAL_HOST');
-        $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-        $database = env('SQLSRV_EXTERNAL_DATABASE');
-        $username = env('SQLSRV_EXTERNAL_USERNAME');
-        $password = env('SQLSRV_EXTERNAL_PASSWORD');
-        
-        $limit = (int) $this->option('limit');
+        $chunkSize = (int) $this->option('limit');
         $offset = (int) $this->option('offset');
-        
-        // Consulta SQL con paginación por OFFSET/FETCH - SOLO lista 01P (principal)
-        $query = "
-            SELECT 
-                CAST(MAEPR.KOPR AS VARCHAR(30)) + '|' +
-                CAST(REPLACE(MAEPR.NOKOPR, '|', ' ') AS VARCHAR(200)) + '|' +
-                CAST(MAEPR.TIPR AS VARCHAR(10)) + '|' +
-                CAST(MAEPR.UD01PR AS VARCHAR(10)) + '|' +
-                CAST(ISNULL(MAEST.STFI1, 0) AS VARCHAR(30)) + '|' +
-                CAST(ISNULL(MAEST.STOCNV1, 0) AS VARCHAR(30)) + '|' +
-                CAST((ISNULL(MAEST.STFI1, 0) - ISNULL(MAEST.STOCNV1, 0)) AS VARCHAR(30)) + '|' +
-                CAST(ISNULL(TABPRE01.PP01UD, 0) AS VARCHAR(30)) + '|' +
-                CAST(ISNULL(TABPRE01.PP02UD, 0) AS VARCHAR(30)) + '|' +
-                CAST(ISNULL(TABPRE01.DTMA01UD, 0) AS VARCHAR(30)) AS LINEA
-            FROM MAEPR 
-            LEFT JOIN MAEST ON MAEPR.KOPR = MAEST.KOPR AND MAEST.KOBO = '01'
-            LEFT JOIN TABPRE AS TABPRE01 ON MAEPR.KOPR = TABPRE01.KOPR AND TABPRE01.KOLT = '01P'
-            WHERE MAEPR.ATPR <> 'N' AND MAEPR.ATPR <> 'OCU'
-            ORDER BY MAEPR.NOKOPR
-            OFFSET {$offset} ROWS FETCH NEXT {$limit} ROWS ONLY
-        ";
+        $processOnce = (bool) $this->option('once');
 
-        $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-        $singleLineQuery = str_replace(["\n", "\r"], ' ', $query);
-        file_put_contents($tempFile, $singleLineQuery . "\ngo\nquit");
-
-        $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-        $output = shell_exec($command);
-
-        unlink($tempFile);
-
-        $this->info('Output completo:');
-        $this->line($output);
-
-        if (empty($output)) {
-            $this->error('No se pudo obtener datos del servidor SQL Server');
-            return 1;
-        }
-
-        $lines = explode("\n", trim($output));
-        $dataLines = [];
-
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if (empty($line) || 
-                strpos($line, 'Setting') === 0 || 
-                strpos($line, 'locale') === 0 || 
-                strpos($line, 'using') === 0 ||
-                strpos($line, 'CODIGO_PRODUCTO') !== false ||
-                strpos($line, 'rows affected)') !== false) {
-                continue;
-            }
-
-            if (!empty($line)) {
-                $dataLines[] = $line;
-                $this->info('Línea encontrada: ' . substr($line, 0, 100) . '...');
-            }
-        }
-
-        $this->info('Total de líneas de datos encontradas: ' . count($dataLines));
-
-        if (empty($dataLines)) {
-            $this->error('No se encontraron datos de productos');
-            return 1;
+        if ($chunkSize <= 0) {
+            $chunkSize = 1000;
         }
 
         $productosProcesados = 0;
         $productosActualizados = 0;
         $productosCreados = 0;
 
-        foreach ($dataLines as $line) {
-            // Ahora la salida viene delimitada por '|'
-            $fields = explode('|', $line);
+        $currentOffset = $offset;
+        $lote = 1;
+
+        do {
+            $productos = $this->obtenerProductosDesdeSqlServer($chunkSize, $currentOffset);
+
+            $cantidadLote = $productos->count();
             
-            if (count($fields) < 10) {
-                $this->warn('Línea con pocos campos: ' . count($fields) . ' - ' . substr($line, 0, 50));
+            if ($cantidadLote === 0) {
+                if ($productosProcesados === 0) {
+                    $this->warn('No se encontraron productos para sincronizar.');
+                }
+                break;
+            }
+
+            $this->info("Procesando lote {$lote} ({$cantidadLote} productos, offset {$currentOffset})");
+
+            foreach ($productos as $producto) {
+                $codigoProducto = trim((string)($producto->codigo_producto ?? ''));
+
+                if ($codigoProducto === '') {
                 continue;
             }
 
-            $codigoProducto = trim($fields[0]);
-            if (empty($codigoProducto)) {
-                continue;
-            }
+                $nombreProducto = trim((string)($producto->nombre_producto ?? ''));
+                $tipoProducto = trim((string)($producto->tipo_producto ?? ''));
+                $unidadMedida = trim((string)($producto->unidad_medida ?? ''));
 
-            $nombreProducto = trim($fields[1]);
-            $tipoProducto = trim($fields[2]);
-            $unidadMedida = trim($fields[3]);
-            // Función helper para convertir valores vacíos a 0 y manejar valores muy grandes
-            $convertToFloat = function($value, $isDiscount = false) {
-                $value = trim($value ?? '');
-                if (empty($value)) {
+                $convertToFloat = function ($value, $isDiscount = false) {
+                    if ($value === null || $value === '') {
                     return 0.0;
                 }
-                $floatValue = (float)$value;
+
+                    $floatValue = (float) $value;
                 
-                // Para descuentos, limitar a 100 (porcentaje máximo)
                 if ($isDiscount && $floatValue > 100) {
-                    return 0.0; // Si el descuento es mayor a 100%, usar 0
+                        return 0.0;
                 }
                 
-                // Limitar valores muy grandes que pueden causar errores en MySQL
                 if ($floatValue > 999999999.99) {
-                    return 0.0; // Si es muy grande, usar 0
+                        return 0.0;
                 }
+
                 return $floatValue;
             };
             
-            $stockFisico = $convertToFloat($fields[4] ?? '');
-            $stockComprometido = $convertToFloat($fields[5] ?? '');
-            $stockDisponible = $convertToFloat($fields[6] ?? '');
+                $stockFisico = $convertToFloat($producto->stock_fisico ?? 0);
+                $stockComprometido = $convertToFloat($producto->stock_comprometido ?? 0);
+                $stockDisponible = $convertToFloat($producto->stock_disponible ?? 0);
             
-            // Precios 01P
-            $precio01p = $convertToFloat($fields[7] ?? '');
-            $precio01pUd2 = $convertToFloat($fields[8] ?? '');
-            $descuentoMaximo01p = $convertToFloat($fields[9] ?? '', true);
-            
-            // Listas 02P y 03P no se usan
-            $precio02p = 0.0;
-            $precio02pUd2 = 0.0;
-            $descuentoMaximo02p = 0.0;
-            $precio03p = 0.0;
-            $precio03pUd2 = 0.0;
-            $descuentoMaximo03p = 0.0;
+                $precio01p = $convertToFloat($producto->precio_01p ?? 0);
+                $precio01pUd2 = $convertToFloat($producto->precio_01p_ud2 ?? 0);
+                $descuentoMaximo01p = $convertToFloat($producto->descuento_maximo_01p ?? 0, true);
 
-            // Verificar si el producto ya existe
             $productoExistente = DB::table('productos')->where('KOPR', $codigoProducto)->first();
 
             $data = [
@@ -170,35 +103,28 @@ class SincronizarProductos extends Command
                 'FECRPR' => null,
                 'estado' => 1,
                 'ultima_sincronizacion' => now(),
-                
-                // Precios de todas las listas
                 'precio_01p' => $precio01p,
                 'precio_01p_ud2' => $precio01pUd2,
                 'descuento_maximo_01p' => $descuentoMaximo01p,
-                'precio_02p' => $precio02p,
-                'precio_02p_ud2' => $precio02pUd2,
-                'descuento_maximo_02p' => $descuentoMaximo02p,
-                'precio_03p' => $precio03p,
-                'precio_03p_ud2' => $precio03pUd2,
-                'descuento_maximo_03p' => $descuentoMaximo03p,
-                
-                // Stock
+                    'precio_02p' => 0.0,
+                    'precio_02p_ud2' => 0.0,
+                    'descuento_maximo_02p' => 0.0,
+                    'precio_03p' => 0.0,
+                    'precio_03p_ud2' => 0.0,
+                    'descuento_maximo_03p' => 0.0,
                 'stock_fisico' => $stockFisico,
                 'stock_comprometido' => $stockComprometido,
                 'stock_disponible' => $stockDisponible,
-                
                 'activo' => true,
+                    'updated_at' => now(),
             ];
 
             if ($productoExistente) {
-                // Actualizar producto existente
                 DB::table('productos')->where('KOPR', $codigoProducto)->update($data);
                 $productosActualizados++;
             } else {
-                // Crear nuevo producto
                 $data['KOPR'] = $codigoProducto;
                 $data['created_at'] = now();
-                $data['updated_at'] = now();
                 DB::table('productos')->insert($data);
                 $productosCreados++;
             }
@@ -206,11 +132,57 @@ class SincronizarProductos extends Command
             $productosProcesados++;
         }
 
-        $this->info("Sincronización completada:");
+            $currentOffset += $cantidadLote;
+            $lote++;
+
+            $this->info("Total procesado hasta ahora: {$productosProcesados}");
+
+            if ($processOnce) {
+                break;
+            }
+
+            if ($cantidadLote < $chunkSize) {
+                break;
+            }
+
+        } while (true);
+
+        $this->info('Sincronización completada:');
         $this->info("- Productos procesados: {$productosProcesados}");
         $this->info("- Productos creados: {$productosCreados}");
         $this->info("- Productos actualizados: {$productosActualizados}");
 
         return 0;
+    }
+
+    private function obtenerProductosDesdeSqlServer(int $limit, int $offset)
+    {
+        return DB::connection('sqlsrv_external')
+            ->table('MAEPR')
+            ->leftJoin('MAEST as MAESTOCK', function ($join) {
+                $join->on('MAEPR.KOPR', '=', 'MAESTOCK.KOPR')
+                    ->where('MAESTOCK.KOBO', '=', '01');
+            })
+            ->leftJoin('TABPRE as TABPRE01', function ($join) {
+                $join->on('MAEPR.KOPR', '=', 'TABPRE01.KOPR')
+                    ->where('TABPRE01.KOLT', '=', '01P');
+            })
+            ->whereNotIn('MAEPR.ATPR', ['N', 'OCU'])
+            ->orderBy('MAEPR.NOKOPR')
+            ->offset($offset)
+            ->limit($limit)
+            ->select([
+                'MAEPR.KOPR as codigo_producto',
+                DB::raw("REPLACE(MAEPR.NOKOPR, '|', ' ') as nombre_producto"),
+                'MAEPR.TIPR as tipo_producto',
+                'MAEPR.UD01PR as unidad_medida',
+                DB::raw('COALESCE(MAESTOCK.STFI1, 0) as stock_fisico'),
+                DB::raw('COALESCE(MAESTOCK.STOCNV1, 0) as stock_comprometido'),
+                DB::raw('(COALESCE(MAESTOCK.STFI1, 0) - COALESCE(MAESTOCK.STOCNV1, 0)) as stock_disponible'),
+                DB::raw('COALESCE(TABPRE01.PP01UD, 0) as precio_01p'),
+                DB::raw('COALESCE(TABPRE01.PP02UD, 0) as precio_01p_ud2'),
+                DB::raw('COALESCE(TABPRE01.DTMA01UD, 0) as descuento_maximo_01p'),
+            ])
+            ->get();
     }
 }

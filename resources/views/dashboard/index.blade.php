@@ -38,6 +38,44 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Super Admin - Productos Ingresados (Manejo Stock) -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-success card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">inventory</i>
+                            </div>
+                            <p class="card-category">Productos Ingresados</p>
+                            <h3 class="card-title">{{ number_format($productosIngresados ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-success">info</i>
+                                Total capturas de stock
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Super Admin - Productos Modificados (Manejo Stock) -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-info card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">edit</i>
+                            </div>
+                            <p class="card-category">Productos Modificados</p>
+                            <h3 class="card-title">{{ number_format($productosModificados ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-info">info</i>
+                                Total códigos de barras asociados
+                            </div>
+                        </div>
+                    </div>
+                </div>
             @endif
 
             @if(in_array($tipoUsuario, ['Super Admin', 'Vendedor', 'Supervisor']))

@@ -24,8 +24,7 @@
             <div class="login-header">
                 <div class="logo-section">
                     <i class="material-icons logo-icon">local_shipping</i>
-                    <h1 class="company-name">Comercial Higuera</h1>
-                    <p class="company-tagline">Sistema de Gestión Logística</p>
+                    <h1 class="company-name">Sistema de Gestión Logística</h1>
                 </div>
             </div>
 
@@ -76,30 +75,10 @@
                     </button>
                 </div>
 
-                <div class="form-links">
-                    <div class="row">
-                        <div class="col-6">
-                            <a href="{{ route('register') }}" class="link-left">
-                                <i class="material-icons">person_add</i>
-                                Crear Cuenta
-                            </a>
-                        </div>
-                        <div class="col-6 text-right">
-                            <a href="{{ route('password.request') }}" class="link-right">
-                                <i class="material-icons">help</i>
-                                ¿Olvidaste tu contraseña?
-                            </a>
-                        </div>
-                    </div>
-                </div>
+                <div class="form-links d-none"></div>
             </form>
 
-            <div class="login-footer">
-                <p class="demo-info">
-                    <i class="material-icons">info</i>
-                    Demo: admin@black.com / secret
-                </p>
-            </div>
+            <div class="login-footer d-none"></div>
         </div>
     </div>
 </div>

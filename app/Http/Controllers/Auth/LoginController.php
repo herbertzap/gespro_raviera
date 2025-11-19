@@ -67,4 +67,27 @@ class LoginController extends Controller
         // Si no, buscar por RUT
         return ['rut' => $login, 'password' => $request->get('password')];
     }
+
+    protected function authenticated(Request $request, $user)
+    {
+        if ($user->hasRole('Manejo Stock')) {
+            return redirect()->route('manejo-stock.select');
+        }
+    }
+
+    /**
+     * Cierra la sesión eliminando los tokens de sesión y CSRF.
+     */
+    public function logout(Request $request)
+    {
+        $this->guard()->logout();
+
+        $request->session()->forget('last_activity');
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect()
+            ->route('login')
+            ->with('status', 'Sesión cerrada correctamente.');
+    }
 }
