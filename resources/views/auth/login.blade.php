@@ -76,30 +76,8 @@
                     </button>
                 </div>
 
-                <div class="form-links">
-                    <div class="row">
-                        <div class="col-6">
-                            <a href="{{ route('register') }}" class="link-left">
-                                <i class="material-icons">person_add</i>
-                                Crear Cuenta
-                            </a>
-                        </div>
-                        <div class="col-6 text-right">
-                            <a href="{{ route('password.request') }}" class="link-right">
-                                <i class="material-icons">help</i>
-                                ¿Olvidaste tu contraseña?
-                            </a>
-                        </div>
-                    </div>
-                </div>
             </form>
 
-            <div class="login-footer">
-                <p class="demo-info">
-                    <i class="material-icons">info</i>
-                    Demo: admin@black.com / secret
-                </p>
-            </div>
         </div>
     </div>
 </div>
@@ -254,49 +232,6 @@
     box-shadow: 0 6px 20px rgba(33, 150, 243, 0.4);
 }
 
-.form-links {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid #eee;
-}
-
-.link-left, .link-right {
-    color: #2196F3;
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
-    transition: color 0.3s ease;
-}
-
-.link-left:hover, .link-right:hover {
-    color: #1976D2;
-    text-decoration: none;
-}
-
-.link-left i, .link-right i {
-    font-size: 16px;
-    vertical-align: middle;
-    margin-right: 5px;
-}
-
-.login-footer {
-    text-align: center;
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid #eee;
-}
-
-.demo-info {
-    font-size: 12px;
-    color: #666;
-    margin: 0;
-}
-
-.demo-info i {
-    font-size: 14px;
-    vertical-align: middle;
-    margin-right: 5px;
-}
 
 @media (max-width: 768px) {
     .login-content {

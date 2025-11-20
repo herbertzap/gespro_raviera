@@ -94,8 +94,9 @@
                             
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="rut" class="bmd-label-floating">RUT</label>
-                                    <input type="text" name="rut" id="rut" class="form-control @error('rut') is-invalid @enderror" placeholder="0000000-0" maxlength="10">
+                                    <label for="rut" class="bmd-label-floating">RUT (Opcional)</label>
+                                    <input type="text" name="rut" id="rut" class="form-control @error('rut') is-invalid @enderror" placeholder="12345678-9" maxlength="11">
+                                    <small class="form-text text-muted">Formato: 12345678-9</small>
                                     @error('rut')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -173,7 +174,7 @@
 </div>
 @endsection
 
-@section('scripts')
+@push('js')
 <style>
 /* FORZAR estilos específicos para el select - sobrescribir CSS global */
 #vendedor_id.form-control {
@@ -231,137 +232,204 @@
 </style>
 
 <script>
-// Script directo sin DOMContentLoaded - v3.0
-console.log('🔧 Script de precarga de datos iniciado - v3.0');
-
-function initVendedorSelect() {
+console.log('🔧 Script de create-from-vendedor cargado');
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('✅ DOM cargado, inicializando script...');
     const vendedorSelect = document.getElementById('vendedor_id');
     const infoDiv = document.getElementById('vendedor-info');
     const emailField = document.getElementById('email');
     const rutField = document.getElementById('rut');
     
-    if (!vendedorSelect) {
-        console.error('❌ No se encontró el select vendedor_id');
-        return;
-    }
-    
-    console.log('✅ Elementos encontrados:', {
+    console.log('Elementos encontrados:', {
         vendedorSelect: !!vendedorSelect,
         infoDiv: !!infoDiv,
         emailField: !!emailField,
         rutField: !!rutField
     });
     
-    vendedorSelect.addEventListener('change', function() {
-        console.log('🔄 Cambio detectado en select, valor:', this.value);
-        
-        const selectedOption = this.options[this.selectedIndex];
-        console.log('📋 Opción seleccionada:', selectedOption);
-        
-        if (this.value && selectedOption) {
-            const nombre = selectedOption.getAttribute('data-nombre');
-            const email = selectedOption.getAttribute('data-email');
-            const rut = selectedOption.getAttribute('data-rut');
-            
-            console.log('📊 Datos extraídos:', { nombre, email, rut });
-            
-            // Mostrar información del empleado
-            if (infoDiv) {
-                infoDiv.innerHTML = `
-                    <p><strong>Nombre:</strong> ${nombre || 'No especificado'}</p>
-                    <p><strong>Email:</strong> ${email || 'No especificado'}</p>
-                    <p><strong>RUT:</strong> ${rut || 'No especificado'}</p>
-                `;
-            }
-            
-            // Pre-llenar email si existe
-            if (emailField) {
-                if (email && email.trim() !== '') {
-                    console.log('📧 Precargando email:', email.trim());
-                    emailField.value = email.trim();
-                    emailField.classList.remove('is-invalid');
-                } else {
-                    emailField.value = '';
-                }
-            }
-            
-            // Pre-llenar RUT si existe
-            if (rutField) {
-                if (rut && rut.trim() !== '') {
-                    console.log('🆔 Precargando RUT:', rut.trim());
-                    rutField.value = rut.trim();
-                    rutField.classList.remove('is-invalid');
-                } else {
-                    rutField.value = '';
-                }
-            }
-            
-            // Resaltar visualmente que se cargaron datos
-            if (email && email.trim() !== '' && emailField) {
-                emailField.style.backgroundColor = '#e8f5e8';
-                setTimeout(() => {
-                    emailField.style.backgroundColor = '';
-                }, 2000);
-            }
-            
-            if (rut && rut.trim() !== '' && rutField) {
-                rutField.style.backgroundColor = '#e8f5e8';
-                setTimeout(() => {
-                    rutField.style.backgroundColor = '';
-                }, 2000);
-            }
-        } else {
-            console.log('🧹 Limpiando campos');
+    // Función AJAX para obtener datos del vendedor
+    function cargarDatosVendedor(vendedorId) {
+        console.log('🔄 cargarDatosVendedor llamado con:', vendedorId);
+        if (!vendedorId) {
+            // Limpiar campos si no hay selección
             if (infoDiv) {
                 infoDiv.innerHTML = '<p>Seleccione un empleado para ver su información</p>';
             }
-            // Limpiar campos cuando no hay selección
             if (emailField) emailField.value = '';
             if (rutField) rutField.value = '';
+            return;
         }
-    });
-    
-    console.log('✅ Event listener agregado correctamente');
-}
 
-// Intentar inicializar inmediatamente
-initVendedorSelect();
-
-// También intentar cuando el DOM esté listo
-document.addEventListener('DOMContentLoaded', initVendedorSelect);
-
-// Y como respaldo, intentar después de un pequeño delay
-setTimeout(initVendedorSelect, 1000);
-
-// Formatear RUT mientras se escribe
-document.getElementById('rut').addEventListener('input', function(e) {
-    let value = e.target.value.replace(/[^0-9kK]/g, '');
-    
-    if (value.length > 1) {
-        // Separar número y dígito verificador
-        let numero = value.slice(0, -1);
-        let dv = value.slice(-1);
-        
-        // Formatear número con puntos (opcional) y guión
-        if (numero.length > 0) {
-            value = numero + '-' + dv;
+        // Mostrar indicador de carga
+        if (infoDiv) {
+            infoDiv.innerHTML = '<p><i class="material-icons" style="animation: spin 1s linear infinite;">hourglass_empty</i> Cargando información del empleado...</p>';
         }
+
+        // Obtener token CSRF
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+        // Realizar petición AJAX
+        const url = `/admin/users/get-vendedor-data/${vendedorId}`;
+        console.log('📡 Haciendo petición AJAX a:', url);
+        fetch(url, {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken
+            },
+            credentials: 'same-origin'
+        })
+        .then(response => {
+            console.log('📥 Respuesta recibida:', response.status, response.statusText);
+            if (!response.ok) {
+                throw new Error('Error en la respuesta del servidor: ' + response.status);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('📊 Datos recibidos:', data);
+            if (data.success && data.data) {
+                const vendedor = data.data;
+                console.log('✅ Datos del vendedor:', vendedor);
+                
+                // Mostrar información del empleado
+                if (infoDiv) {
+                    infoDiv.innerHTML = `
+                        <p><strong>Nombre:</strong> ${vendedor.nombre || 'No especificado'}</p>
+                        <p><strong>Email:</strong> ${vendedor.email || 'No especificado'}</p>
+                        <p><strong>RUT:</strong> ${vendedor.rut || 'No especificado'}</p>
+                    `;
+                }
+                
+                // Pre-llenar email si existe
+                if (emailField && vendedor.email && vendedor.email.trim() !== '') {
+                    emailField.value = vendedor.email.trim();
+                    emailField.classList.remove('is-invalid');
+                    // Resaltar visualmente
+                    emailField.style.backgroundColor = '#e8f5e8';
+                    setTimeout(() => {
+                        emailField.style.backgroundColor = '';
+                    }, 2000);
+                } else if (emailField) {
+                    emailField.value = '';
+                }
+                
+                // Pre-llenar RUT si existe
+                if (rutField && vendedor.rut && vendedor.rut.trim() !== '') {
+                    // Limpiar el RUT y formatearlo
+                    let rutLimpio = vendedor.rut.trim().replace(/[^0-9kK-]/g, '');
+                    // Si no tiene guión, agregarlo antes del último carácter
+                    if (!rutLimpio.includes('-')) {
+                        if (rutLimpio.length >= 2) {
+                            const numero = rutLimpio.slice(0, -1);
+                            const digitoVerificador = rutLimpio.slice(-1).toUpperCase();
+                            rutLimpio = numero + '-' + digitoVerificador;
+                        }
+                    }
+                    rutField.value = rutLimpio;
+                    rutField.classList.remove('is-invalid');
+                    // Resaltar visualmente
+                    rutField.style.backgroundColor = '#e8f5e8';
+                    setTimeout(() => {
+                        rutField.style.backgroundColor = '';
+                    }, 2000);
+                } else if (rutField) {
+                    rutField.value = '';
+                }
+            } else {
+                // Error al cargar datos
+                if (infoDiv) {
+                    infoDiv.innerHTML = `<p class="text-danger"><i class="material-icons">error</i> ${data.message || 'Error al cargar información del empleado'}</p>`;
+                }
+                if (emailField) emailField.value = '';
+                if (rutField) rutField.value = '';
+            }
+        })
+        .catch(error => {
+            console.error('Error en AJAX:', error);
+            if (infoDiv) {
+                infoDiv.innerHTML = '<p class="text-danger"><i class="material-icons">error</i> Error al cargar información del empleado. Por favor, intente nuevamente.</p>';
+            }
+            if (emailField) emailField.value = '';
+            if (rutField) rutField.value = '';
+        });
     }
     
-    e.target.value = value;
-});
-
-// Validar formato al perder el foco
-document.getElementById('rut').addEventListener('blur', function(e) {
-    let value = e.target.value.trim();
-    if (value && !/^\d{1,8}-[0-9kK]$/.test(value)) {
-        e.target.classList.add('is-invalid');
+    // Event listener para el cambio en el select
+    if (vendedorSelect) {
+        console.log('✅ Agregando event listener al select');
+        vendedorSelect.addEventListener('change', function() {
+            const vendedorId = this.value;
+            console.log('🔄 Select cambió, valor seleccionado:', vendedorId);
+            cargarDatosVendedor(vendedorId);
+        });
+        console.log('✅ Event listener agregado correctamente');
     } else {
-        e.target.classList.remove('is-invalid');
+        console.error('❌ No se encontró el elemento vendedorSelect');
+    }
+
+    // Formatear RUT mientras se escribe (mismo formato que en perfil)
+    if (rutField) {
+        rutField.addEventListener('input', function(e) {
+            // Limpiar: solo números, K y guiones
+            let value = e.target.value.replace(/[^0-9kK-]/g, '');
+            
+            // Si ya tiene guión, mantener el formato
+            if (value.includes('-')) {
+                const parts = value.split('-');
+                let numero = parts[0].replace(/[^0-9]/g, '');
+                let digitoVerificador = '';
+                
+                // Si hay algo después del guión, tomarlo como dígito verificador
+                if (parts.length > 1) {
+                    digitoVerificador = parts.slice(1).join('').replace(/[^0-9kK]/g, '').toUpperCase();
+                    // Si hay más de un carácter después del guión, mover los anteriores al número
+                    if (digitoVerificador.length > 1) {
+                        numero += digitoVerificador.slice(0, -1).replace(/[^0-9]/g, '');
+                        digitoVerificador = digitoVerificador.slice(-1);
+                    }
+                }
+                
+                // Formatear siempre que haya al menos un número antes del guión
+                if (numero.length > 0) {
+                    e.target.value = numero + '-' + digitoVerificador;
+                } else {
+                    e.target.value = '';
+                }
+            } else {
+                // Si no tiene guión, agregar automáticamente antes del último carácter
+                value = value.replace(/[^0-9kK]/g, '');
+                
+                if (value.length === 0) {
+                    e.target.value = '';
+                } else if (value.length === 1) {
+                    // Si solo hay 1 carácter, mostrarlo tal cual
+                    e.target.value = value.toUpperCase();
+                } else {
+                    // Si hay 2 o más caracteres, agregar guión antes del último
+                    const numero = value.slice(0, -1).replace(/[^0-9]/g, '');
+                    const digitoVerificador = value.slice(-1).toUpperCase();
+                    
+                    // Solo formatear si el último carácter es válido (número o K) y hay números antes
+                    if (digitoVerificador.match(/^[0-9K]$/) && numero.length > 0) {
+                        e.target.value = numero + '-' + digitoVerificador;
+                    } else {
+                        // Si no es válido, solo mostrar números
+                        e.target.value = value.replace(/[^0-9]/g, '');
+                    }
+                }
+            }
+        });
+
+        // Limitar longitud máxima (máximo 9 dígitos + 1 guión + 1 dígito verificador = 11 caracteres)
+        rutField.addEventListener('input', function(e) {
+            if (e.target.value.length > 11) {
+                e.target.value = e.target.value.slice(0, 11);
+            }
+        });
     }
 });
-
-// Script de prueba simple
-console.log('🧪 Script de prueba ejecutándose');
 </script>
-@endsection
+@endpush

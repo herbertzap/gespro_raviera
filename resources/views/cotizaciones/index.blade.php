@@ -13,7 +13,7 @@
                                 @if(request('tipo_documento') == 'cotizacion')
                                     Cotizaciones
                                 @elseif(request('tipo_documento') == 'nota_venta')
-                                    Notas de Venta
+                                 Notas de Venta
                                 @else
                                     Cotizaciones y Notas de Venta
                                 @endif

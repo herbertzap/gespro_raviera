@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\User;
+use App\Rules\ValidRut;
 use Illuminate\Validation\Rule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -28,6 +29,7 @@ class ProfileRequest extends FormRequest
         return [
             'name' => ['required', 'min:3'],
             'email' => ['required', 'email', Rule::unique((new User)->getTable())->ignore(auth()->id())],
+            'rut' => ['nullable', new ValidRut(), Rule::unique((new User)->getTable())->ignore(auth()->id())],
         ];
     }
 }

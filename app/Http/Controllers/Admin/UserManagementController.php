@@ -128,7 +128,7 @@ class UserManagementController extends Controller
             'vendedor_id' => 'required|string',
             'email' => 'required|email|unique:users,email',
             'email_alternativo' => 'nullable|email|unique:users,email_alternativo',
-            'rut' => 'nullable|string|max:20|unique:users,rut',
+            'rut' => ['nullable', new \App\Rules\ValidRut(), 'unique:users,rut'],
             'password' => 'required|min:8',
             'roles' => 'required|array',
             'roles.*' => 'exists:roles,id'
@@ -246,6 +246,120 @@ class UserManagementController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withErrors(['error' => 'Error al crear usuario: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Obtener datos del vendedor vía AJAX
+     */
+    public function getVendedorData($vendedorId)
+    {
+        try {
+            // Obtener datos del empleado desde SQL Server usando tsql (mismo método que vendedoresDisponibles)
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            
+            if (!$host || !$database || !$username || !$password) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Credenciales SQL Server no configuradas'
+                ], 500);
+            }
+            
+            // Usar tsql para consultar SQL Server con separador | (igual que CobranzaService)
+            $query = "
+                SELECT 
+                    CAST(KOFU AS VARCHAR(10)) + '|' +
+                    CAST(NOKOFU AS VARCHAR(100)) + '|' +
+                    CAST(ISNULL(EMAIL, '') AS VARCHAR(100)) + '|' +
+                    CAST(ISNULL(RTFU, '') AS VARCHAR(20)) AS DATOS
+                FROM TABFU 
+                WHERE KOFU = '{$vendedorId}'
+            ";
+            
+            // Usar archivo temporal como en CobranzaService
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            if (!$output || str_contains($output, 'error')) {
+                \Log::warning('Error obteniendo datos del vendedor: ' . $output);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se encontró información del empleado'
+                ], 404);
+            }
+            
+            // Parsear el resultado usando | como separador (igual que CobranzaService)
+            $lines = explode("\n", $output);
+            $result = null;
+            
+            foreach ($lines as $line) {
+                $line = trim($line);
+                
+                // Filtrar líneas vacías, de configuración y cabeceras
+                if (empty($line) || 
+                    strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || 
+                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'rows affected') !== false ||
+                    strpos($line, 'DATOS') !== false) {
+                    continue;
+                }
+                
+                // Separar por | (formato: KOFU|NOKOFU|EMAIL|RTFU)
+                if (strpos($line, '|') !== false) {
+                    $parts = explode('|', $line);
+                    if (count($parts) >= 4) {
+                        $kofu = trim($parts[0]);
+                        $nombre = trim($parts[1]);
+                        $email = trim($parts[2]);
+                        $rut = trim($parts[3]);
+                        
+                        // Limpiar email si está vacío
+                        if (empty($email)) {
+                            $email = '';
+                        }
+                        
+                        // Asegurar codificación UTF-8
+                        $nombre = mb_convert_encoding($nombre, 'UTF-8', 'auto');
+                        
+                        $result = [
+                            'kofu' => $kofu,
+                            'nombre' => $nombre,
+                            'email' => $email,
+                            'rut' => $rut
+                        ];
+                        break;
+                    }
+                }
+            }
+            
+            if ($result) {
+                return response()->json([
+                    'success' => true,
+                    'data' => $result
+                ]);
+            }
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'No se encontró información del empleado'
+            ], 404);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error en getVendedorData:', ['error' => $e->getMessage(), 'vendedor_id' => $vendedorId]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener datos: ' . $e->getMessage()
+            ], 500);
         }
     }
 

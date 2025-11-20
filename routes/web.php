@@ -319,6 +319,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::get('/users', [App\Http\Controllers\Admin\UserManagementController::class, 'index'])->name('users.index');
     Route::get('/users/create-from-vendedor', [App\Http\Controllers\Admin\UserManagementController::class, 'vendedoresDisponibles'])->name('users.create-from-vendedor');
     Route::post('/users/create-from-vendedor', [App\Http\Controllers\Admin\UserManagementController::class, 'createFromVendedor'])->name('users.store-from-vendedor');
+    Route::get('/users/get-vendedor-data/{vendedorId}', [App\Http\Controllers\Admin\UserManagementController::class, 'getVendedorData'])->name('users.get-vendedor-data');
     Route::get('/users/{user}/edit', [App\Http\Controllers\Admin\UserManagementController::class, 'edit'])->name('users.edit');
     Route::put('/users/{user}', [App\Http\Controllers\Admin\UserManagementController::class, 'update'])->name('users.update');
     Route::post('/users/{user}/change-password', [App\Http\Controllers\Admin\UserManagementController::class, 'changePassword'])->name('users.change-password');

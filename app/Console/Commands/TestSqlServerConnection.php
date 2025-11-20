@@ -35,7 +35,8 @@ class TestSqlServerConnection extends Command
                 return 1;
             }
             
-            $dsn = "odbc:Driver={ODBC Driver 18 for SQL Server};Server={$host},{$port};Database={$database};Encrypt=no;TrustServerCertificate=yes;";
+            // Usar ODBC Driver 13 para SQL Server 2012 (REQUERIDO - Driver 17 no funciona con SQL Server 2012)
+            $dsn = "odbc:Driver={ODBC Driver 13 for SQL Server};Server={$host},{$port};Database={$database};Encrypt=no;TrustServerCertificate=yes;";
             
             $this->info("DSN: {$dsn}");
             $this->info("Username: {$username}");
