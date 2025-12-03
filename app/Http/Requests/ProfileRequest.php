@@ -28,6 +28,21 @@ class ProfileRequest extends FormRequest
         return [
             'name' => ['required', 'min:3'],
             'email' => ['required', 'email', Rule::unique((new User)->getTable())->ignore(auth()->id())],
+            'rut' => ['nullable', 'string', 'max:12', 'regex:/^[0-9]{1,9}-[0-9kK]{1}$/'],
+        ];
+    }
+
+    /**
+     * Get custom attributes for validator errors.
+     *
+     * @return array
+     */
+    public function attributes()
+    {
+        return [
+            'name' => __('nombre'),
+            'email' => __('correo electrónico'),
+            'rut' => __('RUT'),
         ];
     }
 }

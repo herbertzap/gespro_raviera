@@ -23,6 +23,7 @@
         <link href="{{ asset('black') }}/css/theme.css" rel="stylesheet" />
         <link href="{{ asset('css/pagination.css') }}" rel="stylesheet" />
         <link href="{{ asset('css/custom-badges.css') }}" rel="stylesheet" />
+        <link href="{{ asset('css/fix-tables.css') }}" rel="stylesheet" />
         <style>
             /* Ocultar el fixed-plugin en todo el sitio */
             .fixed-plugin {

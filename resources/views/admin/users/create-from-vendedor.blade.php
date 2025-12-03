@@ -94,8 +94,9 @@
                             
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="rut" class="bmd-label-floating">RUT</label>
-                                    <input type="text" name="rut" id="rut" class="form-control @error('rut') is-invalid @enderror" placeholder="0000000-0" maxlength="10">
+                                    <label for="rut" class="bmd-label-floating">RUT ({{ __('Opcional') }})</label>
+                                    <input type="text" name="rut" id="rut" class="form-control @error('rut') is-invalid @enderror" placeholder="12345678-9" maxlength="12">
+                                    <small class="form-text text-muted">{{ __('Formato') }}: 12345678-9</small>
                                     @error('rut')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -107,7 +108,15 @@
                             <div class="col-md-12">
                                 <div class="form-group">
                                     <label for="password" class="bmd-label-floating">Contraseña Temporal *</label>
-                                    <input type="password" name="password" id="password" class="form-control @error('password') is-invalid @enderror" required minlength="8">
+                                    <div class="input-group">
+                                        <input type="password" name="password" id="password" class="form-control @error('password') is-invalid @enderror" required minlength="8">
+                                        <div class="input-group-append">
+                                            <button class="btn btn-outline-secondary" type="button" id="togglePassword" onclick="togglePasswordVisibility('password', 'togglePassword')">
+                                                <i class="tim-icons icon-single-02" id="iconPassword"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <small class="form-text text-muted">{{ __('Mínimo 8 caracteres') }}</small>
                                     @error('password')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -333,35 +342,107 @@ document.addEventListener('DOMContentLoaded', initVendedorSelect);
 // Y como respaldo, intentar después de un pequeño delay
 setTimeout(initVendedorSelect, 1000);
 
-// Formatear RUT mientras se escribe
-document.getElementById('rut').addEventListener('input', function(e) {
-    let value = e.target.value.replace(/[^0-9kK]/g, '');
-    
-    if (value.length > 1) {
-        // Separar número y dígito verificador
-        let numero = value.slice(0, -1);
-        let dv = value.slice(-1);
+// Formatear RUT mientras se escribe (mismo formato que profile)
+const rutInput = document.getElementById('rut');
+if (rutInput) {
+    rutInput.addEventListener('input', function(e) {
+        // Limpiar: solo números, K y guiones
+        let value = e.target.value.replace(/[^0-9kK-]/g, '');
         
-        // Formatear número con puntos (opcional) y guión
-        if (numero.length > 0) {
-            value = numero + '-' + dv;
+        // Si ya tiene guión, mantener el formato
+        if (value.includes('-')) {
+            const parts = value.split('-');
+            let numero = parts[0].replace(/[^0-9]/g, '');
+            let digitoVerificador = '';
+            
+            // Si hay algo después del guión, tomarlo como dígito verificador
+            if (parts.length > 1) {
+                digitoVerificador = parts.slice(1).join('').replace(/[^0-9kK]/g, '').toUpperCase();
+                // Si hay más de un carácter después del guión, el último es el dígito verificador y los anteriores van al número
+                if (digitoVerificador.length > 1) {
+                    // Mover todos excepto el último al número
+                    numero += digitoVerificador.slice(0, -1).replace(/[^0-9]/g, '');
+                    digitoVerificador = digitoVerificador.slice(-1);
+                }
+            }
+            
+            // Formatear siempre que haya al menos un número antes del guión
+            if (numero.length > 0) {
+                e.target.value = numero + '-' + digitoVerificador;
+            } else {
+                e.target.value = '';
+            }
+        } else {
+            // Si no tiene guión, procesar y agregar guión antes del último carácter
+            value = value.replace(/[^0-9kK]/g, '');
+            
+            if (value.length === 0) {
+                e.target.value = '';
+            } else if (value.length === 1) {
+                // Si solo hay 1 carácter, mostrarlo tal cual
+                e.target.value = value.toUpperCase();
+            } else {
+                // Si hay 2 o más caracteres, agregar guión antes del último
+                const numero = value.slice(0, -1).replace(/[^0-9]/g, '');
+                const digitoVerificador = value.slice(-1).toUpperCase();
+                
+                // Solo formatear si el último carácter es válido (número o K) y hay números antes
+                if (digitoVerificador.match(/^[0-9K]$/) && numero.length > 0) {
+                    e.target.value = numero + '-' + digitoVerificador;
+                } else {
+                    // Si no es válido, solo mostrar números
+                    e.target.value = value.replace(/[^0-9]/g, '');
+                }
+            }
         }
-    }
-    
-    e.target.value = value;
-});
+    });
 
-// Validar formato al perder el foco
-document.getElementById('rut').addEventListener('blur', function(e) {
-    let value = e.target.value.trim();
-    if (value && !/^\d{1,8}-[0-9kK]$/.test(value)) {
-        e.target.classList.add('is-invalid');
+    // Limitar longitud máxima (máximo 9 dígitos + 1 guión + 1 dígito verificador = 11 caracteres)
+    rutInput.addEventListener('input', function(e) {
+        if (e.target.value.length > 11) {
+            e.target.value = e.target.value.slice(0, 11);
+        }
+    });
+}
+
+// Función para mostrar/ocultar contraseña
+function togglePasswordVisibility(inputId, buttonId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    let iconId;
+    if (inputId === 'password') {
+        iconId = 'iconPassword';
     } else {
-        e.target.classList.remove('is-invalid');
+        return;
     }
-});
+
+    const icon = document.getElementById(iconId);
+    if (!icon) return;
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'tim-icons icon-lock-circle';
+    } else {
+        input.type = 'password';
+        icon.className = 'tim-icons icon-single-02';
+    }
+}
 
 // Script de prueba simple
 console.log('🧪 Script de prueba ejecutándose');
 </script>
+
+<style>
+.input-group-append .btn {
+    border-left: 0;
+    border-radius: 0 0.25rem 0.25rem 0;
+    cursor: pointer;
+}
+
+.input-group-append .btn:focus {
+    box-shadow: none;
+    outline: none;
+}
+</style>
 @endsection

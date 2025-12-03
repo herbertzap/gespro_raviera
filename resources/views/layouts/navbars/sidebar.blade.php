@@ -29,7 +29,7 @@
             </li>
 
             <!-- Ventas -->
-            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin'))
+            @if(auth()->user()->hasRole('Vendedor'))
             <li>
                 <a data-toggle="collapse" href="#Ventas" aria-expanded="false">
                     <i class="tim-icons icon-cart"></i>
@@ -76,7 +76,7 @@
             @endif
 
             <!-- Compras - Productos -->
-            @if(auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Super Admin'))
+            @if(auth()->user()->hasRole('Compras') && !auth()->user()->hasRole('Super Admin'))
             <li>
                 <a data-toggle="collapse" href="#ComprasMenu" aria-expanded="false">
                     <i class="tim-icons icon-bag-16"></i>
@@ -112,8 +112,80 @@
             </li>
             @endif
 
-            <!-- Informes (oculto para Compras y Picking) -->
-            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Supervisor'))
+            <!-- Manejo Stock -->
+            @if(auth()->user()->hasRole('Manejo Stock') || auth()->user()->hasRole('Super Admin'))
+            <li>
+                <a data-toggle="collapse" href="#ManejoStockMenu" aria-expanded="false">
+                    <i class="tim-icons icon-notes"></i>
+                    <span class="nav-link-text">{{ __('Manejo Stock') }}</span>
+                    <b class="caret mt-1"></b>
+                </a>
+                <div class="collapse" id="ManejoStockMenu">
+                    <ul class="nav pl-4">
+                        <li @if ($pageSlug == 'manejo-stock') class="active " @endif>
+                            <a href="{{ route('manejo-stock.select') }}">
+                                <i class="tim-icons icon-notes"></i>
+                                <p>{{ __('Toma de inventario OnLine') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'manejo-stock-barrido') class="active " @endif>
+                            <a href="{{ route('manejo-stock.barrido.select') }}">
+                                <i class="tim-icons icon-tablet-2"></i>
+                                <p>{{ __('Toma de Inventario Barrido') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'manejo-stock-historial') class="active " @endif>
+                            <a href="{{ route('manejo-stock.historial') }}">
+                                <i class="tim-icons icon-bullet-list-67"></i>
+                                <p>{{ __('Historial') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'manejo-stock-reporte') class="active " @endif>
+                            <a href="{{ route('manejo-stock.reporte') }}">
+                                <i class="tim-icons icon-chart-bar-32"></i>
+                                <p>{{ __('Reporte GESTPRO') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'manejo-stock-reporte-inventario') class="active " @endif>
+                            <a href="{{ route('manejo-stock.reporte-inventario') }}">
+                                <i class="tim-icons icon-chart-pie-36"></i>
+                                <p>{{ __('Reporte Inventario') }}</p>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </li>
+            @endif
+
+            <!-- Mantenedor - Solo Super Admin -->
+            @if(auth()->user()->hasRole('Super Admin'))
+            <li>
+                <a data-toggle="collapse" href="#MantenedorMenu" aria-expanded="false">
+                    <i class="tim-icons icon-settings-gear-63"></i>
+                    <span class="nav-link-text">{{ __('Mantenedor') }}</span>
+                    <b class="caret mt-1"></b>
+                </a>
+                <div class="collapse" id="MantenedorMenu">
+                    <ul class="nav pl-4">
+                        <li @if ($pageSlug == 'mantenedor-bodegas') class="active " @endif>
+                            <a href="{{ route('mantenedor.bodegas') }}">
+                                <i class="tim-icons icon-bank"></i>
+                                <p>{{ __('Bodegas y Ubicaciones') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'manejo-stock') class="active " @endif>
+                            <a href="{{ route('manejo-stock.select') }}">
+                                <i class="tim-icons icon-notes"></i>
+                                <p>{{ __('Contabilidad de Productos') }}</p>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </li>
+            @endif
+
+            <!-- Informes (oculto para Compras, Picking y Super Admin) -->
+            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Supervisor'))
             <li>
                 <a data-toggle="collapse" href="#Informes" aria-expanded="false">
                     <i class="tim-icons icon-chart-bar-32"></i>
@@ -149,7 +221,7 @@
             @endif
 
             <!-- Aprobaciones -->
-            @if(auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Picking') || auth()->user()->hasRole('Super Admin'))
+            @if((auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Picking')) && !auth()->user()->hasRole('Super Admin'))
             <li @if ($pageSlug == 'aprobaciones') class="active " @endif>
                 <a href="{{ route('aprobaciones.index') }}">
                     <i class="tim-icons icon-check-2"></i>

@@ -1734,7 +1734,7 @@ pre code {
 }
 
 .table .thead-dark th {
-  color: #1e1e2f;
+  color: #ffffff;
   background-color: #212529;
   border-color: #32383e;
 }
@@ -12475,7 +12475,7 @@ img {
 }
 
 .modal-content .modal-body p {
-  color: #222a42;
+  color: #fff;
 }
 
 .modal-content .modal-footer {

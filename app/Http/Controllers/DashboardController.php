@@ -9,6 +9,8 @@ use App\Models\NotaVenta;
 use App\Models\StockTemporal;
 use App\Models\User;
 use App\Models\Cliente;
+use App\Models\Temporal;
+use App\Models\CodigoBarraLog;
 use Illuminate\Support\Facades\Log;
 
 class DashboardController extends Controller
@@ -51,6 +53,10 @@ class DashboardController extends Controller
             $data = $this->getPickingDashboard($user);
             $data['pageSlug'] = 'dashboard';
             return view('dashboard.picking', $data);
+        } elseif ($user->hasRole('Manejo Stock')) {
+            $data = $this->getManejoStockDashboard($user);
+            $data['pageSlug'] = 'dashboard';
+            return view('dashboard.manejo-stock', $data);
         } else {
             // Rol por defecto
             $data = $this->getVendedorDashboard($user);
@@ -434,18 +440,20 @@ class DashboardController extends Controller
             // 7. RESUMEN DE FACTURAS PENDIENTES - TODAS las facturas del sistema
             $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes(null); // Sin filtro de vendedor
 
-            // 8. INFORMACIÓN DE USUARIOS
-            $totalUsuarios = User::count();
+            // 8. INFORMACIÓN DE USUARIOS - Solo Manejo Stock
+            $totalUsuarios = User::role('Manejo Stock')->count();
             $usuariosPorRol = [];
             
-            $roles = ['Super Admin', 'Vendedor', 'Supervisor', 'Compras', 'Picking'];
-            foreach ($roles as $rol) {
-                try {
-                    $usuariosPorRol[$rol] = User::role($rol)->count();
-                } catch (\Exception $e) {
-                    $usuariosPorRol[$rol] = 0;
-                }
+            // Solo mostrar usuarios de Manejo Stock
+            try {
+                $usuariosPorRol['Manejo Stock'] = User::role('Manejo Stock')->count();
+            } catch (\Exception $e) {
+                $usuariosPorRol['Manejo Stock'] = 0;
             }
+
+            // 9. CONTADORES DE MANEJO STOCK (Super Admin ve todos)
+            $productosIngresados = Temporal::count();
+            $productosModificados = CodigoBarraLog::count();
 
             // Resumen para las tarjetas principales
             $resumenCobranza = [
@@ -465,6 +473,8 @@ class DashboardController extends Controller
                 'resumenCobranza' => $resumenCobranza,
                 'totalUsuarios' => $totalUsuarios,
                 'usuariosPorRol' => $usuariosPorRol,
+                'productosIngresados' => $productosIngresados,
+                'productosModificados' => $productosModificados,
                 'tipoUsuario' => 'Super Admin'
             ];
 
@@ -1012,6 +1022,33 @@ class DashboardController extends Controller
                 'cantidad' => 0,
                 'valor_total' => 0,
                 'cheques' => []
+            ];
+        }
+    }
+
+    private function getManejoStockDashboard($user)
+    {
+        try {
+            // Contador de productos ingresados (capturas en temporales)
+            $productosIngresados = Temporal::where('funcionario', $user->codigo_vendedor ?? 'PZZ')
+                ->count();
+            
+            // Contador de productos modificados (códigos de barras modificados)
+            $productosModificados = CodigoBarraLog::where('user_id', $user->id)
+                ->count();
+            
+            return [
+                'productosIngresados' => $productosIngresados,
+                'productosModificados' => $productosModificados,
+                'tipoUsuario' => 'Manejo Stock'
+            ];
+        } catch (\Exception $e) {
+            Log::error("Error en getManejoStockDashboard: " . $e->getMessage());
+            
+            return [
+                'productosIngresados' => 0,
+                'productosModificados' => 0,
+                'tipoUsuario' => 'Manejo Stock'
             ];
         }
     }

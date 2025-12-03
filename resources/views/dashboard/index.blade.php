@@ -40,7 +40,7 @@
                 </div>
             @endif
 
-            @if(in_array($tipoUsuario, ['Super Admin', 'Vendedor', 'Supervisor']))
+            @if(in_array($tipoUsuario, ['Vendedor', 'Supervisor']))
                 <!-- Resumen de Cobranza -->
                 <div class="col-lg-3 col-md-6 col-sm-6">
                     <div class="card card-stats">
@@ -132,7 +132,7 @@
                     </div>
                 </div>
 
-                @if(in_array($tipoUsuario, ['Super Admin', 'Supervisor', 'Compras', 'Picking']))
+                @if(in_array($tipoUsuario, ['Supervisor', 'Compras', 'Picking']))
                     <!-- NVV Pendientes -->
                     <div class="col-lg-3 col-md-6 col-sm-6">
                         <div class="card card-stats">
@@ -357,12 +357,12 @@
         <!-- Contenido Específico por Rol -->
         <div class="row">
             @if($tipoUsuario == 'Super Admin')
-                <!-- Super Admin - Usuarios por Rol -->
-                <div class="col-md-6">
+                <!-- Super Admin - Usuarios por Rol (Solo Manejo Stock) -->
+                <div class="col-md-12">
                     <div class="card">
                         <div class="card-header card-header-primary">
                             <h4 class="card-title">Usuarios por Rol</h4>
-                            <p class="card-category">Distribución de usuarios</p>
+                            <p class="card-category">Distribución de usuarios - Manejo Stock</p>
                         </div>
                         <div class="card-body">
                             <div class="table-responsive">
@@ -836,7 +836,7 @@
                 </div>
             @endif
 
-            @if(auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Supervisor'))
+            @if(auth()->user()->hasRole('Supervisor'))
                 <!-- NVV Pendientes Detalle -->
                 <div class="col-md-6">
                     <div class="card">
@@ -936,7 +936,7 @@
                     </div>
                 </div>
 
-                <!-- Facturas Pendientes (visible solo Supervisor/Super Admin) -->
+                <!-- Facturas Pendientes (visible solo Supervisor) -->
                 <div class="col-md-6">
                     <div class="card">
                         <div class="card-header card-header-danger">
@@ -1072,11 +1072,7 @@
                                     </a>
                                 </div>
                             @elseif(in_array($tipoUsuario, ['Super Admin', 'Vendedor']))
-                                <div class="col-md-3">
-                                    <a href="{{ route('cobranza.index') }}" class="btn btn-success btn-block">
-                                        <i class="material-icons">receipt</i> Ver Cobranza
-                                    </a>
-                                </div>
+                                
                             @endif
 
                             @if($tipoUsuario == 'Vendedor')

@@ -1,0 +1,17 @@
+/* Fix para cabeceras de tablas thead-dark - texto blanco visible */
+.table .thead-dark th {
+    color: #ffffff !important;
+    background-color: #212529 !important;
+    border-color: #32383e !important;
+}
+
+/* Asegurar que el texto sea visible en todas las variantes */
+.table-dark .thead-dark th,
+.table .thead-dark th,
+thead.thead-dark th {
+    color: #ffffff !important;
+    background-color: #212529 !important;
+}
+
+
+
