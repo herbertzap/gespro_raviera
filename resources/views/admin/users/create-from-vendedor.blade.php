@@ -105,13 +105,37 @@
                         </div>
 
                         <div class="row">
-                            <div class="col-md-12">
+                            <div class="col-md-6">
                                 <div class="form-group">
                                     <label for="password" class="bmd-label-floating">Contraseña Temporal *</label>
-                                    <input type="password" name="password" id="password" class="form-control @error('password') is-invalid @enderror" required minlength="8">
+                                    <div class="input-group">
+                                        <input type="password" name="password" id="password" class="form-control @error('password') is-invalid @enderror" required minlength="8">
+                                        <div class="input-group-append">
+                                            <button class="btn btn-outline-secondary" type="button" id="togglePassword" onclick="togglePasswordVisibility('password', 'togglePassword')">
+                                                <i class="tim-icons icon-single-02" id="iconPassword"></i>
+                                            </button>
+                                        </div>
+                                    </div>
                                     @error('password')
-                                        <div class="invalid-feedback">{{ $message }}</div>
+                                        <div class="text-danger small">{{ $message }}</div>
                                     @enderror
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="password_confirmation" class="bmd-label-floating">Confirmar Contraseña *</label>
+                                    <div class="input-group">
+                                        <input type="password" name="password_confirmation" id="password_confirmation" class="form-control @error('password_confirmation') is-invalid @enderror" required minlength="8">
+                                        <div class="input-group-append">
+                                            <button class="btn btn-outline-secondary" type="button" id="togglePasswordConfirmation" onclick="togglePasswordVisibility('password_confirmation', 'togglePasswordConfirmation')">
+                                                <i class="tim-icons icon-single-02" id="iconPasswordConfirmation"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    @error('password_confirmation')
+                                        <div class="text-danger small">{{ $message }}</div>
+                                    @enderror
+                                    <small id="passwordMatchMessage" class="form-text" style="display: none;"></small>
                                 </div>
                             </div>
                         </div>
@@ -430,6 +454,104 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
+    // Validar que las contraseñas coincidan
+    const passwordInput = document.getElementById('password');
+    const passwordConfirmationInput = document.getElementById('password_confirmation');
+    const passwordMatchMessage = document.getElementById('passwordMatchMessage');
+
+    function validatePasswordMatch() {
+        if (!passwordInput || !passwordConfirmationInput || !passwordMatchMessage) {
+            return;
+        }
+
+        const password = passwordInput.value;
+        const passwordConfirmation = passwordConfirmationInput.value;
+
+        if (passwordConfirmation.length === 0) {
+            passwordMatchMessage.style.display = 'none';
+            passwordConfirmationInput.classList.remove('is-valid', 'is-invalid');
+            return;
+        }
+
+        if (password === passwordConfirmation && password.length >= 8) {
+            passwordMatchMessage.style.display = 'block';
+            passwordMatchMessage.className = 'form-text text-success';
+            passwordMatchMessage.textContent = '✓ Las contraseñas coinciden';
+            passwordConfirmationInput.classList.remove('is-invalid');
+            passwordConfirmationInput.classList.add('is-valid');
+        } else if (password.length > 0 && passwordConfirmation.length > 0) {
+            passwordMatchMessage.style.display = 'block';
+            passwordMatchMessage.className = 'form-text text-danger';
+            passwordMatchMessage.textContent = '✗ Las contraseñas no coinciden';
+            passwordConfirmationInput.classList.remove('is-valid');
+            if (password !== passwordConfirmation) {
+                passwordConfirmationInput.classList.add('is-invalid');
+            }
+        }
+    }
+
+    if (passwordInput && passwordConfirmationInput) {
+        passwordInput.addEventListener('input', validatePasswordMatch);
+        passwordConfirmationInput.addEventListener('input', validatePasswordMatch);
+    }
 });
+
+// Función para mostrar/ocultar contraseña
+function togglePasswordVisibility(inputId, buttonId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    let iconId;
+    if (inputId === 'password') {
+        iconId = 'iconPassword';
+    } else if (inputId === 'password_confirmation') {
+        iconId = 'iconPasswordConfirmation';
+    } else {
+        return;
+    }
+
+    const icon = document.getElementById(iconId);
+    if (!icon) return;
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'tim-icons icon-lock-circle';
+    } else {
+        input.type = 'password';
+        icon.className = 'tim-icons icon-single-02';
+    }
+}
 </script>
+
+<style>
+.input-group-append .btn {
+    border-left: 0;
+    border-radius: 0 0.25rem 0.25rem 0;
+    cursor: pointer;
+}
+
+.input-group-append .btn:focus {
+    box-shadow: none;
+    outline: none;
+}
+
+.input-group .form-control.is-valid {
+    border-color: #28a745;
+}
+
+.input-group .form-control.is-valid:focus {
+    border-color: #28a745;
+    box-shadow: 0 0 0 0.2rem rgba(40, 167, 69, 0.25);
+}
+
+.input-group .form-control.is-invalid {
+    border-color: #dc3545;
+}
+
+.input-group .form-control.is-invalid:focus {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+}
+</style>
 @endpush
