@@ -304,7 +304,7 @@ class UserManagementController extends Controller
             'name' => 'required|string|max:255',
             'email' => ['required', 'email', Rule::unique('users')->ignore($user->id)],
             'email_alternativo' => ['nullable', 'email', Rule::unique('users')->ignore($user->id)],
-            'rut' => 'nullable|string|max:20',
+            'rut' => ['nullable', new \App\Rules\ValidRut(), Rule::unique('users')->ignore($user->id)],
             'codigo_vendedor' => 'nullable|string|max:10',
             'es_vendedor' => 'boolean',
             'roles' => 'required|array',
@@ -344,7 +344,8 @@ class UserManagementController extends Controller
     public function changePassword(Request $request, User $user)
     {
         $request->validate([
-            'password' => 'required|min:8|confirmed'
+            'password' => 'required|min:8|confirmed',
+            'password_confirmation' => 'required|same:password'
         ]);
 
         $user->update([

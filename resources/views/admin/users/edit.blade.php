@@ -134,24 +134,48 @@
                     <div class="row">
                         <div class="col-md-12">
                             <h5>Cambiar Contraseña</h5>
-                            <form action="{{ route('admin.users.change-password', $user) }}" method="POST">
+                            <form action="{{ route('admin.users.change-password', $user) }}" method="POST" id="changePasswordForm">
                                 @csrf
                                 <div class="row">
                                     <div class="col-md-4">
                                         <div class="form-group">
                                             <label for="new_password" class="bmd-label-floating">Nueva Contraseña *</label>
-                                            <input type="password" name="password" id="new_password" class="form-control" required minlength="8">
+                                            <div class="input-group">
+                                                <input type="password" name="password" id="new_password" class="form-control @error('password') is-invalid @enderror" required minlength="8">
+                                                <div class="input-group-append">
+                                                    <button type="button" class="btn btn-outline-secondary toggle-password" data-target="new_password" type="button">
+                                                        <i class="material-icons" id="icon_new_password">visibility</i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            @error('password')
+                                                <div class="text-danger small">{{ $message }}</div>
+                                            @enderror
                                         </div>
                                     </div>
                                     <div class="col-md-4">
                                         <div class="form-group">
                                             <label for="password_confirmation" class="bmd-label-floating">Confirmar Contraseña *</label>
-                                            <input type="password" name="password_confirmation" id="password_confirmation" class="form-control" required minlength="8">
+                                            <div class="input-group">
+                                                <input type="password" name="password_confirmation" id="password_confirmation" class="form-control @error('password_confirmation') is-invalid @enderror" required minlength="8">
+                                                <div class="input-group-append">
+                                                    <button type="button" class="btn btn-outline-secondary toggle-password" data-target="password_confirmation" type="button">
+                                                        <i class="material-icons" id="icon_password_confirmation">visibility</i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            @error('password_confirmation')
+                                                <div class="text-danger small">{{ $message }}</div>
+                                            @enderror
+                                            <div class="text-danger small" id="password-match-error" style="display: none;">
+                                                Las contraseñas no coinciden
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="col-md-4">
                                         <div class="form-group">
-                                            <button type="submit" class="btn btn-warning">
+                                            <label class="bmd-label-floating">&nbsp;</label>
+                                            <button type="submit" class="btn btn-warning btn-block">
                                                 <i class="material-icons">lock</i>
                                                 Cambiar Contraseña
                                             </button>
@@ -171,25 +195,51 @@
 @section('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Formatear RUT
     const rutInput = document.getElementById('rut');
     
     if (rutInput) {
-        // Formatear RUT mientras se escribe
         rutInput.addEventListener('input', function(e) {
-            let value = e.target.value.replace(/[^0-9kK]/g, '');
+            // Limpiar: solo números, K y guiones
+            let value = e.target.value.replace(/[^0-9kK-]/g, '');
             
-            if (value.length > 1) {
-                // Separar número y dígito verificador
-                let numero = value.slice(0, -1);
-                let dv = value.slice(-1);
+            // Si ya tiene guión, mantener el formato
+            if (value.includes('-')) {
+                const parts = value.split('-');
+                let numero = parts[0].replace(/[^0-9]/g, '');
+                let digitoVerificador = '';
                 
-                // Formatear número con puntos (opcional) y guión
+                // Si hay algo después del guión, tomarlo como dígito verificador
+                if (parts.length > 1) {
+                    digitoVerificador = parts.slice(1).join('').replace(/[^0-9kK]/g, '').toUpperCase();
+                    // Si hay más de un carácter después del guión, mover los anteriores al número
+                    if (digitoVerificador.length > 1) {
+                        numero += digitoVerificador.slice(0, -1).replace(/[^0-9]/g, '');
+                        digitoVerificador = digitoVerificador.slice(-1);
+                    }
+                }
+                
+                // Formatear siempre que haya al menos un número antes del guión
                 if (numero.length > 0) {
-                    value = numero + '-' + dv;
+                    e.target.value = numero + '-' + digitoVerificador;
+                } else {
+                    e.target.value = '';
+                }
+            } else {
+                // Si no tiene guión, agregar automáticamente antes del último carácter
+                value = value.replace(/[^0-9kK]/g, '');
+                
+                if (value.length > 1) {
+                    let numero = value.slice(0, -1);
+                    let dv = value.slice(-1).toUpperCase();
+                    e.target.value = numero + '-' + dv;
+                } else {
+                    e.target.value = value;
                 }
             }
             
-            e.target.value = value;
+            // Limpiar validación al escribir
+            e.target.classList.remove('is-invalid');
         });
         
         // Validar formato al perder el foco
@@ -199,6 +249,56 @@ document.addEventListener('DOMContentLoaded', function() {
                 e.target.classList.add('is-invalid');
             } else {
                 e.target.classList.remove('is-invalid');
+            }
+        });
+    }
+    
+    // Toggle mostrar/ocultar contraseña
+    document.querySelectorAll('.toggle-password').forEach(function(button) {
+        button.addEventListener('click', function() {
+            const targetId = this.getAttribute('data-target');
+            const input = document.getElementById(targetId);
+            const icon = document.getElementById('icon_' + targetId);
+            
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.textContent = 'visibility_off';
+            } else {
+                input.type = 'password';
+                icon.textContent = 'visibility';
+            }
+        });
+    });
+    
+    // Validar que las contraseñas coincidan
+    const passwordInput = document.getElementById('new_password');
+    const passwordConfirmationInput = document.getElementById('password_confirmation');
+    const passwordMatchError = document.getElementById('password-match-error');
+    const changePasswordForm = document.getElementById('changePasswordForm');
+    
+    function validatePasswordMatch() {
+        if (passwordInput.value && passwordConfirmationInput.value) {
+            if (passwordInput.value !== passwordConfirmationInput.value) {
+                passwordConfirmationInput.classList.add('is-invalid');
+                passwordMatchError.style.display = 'block';
+                return false;
+            } else {
+                passwordConfirmationInput.classList.remove('is-invalid');
+                passwordMatchError.style.display = 'none';
+                return true;
+            }
+        }
+        return true;
+    }
+    
+    if (passwordInput && passwordConfirmationInput) {
+        passwordInput.addEventListener('input', validatePasswordMatch);
+        passwordConfirmationInput.addEventListener('input', validatePasswordMatch);
+        
+        changePasswordForm.addEventListener('submit', function(e) {
+            if (!validatePasswordMatch()) {
+                e.preventDefault();
+                return false;
             }
         });
     }
