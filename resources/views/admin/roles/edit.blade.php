@@ -102,6 +102,11 @@
                                         <div class="card-body">
                                             <div class="row">
                                                 @foreach($modulo['permisos'] as $permiso)
+                                                @php
+                                                    // Verificar si el rol tiene el permiso de forma segura
+                                                    // Usar la colección directamente en lugar de hasPermissionTo para evitar problemas de cache
+                                                    $hasPermission = $role->permissions->contains('name', $permiso);
+                                                @endphp
                                                 <div class="col-md-4 col-sm-6 mb-2">
                                                     <div class="custom-control custom-checkbox">
                                                         <input type="checkbox" 
@@ -109,7 +114,7 @@
                                                                id="permiso_{{ $permiso }}"
                                                                name="permisos[]" 
                                                                value="{{ $permiso }}"
-                                                               {{ $role->hasPermissionTo($permiso) ? 'checked' : '' }}
+                                                               {{ $hasPermission ? 'checked' : '' }}
                                                                onchange="actualizarModulo('{{ $moduloKey }}')">
                                                         <label class="custom-control-label" for="permiso_{{ $permiso }}">
                                                             {{ ucwords(str_replace('_', ' ', $permiso)) }}
