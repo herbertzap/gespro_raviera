@@ -93,7 +93,8 @@ class UserManagementController extends Controller
             'email' => 'required|email|unique:users,email',
             'email_alternativo' => 'nullable|email|unique:users,email_alternativo',
             'rut' => ['nullable', new \App\Rules\ValidRut(), 'unique:users,rut'],
-            'password' => 'required|min:8',
+            'password' => 'required|min:8|confirmed',
+            'password_confirmation' => 'required|same:password',
             'roles' => 'required|array',
             'roles.*' => 'exists:roles,id'
         ]);
