@@ -11,7 +11,8 @@ use App\Http\Controllers\{
     PermissionController,
     UserController,
     ProfileController,
-    PageController
+    PageController,
+    Auth\LoginController
 };
 
 // Página de inicio
@@ -85,6 +86,26 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/api/productos/buscar', [App\Http\Controllers\ProductoController::class, 'buscar'])->name('productos.buscar');
     Route::post('/api/productos/crear-nvv', [App\Http\Controllers\ProductoController::class, 'crearNVVDesdeProductos'])->name('productos.crear-nvv');
     Route::post('/api/productos/modificar-cantidades', [App\Http\Controllers\ProductoController::class, 'modificarCantidades'])->name('productos.modificar-cantidades');
+
+    Route::get('/manejo-stock', [App\Http\Controllers\ManejoStockController::class, 'seleccionar'])->name('manejo-stock.select');
+    Route::get('/manejo-stock/contabilidad', [App\Http\Controllers\ManejoStockController::class, 'contabilidad'])->name('manejo-stock.contabilidad');
+    Route::get('/manejo-stock/historial', [App\Http\Controllers\ManejoStockController::class, 'historial'])->name('manejo-stock.historial');
+    
+    // Mantenedor (Solo Super Admin)
+    Route::get('/mantenedor/bodegas', [App\Http\Controllers\MantenedorController::class, 'bodegas'])->name('mantenedor.bodegas');
+    Route::post('/mantenedor/bodegas/crear', [App\Http\Controllers\MantenedorController::class, 'crearBodega'])->name('mantenedor.bodegas.crear');
+    Route::put('/mantenedor/bodegas/{id}', [App\Http\Controllers\MantenedorController::class, 'actualizarBodega'])->name('mantenedor.bodegas.actualizar');
+    Route::delete('/mantenedor/bodegas/{id}', [App\Http\Controllers\MantenedorController::class, 'eliminarBodega'])->name('mantenedor.bodegas.eliminar');
+    Route::post('/mantenedor/ubicaciones/crear', [App\Http\Controllers\MantenedorController::class, 'crearUbicacion'])->name('mantenedor.ubicaciones.crear');
+    Route::put('/mantenedor/ubicaciones/{id}', [App\Http\Controllers\MantenedorController::class, 'actualizarUbicacion'])->name('mantenedor.ubicaciones.actualizar');
+    Route::delete('/mantenedor/ubicaciones/{id}', [App\Http\Controllers\MantenedorController::class, 'eliminarUbicacion'])->name('mantenedor.ubicaciones.eliminar');
+    Route::post('/manejo-stock/contabilidad/guardar', [App\Http\Controllers\ManejoStockController::class, 'guardarCaptura'])->name('manejo-stock.contabilidad.guardar');
+    Route::post('/manejo-stock/maeedo/insertar', [App\Http\Controllers\ManejoStockController::class, 'confirmarInsertMAEEDO'])->name('manejo-stock.maeedo.insertar');
+    Route::get('/manejo-stock/asociar', [App\Http\Controllers\BarcodeLinkController::class, 'create'])->name('manejo-stock.asociar');
+    Route::post('/manejo-stock/asociar', [App\Http\Controllers\BarcodeLinkController::class, 'store'])->name('manejo-stock.asociar.store');
+    Route::get('/manejo-stock/api/barcode', [App\Http\Controllers\ManejoStockController::class, 'buscarCodigoBarras'])->name('manejo-stock.barcode');
+    Route::get('/manejo-stock/api/producto', [App\Http\Controllers\ManejoStockController::class, 'producto'])->name('manejo-stock.producto');
+    Route::get('/manejo-stock/api/ubicaciones', [App\Http\Controllers\ManejoStockController::class, 'buscarUbicaciones'])->name('manejo-stock.ubicaciones');
 });
 
 // Rutas de Aprobaciones
@@ -207,12 +228,9 @@ Route::get('/cliente/{codigo}', [App\Http\Controllers\ClienteController::class, 
 Auth::routes();
 
 // Ruta alternativa para logout en caso de error CSRF
-Route::get('/logout', function() {
-    Auth::logout();
-    request()->session()->invalidate();
-    request()->session()->regenerateToken();
-    return redirect('/login');
-})->name('logout.get');
+Route::get('/logout', [LoginController::class, 'logout'])
+    ->middleware('auth')
+    ->name('logout.get');
 
 // Página de inicio después del login
 Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home')->middleware(['auth']);
@@ -311,6 +329,31 @@ Route::middleware(['auth', 'handle.errors'])->group(function () {
         Route::get('/stock/bajo-stock', [App\Http\Controllers\StockController::class, 'productosBajoStock'])->name('stock.bajo-stock');
     });
 
+    // **Manejo Stock**
+    Route::middleware('permission:ver_manejo_stock')->group(function () {
+        Route::get('/manejo-stock', [App\Http\Controllers\ManejoStockController::class, 'seleccionar'])->name('manejo-stock.select');
+        Route::get('/manejo-stock/contabilidad', [App\Http\Controllers\ManejoStockController::class, 'contabilidad'])->name('manejo-stock.contabilidad');
+        Route::get('/manejo-stock/historial', [App\Http\Controllers\ManejoStockController::class, 'historial'])->name('manejo-stock.historial');
+        Route::post('/manejo-stock/contabilidad/guardar', [App\Http\Controllers\ManejoStockController::class, 'guardarCaptura'])->name('manejo-stock.contabilidad.guardar');
+        Route::post('/manejo-stock/maeedo/insertar', [App\Http\Controllers\ManejoStockController::class, 'confirmarInsertMAEEDO'])->name('manejo-stock.maeedo.insertar');
+        Route::get('/manejo-stock/asociar', [App\Http\Controllers\BarcodeLinkController::class, 'create'])->name('manejo-stock.asociar');
+        Route::post('/manejo-stock/asociar', [App\Http\Controllers\BarcodeLinkController::class, 'store'])->name('manejo-stock.asociar.store');
+        Route::get('/manejo-stock/api/barcode', [App\Http\Controllers\ManejoStockController::class, 'buscarCodigoBarras'])->name('manejo-stock.barcode');
+        Route::get('/manejo-stock/api/producto', [App\Http\Controllers\ManejoStockController::class, 'producto'])->name('manejo-stock.producto');
+        Route::get('/manejo-stock/api/ubicaciones', [App\Http\Controllers\ManejoStockController::class, 'buscarUbicaciones'])->name('manejo-stock.ubicaciones');
+    });
+
+    // **Mantenedor**
+    Route::middleware('permission:ver_mantenedor')->group(function () {
+        Route::get('/mantenedor/bodegas', [App\Http\Controllers\MantenedorController::class, 'bodegas'])->name('mantenedor.bodegas');
+        Route::post('/mantenedor/bodegas/crear', [App\Http\Controllers\MantenedorController::class, 'crearBodega'])->name('mantenedor.bodegas.crear');
+        Route::put('/mantenedor/bodegas/{id}', [App\Http\Controllers\MantenedorController::class, 'actualizarBodega'])->name('mantenedor.bodegas.actualizar');
+        Route::delete('/mantenedor/bodegas/{id}', [App\Http\Controllers\MantenedorController::class, 'eliminarBodega'])->name('mantenedor.bodegas.eliminar');
+        Route::post('/mantenedor/ubicaciones/crear', [App\Http\Controllers\MantenedorController::class, 'crearUbicacion'])->name('mantenedor.ubicaciones.crear');
+        Route::put('/mantenedor/ubicaciones/{id}', [App\Http\Controllers\MantenedorController::class, 'actualizarUbicacion'])->name('mantenedor.ubicaciones.actualizar');
+        Route::delete('/mantenedor/ubicaciones/{id}', [App\Http\Controllers\MantenedorController::class, 'eliminarUbicacion'])->name('mantenedor.ubicaciones.eliminar');
+    });
+
 });
 
 // Rutas de Administración de Usuarios
@@ -319,7 +362,6 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::get('/users', [App\Http\Controllers\Admin\UserManagementController::class, 'index'])->name('users.index');
     Route::get('/users/create-from-vendedor', [App\Http\Controllers\Admin\UserManagementController::class, 'vendedoresDisponibles'])->name('users.create-from-vendedor');
     Route::post('/users/create-from-vendedor', [App\Http\Controllers\Admin\UserManagementController::class, 'createFromVendedor'])->name('users.store-from-vendedor');
-    Route::get('/users/get-vendedor-data/{vendedorId}', [App\Http\Controllers\Admin\UserManagementController::class, 'getVendedorData'])->name('users.get-vendedor-data');
     Route::get('/users/{user}/edit', [App\Http\Controllers\Admin\UserManagementController::class, 'edit'])->name('users.edit');
     Route::put('/users/{user}', [App\Http\Controllers\Admin\UserManagementController::class, 'update'])->name('users.update');
     Route::post('/users/{user}/change-password', [App\Http\Controllers\Admin\UserManagementController::class, 'changePassword'])->name('users.change-password');
