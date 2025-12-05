@@ -180,6 +180,12 @@
                                 <p>{{ __('Crear Usuario') }}</p>
                             </a>
                         </li>
+                        <li @if ($pageSlug == 'admin-roles') class="active " @endif>
+                            <a href="{{ route('admin.roles.index') }}">
+                                <i class="tim-icons icon-settings-gear-63"></i>
+                                <p>{{ __('Roles y Permisos') }}</p>
+                            </a>
+                        </li>
                     </ul>
                 </div>
             </li>
