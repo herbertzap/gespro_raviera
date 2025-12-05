@@ -29,7 +29,7 @@
             </li>
 
             <!-- Ventas -->
-            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin'))
+            @can('ver_ventas')
             <li>
                 <a data-toggle="collapse" href="#Ventas" aria-expanded="false">
                     <i class="tim-icons icon-cart"></i>
@@ -47,36 +47,30 @@
                         </li>
                         @endcan
                         
+                        @can('ver_cotizaciones')
                         <li @if ($pageSlug == 'cotizaciones' && request('tipo_documento') == 'cotizacion') class="active " @endif>
                             <a href="{{ route('cotizaciones.index') }}?tipo_documento=cotizacion">
                                 <i class="tim-icons icon-paper"></i>
                                 <p>{{ __('Cotizaciones') }}</p>
                             </a>
                         </li>
+                        @endcan
                         
+                        @can('ver_notas_venta')
                         <li @if ($pageSlug == 'cotizaciones' && request('tipo_documento') == 'nota_venta') class="active " @endif>
                             <a href="{{ route('cotizaciones.index') }}?tipo_documento=nota_venta">
                                 <i class="tim-icons icon-notes"></i>
                                 <p>{{ __('Notas de Venta') }}</p>
                             </a>
                         </li>
+                        @endcan
                     </ul>
                 </div>
             </li>
-            @endif
-
-            <!-- Supervisor - Solo Clientes -->
-            @if(auth()->user()->hasRole('Supervisor'))
-            <li @if ($pageSlug == 'clientes') class="active " @endif>
-                <a href="{{ route('clientes.index') }}">
-                    <i class="tim-icons icon-single-02"></i>
-                    <p>{{ __('Clientes') }}</p>
-                </a>
-            </li>
-            @endif
+            @endcan
 
             <!-- Compras - Productos -->
-            @if(auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Super Admin'))
+            @can('ver_productos')
             <li>
                 <a data-toggle="collapse" href="#ComprasMenu" aria-expanded="false">
                     <i class="tim-icons icon-bag-16"></i>
@@ -91,29 +85,85 @@
                                 <p>{{ __('Lista de Productos') }}</p>
                             </a>
                         </li>
+                        @can('gestionar_multiplos_venta')
                         <li @if (($pageSlug ?? '') == 'multiplos-productos') class="active " @endif>
                             <a href="{{ route('admin.productos.multiplos') }}">
                                 <i class="material-icons">inventory_2</i>
                                 <p>{{ __('Múltiplos de Venta') }}</p>
                             </a>
                         </li>
+                        @endcan
                     </ul>
                 </div>
             </li>
-            @endif
+            @endcan
 
-            <!-- Picking - Gestión de Stock -->
-            @if(auth()->user()->hasRole('Picking'))
-            <li @if ($pageSlug == 'stock') class="active " @endif>
-                <a href="{{ route('productos.index') }}">
-                    <i class="tim-icons icon-delivery-fast"></i>
-                    <p>{{ __('Gestión Stock') }}</p>
+            <!-- Cobranza -->
+            @can('ver_cobranza')
+            <li @if ($pageSlug == 'cobranza') class="active " @endif>
+                <a href="{{ route('cobranza.index') }}">
+                    <i class="tim-icons icon-money-coins"></i>
+                    <p>{{ __('Cobranza') }}</p>
                 </a>
             </li>
-            @endif
+            @endcan
 
-            <!-- Informes (oculto para Compras y Picking) -->
-            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Supervisor'))
+            <!-- Manejo Stock -->
+            @can('ver_manejo_stock')
+            <li>
+                <a data-toggle="collapse" href="#ManejoStockMenu" aria-expanded="false">
+                    <i class="tim-icons icon-notes"></i>
+                    <span class="nav-link-text">{{ __('Manejo Stock') }}</span>
+                    <b class="caret mt-1"></b>
+                </a>
+                <div class="collapse" id="ManejoStockMenu">
+                    <ul class="nav pl-4">
+                        @can('ver_contabilidad_stock')
+                        <li @if ($pageSlug == 'manejo-stock') class="active " @endif>
+                            <a href="{{ route('manejo-stock.select') }}">
+                                <i class="tim-icons icon-notes"></i>
+                                <p>{{ __('Contabilidad') }}</p>
+                            </a>
+                        </li>
+                        @endcan
+                        @can('ver_historial_stock')
+                        <li @if ($pageSlug == 'manejo-stock-historial') class="active " @endif>
+                            <a href="{{ route('manejo-stock.historial') }}">
+                                <i class="tim-icons icon-bullet-list-67"></i>
+                                <p>{{ __('Historial') }}</p>
+                            </a>
+                        </li>
+                        @endcan
+                    </ul>
+                </div>
+            </li>
+            @endcan
+
+            <!-- Mantenedor -->
+            @can('ver_mantenedor')
+            <li>
+                <a data-toggle="collapse" href="#MantenedorMenu" aria-expanded="false">
+                    <i class="tim-icons icon-settings-gear-63"></i>
+                    <span class="nav-link-text">{{ __('Mantenedor') }}</span>
+                    <b class="caret mt-1"></b>
+                </a>
+                <div class="collapse" id="MantenedorMenu">
+                    <ul class="nav pl-4">
+                        @can('gestionar_bodegas')
+                        <li @if ($pageSlug == 'mantenedor-bodegas') class="active " @endif>
+                            <a href="{{ route('mantenedor.bodegas') }}">
+                                <i class="tim-icons icon-bank"></i>
+                                <p>{{ __('Bodegas y Ubicaciones') }}</p>
+                            </a>
+                        </li>
+                        @endcan
+                    </ul>
+                </div>
+            </li>
+            @endcan
+
+            <!-- Informes -->
+            @can('ver_informes')
             <li>
                 <a data-toggle="collapse" href="#Informes" aria-expanded="false">
                     <i class="tim-icons icon-chart-bar-32"></i>
@@ -122,6 +172,7 @@
                 </a>
                 <div class="collapse" id="Informes">
                     <ul class="nav pl-4">
+                        @can('ver_nvv_pendientes')
                         <li @if (($pageSlug ?? '') == 'nvv-pendientes') class="active " @endif>
                             <a href="{{ route('nvv-pendientes.index') }}">
                                 <i class="tim-icons icon-notes"></i>
@@ -129,6 +180,8 @@
                             </a>
                         </li>
                         <hr>
+                        @endcan
+                        @can('ver_facturas_pendientes')
                         <li @if (($pageSlug ?? '') == 'facturas-pendientes') class="active " @endif>
                             <a href="{{ route('facturas-pendientes.index') }}">
                                 <i class="tim-icons icon-money-coins"></i>
@@ -136,6 +189,8 @@
                             </a>
                         </li>
                         <hr>
+                        @endcan
+                        @can('ver_facturas_emitidas')
                         <li @if (($pageSlug ?? '') == 'facturas-emitidas') class="active " @endif>
                             <a href="{{ route('facturas-emitidas.index') }}">
                                 <i class="tim-icons icon-chart-bar-32"></i>
@@ -143,23 +198,24 @@
                             </a>
                         </li>
                         <hr>
+                        @endcan
                     </ul>
                 </div>
             </li>
-            @endif
+            @endcan
 
             <!-- Aprobaciones -->
-            @if(auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Picking') || auth()->user()->hasRole('Super Admin'))
+            @can('ver_aprobaciones')
             <li @if ($pageSlug == 'aprobaciones') class="active " @endif>
                 <a href="{{ route('aprobaciones.index') }}">
                     <i class="tim-icons icon-check-2"></i>
                     <p>{{ __('Aprobaciones NVV') }}</p>
                 </a>
             </li>
-            @endif
+            @endcan
 
-            <!-- Gestión de Usuarios - Solo Super Admin -->
-            @if(auth()->user()->hasRole('Super Admin'))
+            <!-- Gestión de Usuarios -->
+            @can('ver_usuarios')
             <li>
                 <a data-toggle="collapse" href="#GestionUsuarios" aria-expanded="false">
                     <i class="tim-icons icon-single-02"></i>
@@ -174,22 +230,26 @@
                                 <p>{{ __('Lista de Usuarios') }}</p>
                             </a>
                         </li>
+                        @can('crear_usuarios')
                         <li @if ($pageSlug == 'admin-users-create') class="active " @endif>
                             <a href="{{ route('admin.users.create-from-vendedor') }}">
                                 <i class="tim-icons icon-simple-add"></i>
                                 <p>{{ __('Crear Usuario') }}</p>
                             </a>
                         </li>
+                        @endcan
+                        @can('editar_roles')
                         <li @if ($pageSlug == 'admin-roles') class="active " @endif>
                             <a href="{{ route('admin.roles.index') }}">
                                 <i class="tim-icons icon-settings-gear-63"></i>
                                 <p>{{ __('Roles y Permisos') }}</p>
                             </a>
                         </li>
+                        @endcan
                     </ul>
                 </div>
             </li>
-            @endif
+            @endcan
 
             @can('gestionar usuarios')
             <li>
