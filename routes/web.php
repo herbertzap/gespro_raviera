@@ -357,6 +357,15 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::post('/productos/multiplos/cargar', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'cargarExcel'])->name('productos.multiplos.cargar');
     Route::put('/productos/multiplos/{id}', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'actualizar'])->name('productos.multiplos.actualizar');
     Route::post('/productos/multiplos/{id}/restablecer', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'restablecer'])->name('productos.multiplos.restablecer');
+
+    // Gestión de Roles y Permisos (Solo Super Admin)
+    Route::middleware('role:Super Admin')->group(function () {
+        Route::get('/roles', [App\Http\Controllers\Admin\RoleManagementController::class, 'index'])->name('roles.index');
+        Route::post('/roles', [App\Http\Controllers\Admin\RoleManagementController::class, 'store'])->name('roles.store');
+        Route::get('/roles/{role}/edit', [App\Http\Controllers\Admin\RoleManagementController::class, 'edit'])->name('roles.edit');
+        Route::put('/roles/{role}', [App\Http\Controllers\Admin\RoleManagementController::class, 'update'])->name('roles.update');
+        Route::delete('/roles/{role}', [App\Http\Controllers\Admin\RoleManagementController::class, 'destroy'])->name('roles.destroy');
+    });
 });
 
 // Webhook para despliegue automático desde GitHub
