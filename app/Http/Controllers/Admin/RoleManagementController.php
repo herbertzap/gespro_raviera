@@ -197,7 +197,31 @@ class RoleManagementController extends Controller
                 ->with('error', 'No se puede editar el rol Super Admin.');
         }
 
+        // Limpiar cache de permisos primero
+        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+
         $modulos = $this->getModulos();
+        
+        // Recargar el rol y sus permisos
+        $role->refresh();
+        $role->load('permissions');
+
+        // Asegurar que todos los permisos de los módulos existan en la BD
+        foreach ($modulos as $moduloKey => &$modulo) {
+            foreach ($modulo['permisos'] as $permiso) {
+                Permission::firstOrCreate([
+                    'name' => $permiso,
+                    'guard_name' => 'web'
+                ]);
+            }
+        }
+        unset($modulo); // Liberar referencia
+
+        // Limpiar cache nuevamente después de crear permisos
+        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+        
+        // Recargar permisos del rol después de limpiar cache
+        $role->refresh();
         $role->load('permissions');
 
         return view('admin.roles.edit', compact('role', 'modulos'));
