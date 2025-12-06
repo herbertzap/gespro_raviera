@@ -40,7 +40,7 @@
                 </div>
             @endif
 
-            @if(in_array($tipoUsuario, ['Vendedor', 'Supervisor']))
+            @if(in_array($tipoUsuario, ['Vendedor', 'Supervisor', 'Super Admin']))
                 <!-- Resumen de Cobranza -->
                 <div class="col-lg-3 col-md-6 col-sm-6">
                     <div class="card card-stats">
@@ -132,7 +132,7 @@
                     </div>
                 </div>
 
-                @if(in_array($tipoUsuario, ['Supervisor', 'Compras', 'Picking']))
+                @if(in_array($tipoUsuario, ['Supervisor', 'Compras', 'Picking', 'Super Admin']))
                     <!-- NVV Pendientes -->
                     <div class="col-lg-3 col-md-6 col-sm-6">
                         <div class="card card-stats">
@@ -173,7 +173,7 @@
                 @endif
             @endif
 
-            @if($tipoUsuario == 'Supervisor')
+            @if(in_array($tipoUsuario, ['Supervisor', 'Super Admin']))
                 <!-- Supervisor - Reorganizado según solicitud -->
                 <!-- Primera fila: Cards principales -->
                 <div class="row">
@@ -278,7 +278,7 @@
             </div>
             @endif
 
-            @if($tipoUsuario == 'Compras')
+            @if(in_array($tipoUsuario, ['Compras', 'Super Admin']))
                 <!-- Compras - Resumen -->
                 <div class="col-lg-3 col-md-6 col-sm-6">
                     <div class="card card-stats">
@@ -663,7 +663,7 @@
                 @endif
             @endif
 
-            @if($tipoUsuario == 'Supervisor')
+            @if(in_array($tipoUsuario, ['Supervisor', 'Super Admin']))
                 <!-- Supervisor - Tablas de Información -->
                 
                 <!-- Notas de Venta Pendientes (col-6) -->
@@ -742,12 +742,12 @@
                                     <tbody>
                                         @forelse($notasVentaSQL ?? [] as $nota)
                                         <tr>
-                                            <td><span class="badge badge-info">{{ $nota['TIPO_DOCTO'] }}</span></td>
-                                            <td>{{ $nota['NRO_DOCTO'] }}</td>
-                                            <td>{{ $nota['NOMBRE_CLIENTE'] }}</td>
-                                            <td>{{ $nota['NOMBRE_VENDEDOR'] }}</td>
-                                            <td>${{ number_format($nota['VALOR_DOCUMENTO'], 0) }}</td>
-                                            <td>{{ \Carbon\Carbon::parse($nota['FECHA_EMISION'])->format('d/m/Y') }}</td>
+                                            <td><span class="badge badge-info">{{ $nota['TIPO_DOCTO'] ?? 'NVV' }}</span></td>
+                                            <td>{{ $nota['NRO_DOCTO'] ?? '' }}</td>
+                                            <td>{{ $nota['CLIENTE'] ?? $nota['NOMBRE_CLIENTE'] ?? '' }}</td>
+                                            <td>{{ $nota['VENDEDOR'] ?? $nota['NOMBRE_VENDEDOR'] ?? '' }}</td>
+                                            <td>${{ number_format($nota['VALOR_PENDIENTE'] ?? $nota['VALOR_DOCUMENTO'] ?? 0, 0) }}</td>
+                                            <td>{{ isset($nota['FECHA_EMISION']) ? \Carbon\Carbon::parse($nota['FECHA_EMISION'])->format('d/m/Y') : '' }}</td>
                                         </tr>
                                         @empty
                                         <tr>
@@ -788,37 +788,37 @@
                                     <tbody>
                                         @forelse($facturasPendientes ?? [] as $factura)
                                         <tr>
-                                            <td><span class="badge badge-danger">{{ $factura['TIPO_DOCTO'] }}</span></td>
-                                            <td>{{ $factura['NRO_DOCTO'] }}</td>
-                                            <td>{{ $factura['NOMBRE_CLIENTE'] }}</td>
-                                            <td>{{ $factura['NOMBRE_VENDEDOR'] }}</td>
-                                            <td>${{ number_format($factura['VALOR_DOCUMENTO'], 0) }}</td>
-                                            <td>${{ number_format($factura['ABONOS'], 0) }}</td>
+                                            <td><span class="badge badge-danger">{{ $factura['TIPO_DOCTO'] ?? '' }}</span></td>
+                                            <td>{{ $factura['NRO_DOCTO'] ?? '' }}</td>
+                                            <td>{{ $factura['CLIENTE'] ?? '' }}</td>
+                                            <td>{{ $factura['VENDEDOR'] ?? '' }}</td>
+                                            <td>${{ number_format($factura['VALOR'] ?? 0, 0) }}</td>
+                                            <td>${{ number_format($factura['ABONOS'] ?? 0, 0) }}</td>
                                             <td>
-                                                <span class="badge badge-{{ $factura['SALDO'] > 0 ? 'warning' : 'success' }}">
-                                                    ${{ number_format($factura['SALDO'], 0) }}
+                                                <span class="badge badge-{{ ($factura['SALDO'] ?? 0) > 0 ? 'warning' : 'success' }}">
+                                                    ${{ number_format($factura['SALDO'] ?? 0, 0) }}
                                                 </span>
                                             </td>
                                             <td>
                                                 <span class="badge badge-{{ 
-                                                    $factura['DIAS'] < 8 ? 'success' : 
-                                                    ($factura['DIAS'] < 31 ? 'warning' : 
-                                                    ($factura['DIAS'] < 61 ? 'danger' : 'dark')) 
+                                                    ($factura['DIAS'] ?? 0) < 8 ? 'success' : 
+                                                    (($factura['DIAS'] ?? 0) < 31 ? 'warning' : 
+                                                    (($factura['DIAS'] ?? 0) < 61 ? 'danger' : 'dark')) 
                                                 }}">
-                                                    {{ $factura['DIAS'] }}
+                                                    {{ $factura['DIAS'] ?? 0 }}
                                                 </span>
                                             </td>
                                             <td>
                                                 <span class="badge badge-{{ 
-                                                    $factura['ESTADO'] == 'VIGENTE' ? 'success' : 
-                                                    ($factura['ESTADO'] == 'POR VENCER' ? 'warning' : 
-                                                    ($factura['ESTADO'] == 'VENCIDO' ? 'danger' : 'dark')) 
+                                                    ($factura['ESTADO'] ?? '') == 'VIGENTE' ? 'success' : 
+                                                    (($factura['ESTADO'] ?? '') == 'POR VENCER' ? 'warning' : 
+                                                    (($factura['ESTADO'] ?? '') == 'VENCIDO' ? 'danger' : 'dark')) 
                                                 }}">
-                                                    {{ $factura['ESTADO'] }}
+                                                    {{ $factura['ESTADO'] ?? '' }}
                                                 </span>
                                             </td>
                                             <td>
-                                                <a href="{{ route('facturas-pendientes.ver', [$factura['TIPO_DOCTO'], $factura['NRO_DOCTO']]) }}" class="btn btn-sm btn-primary">
+                                                <a href="{{ route('facturas-pendientes.ver', [$factura['TIPO_DOCTO'] ?? '', $factura['NRO_DOCTO'] ?? '']) }}" class="btn btn-sm btn-primary">
                                                     <i class="material-icons">visibility</i> Ver
                                                 </a>
                                             </td>
@@ -836,7 +836,7 @@
                 </div>
             @endif
 
-            @if(auth()->user()->hasRole('Supervisor'))
+            @if(auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Super Admin'))
                 <!-- NVV Pendientes Detalle -->
                 <div class="col-md-6">
                     <div class="card">
@@ -867,27 +867,27 @@
                                         @forelse($nvvPendientes ?? [] as $nvv)
                                         <tr>
                                             <td>
-                                                <span class="badge badge-warning">{{ $nvv['TD'] }}-{{ $nvv['NUM'] }}</span>
+                                                <span class="badge badge-warning">{{ $nvv['TD'] ?? '' }}-{{ $nvv['NUM'] ?? '' }}</span>
                                             </td>
-                                            <td>{{ $nvv['CLIE'] }}</td>
-                                            <td>{{ $nvv['NOKOPR'] }}</td>
-                                            <td>{{ number_format($nvv['PEND'], 0) }}</td>
+                                            <td>{{ $nvv['CLIE'] ?? '' }}</td>
+                                            <td>{{ $nvv['CANTIDAD_PRODUCTOS'] ?? 0 }} productos</td>
+                                            <td>{{ number_format($nvv['TOTAL_PENDIENTE'] ?? 0, 0) }}</td>
                                             <td>
                                                 <span class="badge badge-{{ 
-                                                    $nvv['DIAS'] < 8 ? 'success' : 
-                                                    ($nvv['DIAS'] < 31 ? 'warning' : 
-                                                    ($nvv['DIAS'] < 61 ? 'danger' : 'dark')) 
+                                                    ($nvv['DIAS'] ?? 0) < 8 ? 'success' : 
+                                                    (($nvv['DIAS'] ?? 0) < 31 ? 'warning' : 
+                                                    (($nvv['DIAS'] ?? 0) < 61 ? 'danger' : 'dark')) 
                                                 }}">
-                                                    {{ $nvv['DIAS'] }}
+                                                    {{ $nvv['DIAS'] ?? 0 }}
                                                 </span>
                                             </td>
                                             <td>
                                                 <span class="badge badge-{{ 
-                                                    $nvv['Rango'] == 'Entre 1 y 7 días' ? 'success' : 
-                                                    ($nvv['Rango'] == 'Entre 8 y 30 Días' ? 'warning' : 
-                                                    ($nvv['Rango'] == 'Entre 31 y 60 Días' ? 'danger' : 'dark')) 
+                                                    ($nvv['Rango'] ?? '') == 'Entre 1 y 7 días' ? 'success' : 
+                                                    (($nvv['Rango'] ?? '') == 'Entre 8 y 30 Días' ? 'warning' : 
+                                                    (($nvv['Rango'] ?? '') == 'Entre 31 y 60 Días' ? 'danger' : 'dark')) 
                                                 }}">
-                                                    {{ $nvv['Rango'] }}
+                                                    {{ $nvv['Rango'] ?? '' }}
                                                 </span>
                                             </td>
                                         </tr>
@@ -906,19 +906,19 @@
                                 <div class="row">
                                     <div class="col-md-3">
                                         <div class="text-center">
-                                            <h5 class="text-warning">{{ $resumenNvvPendientes['total_nvv'] }}</h5>
+                                            <h5 class="text-warning">{{ $resumenNvvPendientes['total_nvv'] ?? 0 }}</h5>
                                             <small>Total NVV</small>
                                         </div>
                                     </div>
                                     <div class="col-md-3">
                                         <div class="text-center">
-                                            <h5 class="text-info">{{ number_format($resumenNvvPendientes['total_pendiente'], 0) }}</h5>
+                                            <h5 class="text-info">{{ number_format($resumenNvvPendientes['total_pendiente'] ?? 0, 0) }}</h5>
                                             <small>Unidades Pend.</small>
                                         </div>
                                     </div>
                                     <div class="col-md-3">
                                         <div class="text-center">
-                                            <h5 class="text-success">${{ number_format($resumenNvvPendientes['total_valor_pendiente'], 0) }}</h5>
+                                            <h5 class="text-success">${{ number_format($resumenNvvPendientes['total_valor_pendiente'] ?? 0, 0) }}</h5>
                                             <small>Valor Pend.</small>
                                         </div>
                                     </div>
@@ -961,22 +961,22 @@
                                         <tr>
                                             <td>
                                                 <span class="badge badge-{{ 
-                                                    $factura['TIPO_DOCTO'] == 'FCV' ? 'success' : 
-                                                    ($factura['TIPO_DOCTO'] == 'FDV' ? 'info' : 'warning') 
+                                                    ($factura['TIPO_DOCTO'] ?? '') == 'FCV' ? 'success' : 
+                                                    (($factura['TIPO_DOCTO'] ?? '') == 'FDV' ? 'info' : 'warning') 
                                                 }}">
-                                                    {{ $factura['TIPO_DOCTO'] }}
+                                                    {{ $factura['TIPO_DOCTO'] ?? '' }}
                                                 </span>
                                             </td>
-                                            <td>{{ $factura['NRO_DOCTO'] }}</td>
-                                            <td>{{ $factura['CLIENTE'] }}</td>
-                                            <td>${{ number_format($factura['SALDO'], 0) }}</td>
+                                            <td>{{ $factura['NRO_DOCTO'] ?? '' }}</td>
+                                            <td>{{ $factura['CLIENTE'] ?? '' }}</td>
+                                            <td>${{ number_format($factura['SALDO'] ?? 0, 0) }}</td>
                                             <td>
                                                 <span class="badge badge-{{ 
-                                                    $factura['DIAS'] < 0 ? 'success' : 
-                                                    ($factura['DIAS'] < 8 ? 'warning' : 
-                                                    ($factura['DIAS'] < 31 ? 'danger' : 'dark')) 
+                                                    ($factura['DIAS'] ?? 0) < 0 ? 'success' : 
+                                                    (($factura['DIAS'] ?? 0) < 8 ? 'warning' : 
+                                                    (($factura['DIAS'] ?? 0) < 31 ? 'danger' : 'dark')) 
                                                 }}">
-                                                    {{ $factura['DIAS'] }}
+                                                    {{ $factura['DIAS'] ?? 0 }}
                                                 </span>
                                             </td>
                                             <td>
@@ -1005,13 +1005,13 @@
                                 <div class="row">
                                     <div class="col-md-3">
                                         <div class="text-center">
-                                            <h5 class="text-danger">{{ $resumenFacturasPendientes['total_facturas'] }}</h5>
+                                            <h5 class="text-danger">{{ $resumenFacturasPendientes['total_facturas'] ?? 0 }}</h5>
                                             <small>Total Facturas</small>
                                         </div>
                                     </div>
                                     <div class="col-md-3">
                                         <div class="text-center">
-                                            <h5 class="text-success">${{ number_format($resumenFacturasPendientes['total_saldo'], 0) }}</h5>
+                                            <h5 class="text-success">${{ number_format($resumenFacturasPendientes['total_saldo'] ?? 0, 0) }}</h5>
                                             <small>Saldo Total</small>
                                         </div>
                                     </div>
@@ -1097,7 +1097,7 @@
         </div>
 
         <!-- Sección específica para Compras -->
-        @if($tipoUsuario == 'Compras')
+        @if(in_array($tipoUsuario, ['Compras', 'Super Admin']))
         <div class="row">
             <!-- NVV Pendientes de Aprobación -->
             <div class="col-md-8">
@@ -1110,7 +1110,7 @@
                         <p class="card-category">NVV que requieren aprobación de Compras</p>
                     </div>
                     <div class="card-body">
-                        @if(isset($nvvPendientes) && count($nvvPendientes) > 0)
+                        @if(isset($notasPendientes) && count($notasPendientes) > 0)
                             <div class="table-responsive">
                                 <table class="table table-hover">
                                     <thead>
@@ -1125,37 +1125,40 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        @foreach($nvvPendientes as $nvv)
+                                        @foreach($notasPendientes as $nota)
                                         <tr>
                                             <td>
-                                                <strong>#{{ $nvv['id'] }}</strong>
+                                                <strong>#{{ $nota->id ?? '' }}</strong>
                                             </td>
                                             <td>
                                                 <div>
-                                                    <strong>{{ $nvv['cliente_codigo'] }}</strong><br>
-                                                    <small class="text-muted">{{ $nvv['cliente_nombre'] }}</small>
+                                                    <strong>{{ $nota->cliente->codigo_cliente ?? '' }}</strong><br>
+                                                    <small class="text-muted">{{ $nota->cliente->nombre ?? '' }}</small>
                                                 </div>
                                             </td>
-                                            <td>{{ $nvv['vendedor'] }}</td>
+                                            <td>{{ $nota->user->name ?? '' }}</td>
                                             <td>
-                                                <strong>${{ number_format($nvv['total'], 0) }}</strong>
+                                                <strong>${{ number_format($nota->total ?? 0, 0) }}</strong>
                                             </td>
                                             <td>
-                                                <small>{{ \Carbon\Carbon::parse($nvv['fecha_creacion'])->format('d/m/Y') }}</small>
+                                                <small>{{ $nota->created_at ? $nota->created_at->format('d/m/Y') : '' }}</small>
                                             </td>
                                             <td>
-                                                @if($nvv['tiene_problemas_stock'])
-                                                    <span class="badge badge-warning">Stock</span>
-                                                @endif
-                                                @if($nvv['tiene_problemas_credito'])
-                                                    <span class="badge badge-danger">Crédito</span>
-                                                @endif
-                                                @if(!$nvv['tiene_problemas_stock'] && !$nvv['tiene_problemas_credito'])
-                                                    <span class="badge badge-success">OK</span>
+                                                @php
+                                                    $estado = $nota->estado_aprobacion ?? 'pendiente';
+                                                @endphp
+                                                @if($estado == 'pendiente')
+                                                    <span class="badge badge-warning">Pendiente</span>
+                                                @elseif($estado == 'pendiente_picking')
+                                                    <span class="badge badge-info">Picking</span>
+                                                @elseif($estado == 'aprobada_supervisor')
+                                                    <span class="badge badge-primary">Aprobada Sup.</span>
+                                                @else
+                                                    <span class="badge badge-secondary">{{ $estado }}</span>
                                                 @endif
                                             </td>
                                             <td>
-                                                <a href="{{ $nvv['url'] }}" class="btn btn-info btn-sm">
+                                                <a href="{{ route('cotizacion.ver', $nota->id) }}" class="btn btn-info btn-sm">
                                                     <i class="material-icons">visibility</i> Ver
                                                 </a>
                                             </td>
@@ -1191,13 +1194,13 @@
                                 @foreach($productosBajoStock as $producto)
                                 <div class="list-group-item">
                                     <div class="d-flex w-100 justify-content-between">
-                                        <h6 class="mb-1">{{ $producto['codigo'] }}</h6>
-                                        <small class="text-danger">{{ $producto['stock_actual'] }}/{{ $producto['stock_minimo'] }}</small>
+                                        <h6 class="mb-1">{{ $producto['codigo'] ?? '' }}</h6>
+                                        <small class="text-danger">Stock: {{ $producto['stock_actual'] ?? 0 }}</small>
                                     </div>
-                                    <p class="mb-1">{{ $producto['nombre'] }}</p>
+                                    <p class="mb-1">{{ $producto['nombre'] ?? '' }}</p>
                                     <small class="text-warning">
                                         <i class="material-icons" style="font-size: 16px;">warning</i>
-                                        Faltan {{ $producto['diferencia'] }} unidades
+                                        Stock bajo (mín. 5)
                                     </small>
                                 </div>
                                 @endforeach

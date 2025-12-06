@@ -29,7 +29,7 @@
             </li>
 
             <!-- Ventas -->
-            @if(auth()->user()->hasRole('Vendedor'))
+            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin'))
             <li>
                 <a data-toggle="collapse" href="#Ventas" aria-expanded="false">
                     <i class="tim-icons icon-cart"></i>
@@ -38,14 +38,12 @@
                 </a>
                 <div class="collapse" id="Ventas">
                     <ul class="nav pl-4">
-                        @can('ver_clientes')
                         <li @if ($pageSlug == 'buscar-clientes') class="active " @endif>
                             <a href="{{ route('cobranza.index') }}">
                                 <i class="tim-icons icon-single-02"></i>
                                 <p>{{ __('Clientes') }}</p>
                             </a>
                         </li>
-                        @endcan
                         
                         <li @if ($pageSlug == 'cotizaciones' && request('tipo_documento') == 'cotizacion') class="active " @endif>
                             <a href="{{ route('cotizaciones.index') }}?tipo_documento=cotizacion">
@@ -66,7 +64,7 @@
             @endif
 
             <!-- Supervisor - Solo Clientes -->
-            @if(auth()->user()->hasRole('Supervisor'))
+            @if(auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Super Admin'))
             <li @if ($pageSlug == 'clientes') class="active " @endif>
                 <a href="{{ route('clientes.index') }}">
                     <i class="tim-icons icon-single-02"></i>
@@ -76,7 +74,7 @@
             @endif
 
             <!-- Compras - Productos -->
-            @if(auth()->user()->hasRole('Compras') && !auth()->user()->hasRole('Super Admin'))
+            @if(auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Super Admin'))
             <li>
                 <a data-toggle="collapse" href="#ComprasMenu" aria-expanded="false">
                     <i class="tim-icons icon-bag-16"></i>
@@ -103,7 +101,7 @@
             @endif
 
             <!-- Picking - Gestión de Stock -->
-            @if(auth()->user()->hasRole('Picking'))
+            @if(auth()->user()->hasRole('Picking') || auth()->user()->hasRole('Super Admin'))
             <li @if ($pageSlug == 'stock') class="active " @endif>
                 <a href="{{ route('productos.index') }}">
                     <i class="tim-icons icon-delivery-fast"></i>
@@ -184,8 +182,8 @@
             </li>
             @endif
 
-            <!-- Informes (oculto para Compras, Picking y Super Admin) -->
-            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Supervisor'))
+            <!-- Informes -->
+            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Super Admin'))
             <li>
                 <a data-toggle="collapse" href="#Informes" aria-expanded="false">
                     <i class="tim-icons icon-chart-bar-32"></i>
@@ -221,7 +219,7 @@
             @endif
 
             <!-- Aprobaciones -->
-            @if((auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Picking')) && !auth()->user()->hasRole('Super Admin'))
+            @if(auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Picking') || auth()->user()->hasRole('Super Admin'))
             <li @if ($pageSlug == 'aprobaciones') class="active " @endif>
                 <a href="{{ route('aprobaciones.index') }}">
                     <i class="tim-icons icon-check-2"></i>
