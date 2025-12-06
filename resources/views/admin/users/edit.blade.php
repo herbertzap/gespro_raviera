@@ -192,6 +192,39 @@
 
 @section('scripts')
 <script>
+// Función para mostrar/ocultar contraseña - debe estar en el alcance global
+function togglePasswordVisibility(inputId, buttonId) {
+    const input = document.getElementById(inputId);
+    if (!input) {
+        console.error('Input no encontrado:', inputId);
+        return;
+    }
+
+    let iconId;
+    if (inputId === 'new_password') {
+        iconId = 'iconNewPassword';
+    } else if (inputId === 'password_confirmation') {
+        iconId = 'iconPasswordConfirmation';
+    } else {
+        console.error('InputId no reconocido:', inputId);
+        return;
+    }
+
+    const icon = document.getElementById(iconId);
+    if (!icon) {
+        console.error('Icono no encontrado:', iconId);
+        return;
+    }
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'tim-icons icon-lock-circle';
+    } else {
+        input.type = 'password';
+        icon.className = 'tim-icons icon-single-02';
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const rutInput = document.getElementById('rut');
     
@@ -298,32 +331,6 @@ document.addEventListener('DOMContentLoaded', function() {
         passwordConfirmationInput.addEventListener('input', validatePasswordMatch);
     }
 });
-
-// Función para mostrar/ocultar contraseña
-function togglePasswordVisibility(inputId, buttonId) {
-    const input = document.getElementById(inputId);
-    if (!input) return;
-
-    let iconId;
-    if (inputId === 'new_password') {
-        iconId = 'iconNewPassword';
-    } else if (inputId === 'password_confirmation') {
-        iconId = 'iconPasswordConfirmation';
-    } else {
-        return;
-    }
-
-    const icon = document.getElementById(iconId);
-    if (!icon) return;
-
-    if (input.type === 'password') {
-        input.type = 'text';
-        icon.className = 'tim-icons icon-lock-circle';
-    } else {
-        input.type = 'password';
-        icon.className = 'tim-icons icon-single-02';
-    }
-}
 </script>
 
 <style>

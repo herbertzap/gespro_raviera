@@ -21,12 +21,37 @@ class PermisosModularesSeeder extends Seeder
             // ========== DASHBOARD ==========
             'dashboard' => [
                 'ver_dashboard',
+                // Cards de resumen
+                'ver_dashboard_card_total_usuarios',
+                'ver_dashboard_card_total_documentos_pendientes',
+                'ver_dashboard_card_total_notas_venta_aprobacion',
+                'ver_dashboard_card_total_documentos_vencidos',
+                'ver_dashboard_card_cheques_cartera',
+                'ver_dashboard_card_cheques_protestados',
+                'ver_dashboard_card_nvv_pendientes',
+                'ver_dashboard_card_valor_nvv_pendientes',
+                'ver_dashboard_card_nvv_por_validar',
+                'ver_dashboard_card_nvv_sistema_mes',
+                'ver_dashboard_card_facturas_mes',
+                'ver_dashboard_card_compras_mes',
+                'ver_dashboard_card_productos_bajo_stock',
+                'ver_dashboard_card_compras_pendientes',
+                // Secciones/tablas
                 'ver_dashboard_resumen_usuarios',
                 'ver_dashboard_resumen_stock',
                 'ver_dashboard_resumen_cobranza',
                 'ver_dashboard_resumen_nvv',
                 'ver_dashboard_graficos',
                 'ver_dashboard_tablas_vendedores',
+                'ver_dashboard_tabla_usuarios_rol',
+                'ver_dashboard_tabla_mis_clientes',
+                'ver_dashboard_tabla_clientes_vencidos',
+                'ver_dashboard_tabla_notas_pendientes',
+                'ver_dashboard_tabla_notas_sql',
+                'ver_dashboard_tabla_facturas_pendientes',
+                'ver_dashboard_tabla_nvv_pendientes_detalle',
+                // Opción especial de filtrado
+                'dashboard_filtrar_por_codigo',
             ],
 
             // ========== VENTAS ==========

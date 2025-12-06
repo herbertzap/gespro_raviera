@@ -21,14 +21,12 @@
         </div>
         <ul class="nav">
             <!-- Dashboard (Inicio) -->
-            @can('ver_dashboard')
             <li @if ($pageSlug == 'dashboard') class="active " @endif>
                 <a href="{{ route('dashboard') }}">
                     <i class="tim-icons icon-chart-pie-36"></i>
                     <p>{{ __('Dashboard') }}</p>
                 </a>
             </li>
-            @endcan
 
             <!-- Ventas -->
             @can('ver_ventas')
@@ -71,7 +69,7 @@
             </li>
             @endcan
 
-            <!-- Compras - Productos (Solo para roles con permiso ver_productos) -->
+            <!-- Compras - Productos -->
             @can('ver_productos')
             <li>
                 <a data-toggle="collapse" href="#ComprasMenu" aria-expanded="false">
@@ -113,18 +111,26 @@
             <!-- Manejo Stock -->
             @can('ver_manejo_stock')
             <li>
-                <a data-toggle="collapse" href="#ManejoStockMenu" aria-expanded="false">
+                <a data-toggle="collapse" href="#ManejoStockMenu" aria-expanded="true">
                     <i class="tim-icons icon-notes"></i>
                     <span class="nav-link-text">{{ __('Manejo Stock') }}</span>
                     <b class="caret mt-1"></b>
                 </a>
-                <div class="collapse" id="ManejoStockMenu">
+                <div class="collapse show" id="ManejoStockMenu">
                     <ul class="nav pl-4">
                         @can('ver_contabilidad_stock')
                         <li @if ($pageSlug == 'manejo-stock') class="active " @endif>
                             <a href="{{ route('manejo-stock.select') }}">
                                 <i class="tim-icons icon-notes"></i>
-                                <p>{{ __('Contabilidad') }}</p>
+                                <p>{{ __('Toma de inventario OnLine') }}</p>
+                            </a>
+                        </li>
+                        @endcan
+                        @can('ver_barrido_stock')
+                        <li @if ($pageSlug == 'manejo-stock-barrido') class="active " @endif>
+                            <a href="{{ route('manejo-stock.barrido.select') }}">
+                                <i class="tim-icons icon-tablet-2"></i>
+                                <p>{{ __('Toma de Inventario Barrido') }}</p>
                             </a>
                         </li>
                         @endcan
@@ -136,6 +142,22 @@
                             </a>
                         </li>
                         @endcan
+                        @can('ver_reporte_inventario')
+                        <li @if ($pageSlug == 'manejo-stock-reporte') class="active " @endif>
+                            <a href="{{ route('manejo-stock.reporte') }}">
+                                <i class="tim-icons icon-chart-bar-32"></i>
+                                <p>{{ __('Reporte GESTPRO') }}</p>
+                            </a>
+                        </li>
+                        @endcan
+                        @can('ver_barrido_stock')
+                        <li @if ($pageSlug == 'manejo-stock-reporte-inventario') class="active " @endif>
+                            <a href="{{ route('manejo-stock.reporte-inventario') }}">
+                                <i class="tim-icons icon-chart-pie-36"></i>
+                                <p>{{ __('Reporte Inventario') }}</p>
+                            </a>
+                        </li>
+                        @endcan
                     </ul>
                 </div>
             </li>
@@ -144,18 +166,26 @@
             <!-- Mantenedor -->
             @can('ver_mantenedor')
             <li>
-                <a data-toggle="collapse" href="#MantenedorMenu" aria-expanded="false">
+                <a data-toggle="collapse" href="#MantenedorMenu" aria-expanded="true">
                     <i class="tim-icons icon-settings-gear-63"></i>
                     <span class="nav-link-text">{{ __('Mantenedor') }}</span>
                     <b class="caret mt-1"></b>
                 </a>
-                <div class="collapse" id="MantenedorMenu">
+                <div class="collapse show" id="MantenedorMenu">
                     <ul class="nav pl-4">
                         @can('gestionar_bodegas')
                         <li @if ($pageSlug == 'mantenedor-bodegas') class="active " @endif>
                             <a href="{{ route('mantenedor.bodegas') }}">
                                 <i class="tim-icons icon-bank"></i>
                                 <p>{{ __('Bodegas y Ubicaciones') }}</p>
+                            </a>
+                        </li>
+                        @endcan
+                        @can('ver_contabilidad_stock')
+                        <li @if ($pageSlug == 'manejo-stock') class="active " @endif>
+                            <a href="{{ route('manejo-stock.select') }}">
+                                <i class="tim-icons icon-notes"></i>
+                                <p>{{ __('Contabilidad de Productos') }}</p>
                             </a>
                         </li>
                         @endcan
@@ -206,7 +236,7 @@
             </li>
             @endcan
 
-            <!-- Aprobaciones (Solo para roles con permiso ver_aprobaciones) -->
+            <!-- Aprobaciones -->
             @can('ver_aprobaciones')
             <li @if ($pageSlug == 'aprobaciones') class="active " @endif>
                 <a href="{{ route('aprobaciones.index') }}">
@@ -240,14 +270,127 @@
                             </a>
                         </li>
                         @endcan
-                        @canany(['editar_roles', 'asignar_permisos'])
+                        @can('editar_roles')
                         <li @if ($pageSlug == 'admin-roles') class="active " @endif>
                             <a href="{{ route('admin.roles.index') }}">
                                 <i class="tim-icons icon-settings-gear-63"></i>
                                 <p>{{ __('Roles y Permisos') }}</p>
                             </a>
                         </li>
-                        @endcanany
+                        @endcan
+                    </ul>
+                </div>
+            </li>
+            @endcan
+
+            @can('gestionar usuarios')
+            <li>
+                <a data-toggle="collapse" href="#Usuarios" aria-expanded="true">
+                    <i class="fab fa-laravel"></i>
+                    <span class="nav-link-text">{{ __('Usuarios') }}</span>
+                    <b class="caret mt-1"></b>
+                </a>
+                <div class="collapse show" id="Usuarios">
+                    <ul class="nav pl-4">
+                        <li @if ($pageSlug == 'profile') class="active " @endif>
+                            <a href="{{ route('profile.edit') }}">
+                                <i class="tim-icons icon-single-02"></i>
+                                <p>{{ __('Perfil de usuario') }}</p>
+                            </a>
+                        </li>
+                        @can('gestionar usuarios')
+                        <li @if ($pageSlug == 'users') class="active " @endif>
+                            <a href="{{ route('user.index') }}">
+                                <i class="tim-icons icon-bullet-list-67"></i>
+                                <p>{{ __('Usuarios') }}</p>
+                            </a>
+                        </li>
+                        @endcan
+
+                        @can('gestionar roles')
+                        <li @if ($pageSlug == 'roles') class="active " @endif>
+                            <a href="{{ route('roles.index') }}">
+                                <i class="tim-icons icon-settings"></i>
+                                <p>{{ __('Roles') }}</p>
+                            </a>
+                        </li>
+                        @endcan
+
+                        @can('gestionar permisos')
+                        <li @if ($pageSlug == 'permissions') class="active " @endif>
+                            <a href="{{ route('permissions.index') }}">
+                                <i class="tim-icons icon-lock-circle"></i>
+                                <p>{{ __('Permisos') }}</p>
+                            </a>
+                        </li>
+                        @endcan
+                    </ul>
+                </div>
+            </li>
+            @endcan
+
+            @can('gestionar categorías')
+            <li @if ($pageSlug == 'categorias') class="active " @endif>
+                <a href="{{ route('categorias.index') }}">
+                    <i class="tim-icons icon-tag"></i>
+                    <p>{{ __('Categorías') }}</p>
+                </a>
+            </li>
+            @endcan
+
+            @can('gestionar bodegas')
+            <li @if ($pageSlug == 'bodegas') class="active " @endif>
+                <a href="{{ route('bodegas.index') }}">
+                    <i class="tim-icons icon-bank"></i>
+                    <p>{{ __('Bodegas') }}</p>
+                </a>
+            </li>
+            @endcan
+
+            @can('gestionar listas de precios')
+            <li @if ($pageSlug == 'listas-precios') class="active " @endif>
+                <a href="{{ route('listasPrecios.index') }}">
+                    <i class="tim-icons icon-tag"></i>
+                    <p>{{ __('Listas de Precios') }}</p>
+                </a>
+            </li>
+            @endcan
+
+            @can('ver productos')
+            <li>
+                <a data-toggle="collapse" href="#Productos" aria-expanded="false">
+                    <i class="tim-icons icon-bag-16"></i>
+                    <span class="nav-link-text">{{ __('Productos') }}</span>
+                    <b class="caret mt-1"></b>
+                </a>
+                <div class="collapse" id="Productos">
+                    @can('ver productos')
+                    <ul class="nav pl-4">
+                        <li @if ($pageSlug == 'productos-publicados') class="active " @endif>
+                            <a href="{{ route('productos.publicados') }}">
+                                <i class="tim-icons icon-atom"></i>
+                                <p>{{ __('Productos Publicados') }}</p>
+                            </a>
+                        </li>
+                        @endcan
+
+                        @can('cargar productos')
+                        <li @if ($pageSlug == 'cargar_productos') class="active " @endif>
+                            <a href="{{ route('productos.cargar') }}">
+                                <i class="tim-icons icon-upload"></i>
+                                <p>{{ __('Cargar Productos') }}</p>
+                            </a>
+                        </li>
+                        @endcan
+
+                        @can('asignar productos')
+                        <li @if ($pageSlug == 'asignar_productos') class="active " @endif>
+                            <a href="{{ route('productos.lista-precios') }}">
+                                <i class="tim-icons icon-send"></i>
+                                <p>{{ __('Lista Precios') }}</p>
+                            </a>
+                        </li>
+                        @endcan
                     </ul>
                 </div>
             </li>
@@ -256,9 +399,7 @@
 
 
 
-
-            <!-- Logs (Solo para roles con permiso ver_logs) -->
-            @can('ver_logs')
+            @can('ver logs')
             <li @if ($pageSlug == 'log') class="active " @endif>
                 <a href="{{ route('logs.index') }}">
                     <i class="tim-icons icon-tag"></i>

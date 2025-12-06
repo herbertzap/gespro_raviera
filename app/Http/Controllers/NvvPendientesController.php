@@ -14,11 +14,10 @@ class NvvPendientesController extends Controller
     {
         $this->cobranzaService = $cobranzaService;
         
-        // Restringir acceso solo a Super Admin, Supervisor, Compras, Picking y Vendedor
+        // Restringir acceso por permisos
         $this->middleware(function ($request, $next) {
-            $user = auth()->user();
-            if (!$user->hasRole('Super Admin') && !$user->hasRole('Supervisor') && !$user->hasRole('Compras') && !$user->hasRole('Picking') && !$user->hasRole('Vendedor')) {
-                abort(403, 'Acceso denegado. Solo Super Admin, Supervisor, Compras, Picking y Vendedor pueden acceder a esta vista.');
+            if (!auth()->user()->can('ver_nvv_pendientes')) {
+                abort(403, 'No tienes permisos para acceder a esta vista.');
             }
             return $next($request);
         });
@@ -95,8 +94,8 @@ class NvvPendientesController extends Controller
         $user = Auth::user();
         
         // Verificar permisos
-        if (!$user->hasRole('Super Admin') && !$user->hasRole('Supervisor') && !$user->hasRole('Compras') && !$user->hasRole('Picking') && !$user->hasRole('Vendedor')) {
-            abort(403, 'Acceso denegado.');
+        if (!$user->can('ver_nvv_pendientes')) {
+            abort(403, 'No tienes permisos para acceder a esta vista.');
         }
         
         // Si es vendedor, verificar que la NVV pertenezca a su código
