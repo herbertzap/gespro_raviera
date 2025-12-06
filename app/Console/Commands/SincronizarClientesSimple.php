@@ -189,12 +189,13 @@ class SincronizarClientesSimple extends Command
             // Separar los campos por el delimitador |
             $campos = explode('|', $datosCompletos);
             
-            if (count($campos) < 11) {
+            // Mínimo 7 campos para datos básicos (nombre, dirección, teléfono, código vendedor, nombre vendedor, región, comuna)
+            if (count($campos) < 7) {
                 return null;
             }
             
             // Extraer cada campo según el orden de la consulta SQL (sin el código cliente que ya se extrajo)
-            // Orden: NOKOEN, DIEN, FOEN, KOFUEN, NOKOFU, NOKOCI, NOKOCM, CRTO, SUEN, BLOQUEADO
+            // Orden: NOKOEN, DIEN, FOEN, KOFUEN, NOKOFU, NOKOCI, NOKOCM, [CRTO], [SUEN], [BLOQUEADO]
             $nombreCliente = trim($campos[0] ?? '');
             $direccion = trim($campos[1] ?? '');
             $telefono = trim($campos[2] ?? '');
@@ -202,9 +203,9 @@ class SincronizarClientesSimple extends Command
             $nombreVendedor = trim($campos[4] ?? '');
             $region = trim($campos[5] ?? '');
             $comuna = trim($campos[6] ?? '');
-            $creditoTotal = floatval(trim($campos[7] ?? 0));  // CRTO
-            $saldoUtilizado = floatval(trim($campos[8] ?? 0));  // SUEN (puede venir vacío)
-            $bloqueado = trim($campos[9] ?? '0');  // BLOQUEADO - índice 9
+            $creditoTotal = floatval(trim($campos[7] ?? 0));  // CRTO (opcional)
+            $saldoUtilizado = floatval(trim($campos[8] ?? 0));  // SUEN (opcional)
+            $bloqueado = trim($campos[9] ?? $campos[7] ?? '0');  // BLOQUEADO (puede estar en índice 7 u 9)
             
             // Limpiar campos NULL y espacios
             if ($nombreCliente === 'NULL') $nombreCliente = '';

@@ -5,20 +5,21 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Bodega extends Model
+class Ubicacion extends Model
 {
     use HasFactory;
 
+    protected $table = 'ubicaciones';
+
     protected $fillable = [
-        'empresa',
-        'kosu',
+        'bodega_id',
         'kobo',
-        'nombre_bodega',
-        'centro_costo',
+        'codigo',
+        'descripcion',
     ];
 
-    public function ubicaciones()
+    public function bodega()
     {
-        return $this->hasMany(Ubicacion::class);
+        return $this->belongsTo(Bodega::class);
     }
 }

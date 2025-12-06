@@ -107,11 +107,12 @@ return [
             'charset' => 'utf8',
             'prefix' => '',
             'prefix_indexes' => true,
-            // Forzar sin cifrado y confiar en el certificado para evitar errores SSL
-            'encrypt' => env('SQLSRV_EXTERNAL_ENCRYPT', 'no'),
+            // Configuración TLS/SSL como el resto del proyecto
+            'encrypt' => env('SQLSRV_EXTERNAL_ENCRYPT', 'yes'),
             'trust_server_certificate' => env('SQLSRV_EXTERNAL_TRUST_SERVER_CERTIFICATE', 'true'),
             'options' => [
                 'trust_server_certificate' => true,
+                't-sql' => true,
             ],
         ],
 

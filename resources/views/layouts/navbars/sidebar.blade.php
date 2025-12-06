@@ -38,14 +38,12 @@
                 </a>
                 <div class="collapse" id="Ventas">
                     <ul class="nav pl-4">
-                        @can('ver_clientes')
                         <li @if ($pageSlug == 'buscar-clientes') class="active " @endif>
                             <a href="{{ route('cobranza.index') }}">
                                 <i class="tim-icons icon-single-02"></i>
                                 <p>{{ __('Clientes') }}</p>
                             </a>
                         </li>
-                        @endcan
                         
                         <li @if ($pageSlug == 'cotizaciones' && request('tipo_documento') == 'cotizacion') class="active " @endif>
                             <a href="{{ route('cotizaciones.index') }}?tipo_documento=cotizacion">
@@ -66,7 +64,7 @@
             @endif
 
             <!-- Supervisor - Solo Clientes -->
-            @if(auth()->user()->hasRole('Supervisor'))
+            @if(auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Super Admin'))
             <li @if ($pageSlug == 'clientes') class="active " @endif>
                 <a href="{{ route('clientes.index') }}">
                     <i class="tim-icons icon-single-02"></i>
@@ -103,7 +101,7 @@
             @endif
 
             <!-- Picking - Gestión de Stock -->
-            @if(auth()->user()->hasRole('Picking'))
+            @if(auth()->user()->hasRole('Picking') || auth()->user()->hasRole('Super Admin'))
             <li @if ($pageSlug == 'stock') class="active " @endif>
                 <a href="{{ route('productos.index') }}">
                     <i class="tim-icons icon-delivery-fast"></i>
@@ -112,8 +110,80 @@
             </li>
             @endif
 
-            <!-- Informes (oculto para Compras y Picking) -->
-            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Supervisor'))
+            <!-- Manejo Stock -->
+            @if(auth()->user()->hasRole('Manejo Stock') || auth()->user()->hasRole('Super Admin'))
+            <li>
+                <a data-toggle="collapse" href="#ManejoStockMenu" aria-expanded="false">
+                    <i class="tim-icons icon-notes"></i>
+                    <span class="nav-link-text">{{ __('Manejo Stock') }}</span>
+                    <b class="caret mt-1"></b>
+                </a>
+                <div class="collapse" id="ManejoStockMenu">
+                    <ul class="nav pl-4">
+                        <li @if ($pageSlug == 'manejo-stock') class="active " @endif>
+                            <a href="{{ route('manejo-stock.select') }}">
+                                <i class="tim-icons icon-notes"></i>
+                                <p>{{ __('Toma de inventario OnLine') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'manejo-stock-barrido') class="active " @endif>
+                            <a href="{{ route('manejo-stock.barrido.select') }}">
+                                <i class="tim-icons icon-tablet-2"></i>
+                                <p>{{ __('Toma de Inventario Barrido') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'manejo-stock-historial') class="active " @endif>
+                            <a href="{{ route('manejo-stock.historial') }}">
+                                <i class="tim-icons icon-bullet-list-67"></i>
+                                <p>{{ __('Historial') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'manejo-stock-reporte') class="active " @endif>
+                            <a href="{{ route('manejo-stock.reporte') }}">
+                                <i class="tim-icons icon-chart-bar-32"></i>
+                                <p>{{ __('Reporte GESTPRO') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'manejo-stock-reporte-inventario') class="active " @endif>
+                            <a href="{{ route('manejo-stock.reporte-inventario') }}">
+                                <i class="tim-icons icon-chart-pie-36"></i>
+                                <p>{{ __('Reporte Inventario') }}</p>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </li>
+            @endif
+
+            <!-- Mantenedor - Solo Super Admin -->
+            @if(auth()->user()->hasRole('Super Admin'))
+            <li>
+                <a data-toggle="collapse" href="#MantenedorMenu" aria-expanded="false">
+                    <i class="tim-icons icon-settings-gear-63"></i>
+                    <span class="nav-link-text">{{ __('Mantenedor') }}</span>
+                    <b class="caret mt-1"></b>
+                </a>
+                <div class="collapse" id="MantenedorMenu">
+                    <ul class="nav pl-4">
+                        <li @if ($pageSlug == 'mantenedor-bodegas') class="active " @endif>
+                            <a href="{{ route('mantenedor.bodegas') }}">
+                                <i class="tim-icons icon-bank"></i>
+                                <p>{{ __('Bodegas y Ubicaciones') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'manejo-stock') class="active " @endif>
+                            <a href="{{ route('manejo-stock.select') }}">
+                                <i class="tim-icons icon-notes"></i>
+                                <p>{{ __('Contabilidad de Productos') }}</p>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </li>
+            @endif
+
+            <!-- Informes -->
+            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Super Admin'))
             <li>
                 <a data-toggle="collapse" href="#Informes" aria-expanded="false">
                     <i class="tim-icons icon-chart-bar-32"></i>
