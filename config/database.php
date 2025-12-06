@@ -78,7 +78,7 @@ return [
             'sslmode' => 'prefer',
         ],
 
-        'sqlsrv' => [
+        'sqlsrv' => array_merge([
             'driver' => 'sqlsrv',
             'url' => env('DATABASE_URL'),
             'host' => env('SQLSRV_HOST', 'localhost'),
@@ -89,15 +89,29 @@ return [
             'charset' => 'utf8',
             'prefix' => '',
             'prefix_indexes' => true,
-            'encrypt' => env('DB_ENCRYPT', 'yes'),
-            'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
-            'options' => [
-                'trust_server_certificate' => true, // Configuración para confiar en el certificado
-                't-sql' => true, // Configuración adicional opcional
-            ],
-        ],
+            // Configuración TLS/SSL condicional
+            // 'yes' para servidores modernos con TLS, 'no' para servidores antiguos sin TLS (SQL Server 2016 o anterior)
+            'encrypt' => env('SQLSRV_ENCRYPT', 'yes'),
+            'trust_server_certificate' => env('SQLSRV_TRUST_SERVER_CERTIFICATE', 'true'),
+        ], (function() {
+            $encrypt = env('SQLSRV_ENCRYPT', 'yes');
+            $options = [];
+            
+            // Solo agregar opciones TLS si encrypt está habilitado
+            if ($encrypt === 'yes' || $encrypt === true || $encrypt === 'true') {
+                $options['options'] = [
+                    'trust_server_certificate' => true,
+                    't-sql' => true,
+                ];
+            } else {
+                // Sin TLS - para servidores antiguos
+                $options['options'] = [];
+            }
+            
+            return $options;
+        })()),
 
-        'sqlsrv_external' => [
+        'sqlsrv_external' => array_merge([
             'driver' => 'sqlsrv',
             'host' => env('SQLSRV_EXTERNAL_HOST', 'localhost'),
             'port' => env('SQLSRV_EXTERNAL_PORT', '1433'),
@@ -107,14 +121,27 @@ return [
             'charset' => 'utf8',
             'prefix' => '',
             'prefix_indexes' => true,
-            // Configuración TLS/SSL como el resto del proyecto
+            // Configuración TLS/SSL condicional
+            // 'yes' para servidores modernos con TLS, 'no' para servidores antiguos sin TLS (SQL Server 2016 o anterior)
             'encrypt' => env('SQLSRV_EXTERNAL_ENCRYPT', 'yes'),
             'trust_server_certificate' => env('SQLSRV_EXTERNAL_TRUST_SERVER_CERTIFICATE', 'true'),
-            'options' => [
-                'trust_server_certificate' => true,
-                't-sql' => true,
-            ],
-        ],
+        ], (function() {
+            $encrypt = env('SQLSRV_EXTERNAL_ENCRYPT', 'yes');
+            $options = [];
+            
+            // Solo agregar opciones TLS si encrypt está habilitado
+            if ($encrypt === 'yes' || $encrypt === true || $encrypt === 'true') {
+                $options['options'] = [
+                    'trust_server_certificate' => true,
+                    't-sql' => true,
+                ];
+            } else {
+                // Sin TLS - para servidores antiguos
+                $options['options'] = [];
+            }
+            
+            return $options;
+        })()),
 
     ],
 

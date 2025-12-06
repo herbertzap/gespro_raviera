@@ -419,14 +419,14 @@ class DashboardController extends Controller
             // 3. TOTAL NOTAS DE VENTAS PENDIENTES POR VALIDAR (cantidad) - TODAS las notas pendientes
             $notasPendientesSupervisor = Cotizacion::where(function($query) {
                 $query->where('estado_aprobacion', 'pendiente')
-                      ->orWhere('estado_aprobacion', 'pendiente_picking')
+                ->orWhere('estado_aprobacion', 'pendiente_picking')
                       ->orWhere('estado_aprobacion', 'aprobada_supervisor');
             })->count();
 
             // 4. NOTAS DE VENTA PENDIENTES (listado limitado) - Solo 10 más recientes
             $notasPendientes = Cotizacion::where(function($query) {
                 $query->where('estado_aprobacion', 'pendiente')
-                      ->orWhere('estado_aprobacion', 'pendiente_picking')
+                ->orWhere('estado_aprobacion', 'pendiente_picking')
                       ->orWhere('estado_aprobacion', 'aprobada_supervisor');
             })
                 ->with(['user', 'cliente'])
