@@ -130,6 +130,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/aprobaciones/{id}/compras', [App\Http\Controllers\AprobacionController::class, 'aprobarCompras'])->name('aprobaciones.compras');
         Route::post('/aprobaciones/{id}/picking', [App\Http\Controllers\AprobacionController::class, 'aprobarPicking'])->name('aprobaciones.picking');
         Route::post('/aprobaciones/{id}/guardar-pendiente-entrega', [App\Http\Controllers\AprobacionController::class, 'guardarPendienteEntrega'])->name('aprobaciones.guardar-pendiente-entrega');
+        Route::put('/aprobaciones/{id}/agregar-observaciones-picking', [App\Http\Controllers\AprobacionController::class, 'agregarObservacionesPicking'])->name('aprobaciones.agregar-observaciones-picking');
     
     // Rechazar y separar productos
     Route::post('/aprobaciones/{id}/rechazar', [App\Http\Controllers\AprobacionController::class, 'rechazar'])->name('aprobaciones.rechazar');

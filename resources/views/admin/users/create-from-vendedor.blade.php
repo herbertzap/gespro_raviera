@@ -72,9 +72,10 @@
                             
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="email" class="bmd-label-floating">Email del Sistema *</label>
-                                    <input type="email" name="email" id="email" class="form-control @error('email') is-invalid @enderror" required>
-                                    @error('email')
+                                    <label for="codigo_vendedor" class="bmd-label-floating">Código de Usuario *</label>
+                                    <input type="text" name="codigo_vendedor" id="codigo_vendedor" class="form-control @error('codigo_vendedor') is-invalid @enderror" required readonly>
+                                    <small class="form-text text-muted">Se obtiene automáticamente del empleado seleccionado</small>
+                                    @error('codigo_vendedor')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
                                 </div>
@@ -84,6 +85,16 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
+                                    <label for="email" class="bmd-label-floating">Email del Sistema *</label>
+                                    <input type="email" name="email" id="email" class="form-control @error('email') is-invalid @enderror" required>
+                                    @error('email')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <div class="form-group">
                                     <label for="email_alternativo" class="bmd-label-floating">Email Alternativo</label>
                                     <input type="email" name="email_alternativo" id="email_alternativo" class="form-control @error('email_alternativo') is-invalid @enderror">
                                     @error('email_alternativo')
@@ -91,7 +102,9 @@
                                     @enderror
                                 </div>
                             </div>
-                            
+                        </div>
+
+                        <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
                                     <label for="rut" class="bmd-label-floating">RUT (Opcional)</label>
@@ -108,10 +121,18 @@
                             <div class="col-md-12">
                                 <div class="form-group">
                                     <label for="password" class="bmd-label-floating">Contraseña Temporal *</label>
-                                    <input type="password" name="password" id="password" class="form-control @error('password') is-invalid @enderror" required minlength="8">
+                                    <div class="input-group">
+                                        <input type="password" name="password" id="password" class="form-control @error('password') is-invalid @enderror" required minlength="8" aria-label="Contraseña temporal">
+                                        <div class="input-group-append">
+                                            <button class="btn btn-outline-secondary" type="button" id="togglePasswordBtn" aria-label="Mostrar u ocultar contraseña" onclick="togglePasswordVisibility('password', 'togglePasswordIcon')">
+                                                <i class="material-icons" id="togglePasswordIcon">visibility_off</i>
+                                            </button>
+                                        </div>
+                                    </div>
                                     @error('password')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
+                                    <small class="form-text text-muted">Mínimo 8 caracteres</small>
                                 </div>
                             </div>
                         </div>
@@ -122,6 +143,10 @@
                                     <label class="bmd-label-floating">Roles *</label>
                                     <div class="row">
                                         @foreach($roles as $role)
+                                            {{-- Solo mostrar rol "Super Admin" si el usuario actual es Super Admin --}}
+                                            @if($role->name === 'Super Admin' && !auth()->user()->hasRole('Super Admin'))
+                                                @continue
+                                            @endif
                                         <div class="col-md-3">
                                             <div class="form-check">
                                                 <input type="checkbox" name="roles[]" value="{{ $role->id }}" 
@@ -176,6 +201,13 @@
 
 @push('js')
 <style>
+/* Estilos para campos readonly/disabled */
+.form-control[disabled], .form-control[readonly], fieldset[disabled] .form-control {
+    background-color: #1d253b !important;
+    color: #000 !important;
+    cursor: not-allowed;
+}
+
 /* FORZAR estilos específicos para el select - sobrescribir CSS global */
 #vendedor_id.form-control {
     color: #333 !important;
@@ -237,14 +269,18 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('✅ DOM cargado, inicializando script...');
     const vendedorSelect = document.getElementById('vendedor_id');
     const infoDiv = document.getElementById('vendedor-info');
+    const codigoVendedorField = document.getElementById('codigo_vendedor');
     const emailField = document.getElementById('email');
     const rutField = document.getElementById('rut');
+    const passwordField = document.getElementById('password');
     
     console.log('Elementos encontrados:', {
         vendedorSelect: !!vendedorSelect,
         infoDiv: !!infoDiv,
+        codigoVendedorField: !!codigoVendedorField,
         emailField: !!emailField,
-        rutField: !!rutField
+        rutField: !!rutField,
+        passwordField: !!passwordField
     });
     
     // Función AJAX para obtener datos del vendedor
@@ -255,6 +291,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (infoDiv) {
                 infoDiv.innerHTML = '<p>Seleccione un empleado para ver su información</p>';
             }
+            if (codigoVendedorField) codigoVendedorField.value = '';
             if (emailField) emailField.value = '';
             if (rutField) rutField.value = '';
             return;
@@ -297,10 +334,26 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Mostrar información del empleado
                 if (infoDiv) {
                     infoDiv.innerHTML = `
+                        <p><strong>Código:</strong> ${vendedor.kofu || 'No especificado'}</p>
                         <p><strong>Nombre:</strong> ${vendedor.nombre || 'No especificado'}</p>
                         <p><strong>Email:</strong> ${vendedor.email || 'No especificado'}</p>
                         <p><strong>RUT:</strong> ${vendedor.rut || 'No especificado'}</p>
                     `;
+                }
+                
+                // Pre-llenar código de usuario (siempre debe tener valor)
+                if (codigoVendedorField && vendedor.kofu) {
+                    codigoVendedorField.value = vendedor.kofu.trim();
+                    codigoVendedorField.classList.remove('is-invalid');
+                    // Resaltar visualmente
+                    codigoVendedorField.style.backgroundColor = '#e8f5e8';
+                    codigoVendedorField.style.color = '#000';
+                    setTimeout(() => {
+                        codigoVendedorField.style.backgroundColor = '';
+                        codigoVendedorField.style.color = '';
+                    }, 2000);
+                } else if (codigoVendedorField) {
+                    codigoVendedorField.value = '';
                 }
                 
                 // Pre-llenar email si existe
@@ -343,6 +396,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (infoDiv) {
                     infoDiv.innerHTML = `<p class="text-danger"><i class="material-icons">error</i> ${data.message || 'Error al cargar información del empleado'}</p>`;
                 }
+                if (codigoVendedorField) codigoVendedorField.value = '';
                 if (emailField) emailField.value = '';
                 if (rutField) rutField.value = '';
             }
@@ -352,6 +406,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (infoDiv) {
                 infoDiv.innerHTML = '<p class="text-danger"><i class="material-icons">error</i> Error al cargar información del empleado. Por favor, intente nuevamente.</p>';
             }
+            if (codigoVendedorField) codigoVendedorField.value = '';
             if (emailField) emailField.value = '';
             if (rutField) rutField.value = '';
         });
@@ -430,6 +485,20 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
+    // Toggle de visibilidad de contraseña
+    window.togglePasswordVisibility = function(fieldId, iconId) {
+        const field = document.getElementById(fieldId);
+        const icon = document.getElementById(iconId);
+        if (!field || !icon) return;
+        if (field.type === 'password') {
+            field.type = 'text';
+            icon.textContent = 'visibility';
+        } else {
+            field.type = 'password';
+            icon.textContent = 'visibility_off';
+        }
+    };
 });
 </script>
 @endpush

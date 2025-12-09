@@ -3099,39 +3099,138 @@ class CotizacionController extends Controller
     public function obtenerStockProducto($codigo)
     {
         try {
-            $stockService = new \App\Services\StockComprometidoService();
+            // Usar tsql para consultar directamente a MAEST con KOBO='LIB' (servidor antiguo sin TLS)
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
             
-            // Obtener stock disponible real
-            $stockDisponibleReal = $stockService->obtenerStockDisponibleReal($codigo);
+            $codigoEscapado = "'" . addslashes(trim($codigo)) . "'";
             
-            // Obtener datos del producto
+            $query = "
+                SELECT 
+                    CAST(SUM(ISNULL(STFI1, 0)) AS FLOAT) AS STOCK_FISICO,
+                    CAST(SUM(ISNULL(STOCNV1, 0)) AS FLOAT) AS STOCK_COMPROMETIDO
+                FROM MAEST
+                WHERE KOPR = {$codigoEscapado}
+                AND KOBO = 'LIB'
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_stock_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            // Log para debugging - mostrar output completo si no se encuentra stock
+            if (empty($output)) {
+                \Log::error("Output vacío de tsql para producto {$codigo}");
+            } else {
+                \Log::info("Output tsql completo para producto {$codigo}: " . $output);
+            }
+            
+            // Parsear resultado de tsql
+            $stockFisico = 0;
+            $stockComprometido = 0;
+            
+            $lines = explode("\n", $output);
+            $headerFound = false;
+            
+            foreach ($lines as $line) {
+                $line = trim($line);
+                
+                // Saltar líneas de configuración
+                if (empty($line) || strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || strpos($line, 'rows affected') !== false ||
+                    strpos($line, 'Msg ') !== false || strpos($line, 'Warning:') !== false ||
+                    preg_match('/^\d+>$/', $line) || preg_match('/^\d+>\s+\d+>\s+\d+>/', $line)) {
+                    continue;
+                }
+                
+                // Buscar header
+                if (stripos($line, 'STOCK_FISICO') !== false || stripos($line, 'STOCK_COMPROMETIDO') !== false) {
+                    $headerFound = true;
+                    \Log::info("Header encontrado: {$line}");
+                    continue;
+                }
+                
+                // Si no hay header pero hay una línea con números, intentar parsear directamente
+                // Esto puede pasar cuando SUM devuelve solo números
+                if (preg_match('/^\s*([0-9.]+)\s+([0-9.]+)\s*$/', $line, $matches)) {
+                    $stockFisico = (float)$matches[1];
+                    $stockComprometido = (float)$matches[2];
+                    \Log::info("Stock parseado sin header: Físico={$stockFisico}, Comprometido={$stockComprometido}");
+                    break;
+                }
+                
+                // Parsear línea de datos - puede haber espacios múltiples
+                if ($headerFound) {
+                    // Intentar parsear con espacios múltiples
+                    $parts = preg_split('/\s+/', $line);
+                    if (count($parts) >= 2 && is_numeric($parts[0]) && is_numeric($parts[1])) {
+                        // El primer número es stock_fisico, el segundo es stock_comprometido
+                        $stockFisico = (float)$parts[0];
+                        $stockComprometido = (float)$parts[1];
+                        \Log::info("Stock parseado con header: Físico={$stockFisico}, Comprometido={$stockComprometido}");
+                        break;
+                    }
+                }
+            }
+            
+            // Si no se encontraron datos, intentar parsear cualquier línea con números
+            if ($stockFisico == 0 && $stockComprometido == 0) {
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    // Buscar cualquier línea con dos números separados por espacios
+                    if (preg_match('/^\s*([0-9.]+)\s+([0-9.]+)\s*$/', $line, $matches)) {
+                        $stockFisico = (float)$matches[1];
+                        $stockComprometido = (float)$matches[2];
+                        \Log::info("Stock parseado en segunda pasada: Físico={$stockFisico}, Comprometido={$stockComprometido}");
+                        break;
+                    }
+                }
+            }
+            
+            // Obtener stock comprometido local adicional (por cotizaciones/NVV pendientes)
+            $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($codigo);
+            
+            // Stock disponible = Stock físico - Stock comprometido SQL - Stock comprometido local
+            $stockDisponible = max(0, $stockFisico - $stockComprometido - $stockComprometidoLocal);
+            
+            // Obtener datos del producto desde tabla local para nombre y unidad
             $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
             
-            if (!$producto) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Producto no encontrado'
-                ]);
+            \Log::info("Stock consultado desde MAEST (tsql) para {$codigo}: Físico={$stockFisico}, Comprometido SQL={$stockComprometido}, Comprometido Local={$stockComprometidoLocal}, Disponible={$stockDisponible}");
+            
+            // Si no se encontró stock, log adicional
+            if ($stockFisico == 0 && $stockComprometido == 0) {
+                \Log::warning("⚠️ No se encontró stock para producto {$codigo}. Output completo de tsql: " . substr($output, 0, 1000));
             }
             
             return response()->json([
                 'success' => true,
-                'stock_disponible' => $stockDisponibleReal,
-                'stock_fisico' => $producto->stock_fisico ?? 0,
-                'stock_comprometido' => $producto->stock_comprometido ?? 0,
+                'stock_disponible' => $stockDisponible,
+                'stock_fisico' => $stockFisico,
+                'stock_comprometido' => $stockComprometido,
+                'stock_comprometido_local' => $stockComprometidoLocal,
                 'producto' => [
-                    'codigo' => $producto->KOPR,
-                    'nombre' => $producto->NOKOPR,
+                    'codigo' => $codigo,
+                    'nombre' => $producto->NOKOPR ?? 'Producto no encontrado',
                     'unidad' => $producto->UD01PR ?? 'UN'
                 ]
             ]);
             
         } catch (\Exception $e) {
             \Log::error('Error en obtenerStockProducto: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Error obteniendo stock: ' . $e->getMessage()
-            ]);
+            ], 500);
         }
     }
 } 

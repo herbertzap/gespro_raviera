@@ -291,6 +291,98 @@ class AprobacionController extends Controller
     }
 
     /**
+     * Agregar observaciones de picking (sin cambiar estado)
+     */
+    public function agregarObservacionesPicking(Request $request, $id)
+    {
+        Log::info("========================================");
+        Log::info("🔍 AGREGAR OBSERVACIONES PICKING");
+        Log::info("========================================");
+        Log::info("Cotización ID: {$id}");
+        Log::info("Usuario ID: " . auth()->id());
+        Log::info("Request data: " . json_encode($request->all()));
+        Log::info("observaciones_picking value: " . ($request->input('observaciones_picking') ?? 'NULL'));
+        Log::info("observaciones_picking length: " . strlen($request->input('observaciones_picking') ?? ''));
+        Log::info("Is AJAX: " . ($request->ajax() ? 'SI' : 'NO'));
+        Log::info("Wants JSON: " . ($request->wantsJson() ? 'SI' : 'NO'));
+        Log::info("Header X-Requested-With: " . ($request->header('X-Requested-With') ?? 'NO'));
+        Log::info("Accept header: " . ($request->header('Accept') ?? 'NO'));
+        
+        $request->validate([
+            'observaciones_picking' => 'nullable|string|max:1000'
+        ]);
+
+        $cotizacion = Cotizacion::findOrFail($id);
+        $user = Auth::user();
+        
+        // Obtener el valor directamente del request
+        $observaciones = $request->input('observaciones_picking');
+        Log::info("Valor de observaciones antes de guardar: " . ($observaciones ?? 'NULL'));
+
+        // Solo usuarios con rol Picking pueden agregar observaciones
+        if (!$user->hasRole('Picking')) {
+            Log::warning("Usuario {$user->id} no tiene rol Picking");
+            if ($request->ajax() || $request->wantsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No tienes permisos para esta acción'
+                ], 403);
+            }
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'No tienes permisos para esta acción');
+        }
+
+        try {
+            // Guardar observaciones (puede ser null o string vacío)
+            $cotizacion->observaciones_picking = $observaciones ? trim($observaciones) : null;
+            $cotizacion->save();
+            
+            Log::info("Observaciones guardadas en BD: " . ($cotizacion->observaciones_picking ?? 'NULL'));
+
+            Log::info("✅ Observaciones de picking agregadas a cotización {$id} por usuario {$user->id}");
+            Log::info("Observaciones guardadas: " . ($cotizacion->observaciones_picking ?? 'vacío'));
+
+            // Detectar si es petición AJAX de múltiples formas
+            $isAjax = $request->ajax() || 
+                     $request->wantsJson() || 
+                     $request->header('X-Requested-With') === 'XMLHttpRequest' ||
+                     $request->header('Accept') === 'application/json';
+            
+            if ($isAjax) {
+                Log::info("Respondiendo con JSON");
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Observaciones guardadas exitosamente',
+                    'observaciones' => $cotizacion->observaciones_picking ?: 'Sin observaciones adicionales'
+                ]);
+            }
+
+            Log::info("Respondiendo con redirección");
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('success', 'Observaciones guardadas exitosamente');
+
+        } catch (\Exception $e) {
+            Log::error("❌ Error guardando observaciones de picking: " . $e->getMessage());
+            Log::error("Stack trace: " . $e->getTraceAsString());
+            
+            $isAjax = $request->ajax() || 
+                     $request->wantsJson() || 
+                     $request->header('X-Requested-With') === 'XMLHttpRequest' ||
+                     $request->header('Accept') === 'application/json';
+            
+            if ($isAjax) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error al guardar observaciones: ' . $e->getMessage()
+                ], 500);
+            }
+
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('error', 'Error al guardar observaciones');
+        }
+    }
+
+    /**
      * Aprobar nota de venta por Picking
      */
     public function aprobarPicking(Request $request, $id)

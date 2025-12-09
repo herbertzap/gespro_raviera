@@ -790,11 +790,13 @@ class ManejoStockController extends Controller
             // Usar valores del temporal si están disponibles, sino de la bodega
             $empresa = $temporal->empresa ?? $bodega->empresa ?? '02';
             $endo = '76427949-2';
-            // Obtener código de funcionario del temporal, si no está, del usuario autenticado
-            $funcionario = $temporal->funcionario ?? '';
-            if (empty($funcionario) && auth()->user()) {
-                $funcionario = auth()->user()->codigo_vendedor ?? '';
+            // Obtener código de funcionario (vendedor) del temporal, si no está, del usuario autenticado
+            $funcionarioRaw = $temporal->funcionario ?? '';
+            if (empty($funcionarioRaw) && auth()->user()) {
+                $funcionarioRaw = auth()->user()->codigo_vendedor ?? '';
             }
+            // KOFUDO debe ser el código de vendedor, asegurar formato correcto (char(3))
+            $funcionario = str_pad(substr(trim($funcionarioRaw), 0, 3), 3, ' ', STR_PAD_RIGHT);
             $kosu = $temporal->kosu ?? $bodega->kosu ?? 'CMM';
             $suendo = $temporal->kosu ?? $bodega->kosu ?? 'CMM';
             // SUDO viene del temporal (centro_costo), si no está, usar el de la bodega
@@ -814,7 +816,7 @@ class ManejoStockController extends Controller
                 'TIGEDO' => 'I',
                 'SUDO' => $sudo,
                 'LUVTDO' => '',
-                'FEEMDO' => 'GETDATE()',
+                'FEEMDO' => 'CONVERT(DATETIME, CONVERT(DATE, GETDATE()))',
                 'KOFUDO' => $funcionario,
                 'ESDO' => 'C',
                 'ESPGDO' => 'S',
@@ -838,12 +840,12 @@ class ManejoStockController extends Controller
                 'VABRDO' => 0,
                 'POPIDO' => 0,
                 'VAPIDO' => 0,
-                'FE01VEDO' => 'GETDATE()',
-                'FEULVEDO' => 'GETDATE()',
+                'FE01VEDO' => 'CONVERT(DATETIME, CONVERT(DATE, GETDATE()))',
+                'FEULVEDO' => 'CONVERT(DATETIME, CONVERT(DATE, GETDATE()))',
                 'NUVEDO' => 1,
                 'VAABDO' => 0,
                 'MARCA' => 'I',
-                'FEER' => 'GETDATE()',
+                'FEER' => 'CONVERT(DATETIME, CONVERT(DATE, GETDATE()))',
                 'NUTRANSMI' => '',
                 'NUCOCO' => '',
                 'KOTU' => '1',
@@ -858,7 +860,7 @@ class ManejoStockController extends Controller
                 'POIVARET' => 0,
                 'VAIVARET' => 0,
                 'RESUMEN' => '',
-                'LAHORA' => 'GETDATE()',
+                'LAHORA' => 'CONVERT(DATETIME, CONVERT(DATE, GETDATE()))',
                 'KOFUAUDO' => '',
                 'KOOPDO' => '',
                 'ESPRODDO' => '',
@@ -875,7 +877,7 @@ class ManejoStockController extends Controller
                 'NUMOPERVEN' => 0,
                 'BLOQUEAPAG' => '',
                 'VALORRET' => 0,
-                'FLIQUIFCV' => 'GETDATE()',
+                'FLIQUIFCV' => 'CONVERT(DATETIME, CONVERT(DATE, GETDATE()))',
                 'VADEIVDO' => 0,
                 'KOCANAL' => '',
                 'KOCRYPT' => '',
@@ -1057,12 +1059,19 @@ class ManejoStockController extends Controller
             $empresaCodigo = $temporal->empresa ?? $bodega->empresa ?? '02';
             $empresa = $this->escapeSqlString($empresaCodigo); // EMPRESA usa el código numérico
             $endoRaw = '76427949-2'; // SETEADO EN LA APP según la tabla - CONFIRMAR SI ES CORRECTO
-            // Obtener código de funcionario del temporal, si no está, del usuario autenticado
+            // Obtener código de funcionario (vendedor) del temporal, si no está, del usuario autenticado
             $funcionarioRaw = $temporal->funcionario ?? '';
             if (empty($funcionarioRaw) && auth()->user()) {
                 $funcionarioRaw = auth()->user()->codigo_vendedor ?? '';
             }
-            $funcionario = $this->escapeSqlString($funcionarioRaw);
+            // KOFUDO debe ser el código de vendedor, NO el centro de costo
+            // Asegurar que tenga el formato correcto (char(3)) y loguear si está vacío
+            if (empty(trim($funcionarioRaw))) {
+                Log::warning("⚠️ KOFUDO está vacío para temporal ID: {$temporal->id}. Usuario: " . (auth()->user() ? auth()->user()->email : 'no autenticado'));
+            }
+            $funcionario = $this->escapeSqlString(str_pad(substr(trim($funcionarioRaw), 0, 3), 3, ' ', STR_PAD_RIGHT));
+            
+            Log::info("📝 KOFUDO (código vendedor) para temporal {$temporal->id}: '{$funcionario}' (raw: '{$funcionarioRaw}')");
             $kosu = $this->escapeSqlString($temporal->kosu ?? $bodega->kosu ?? 'CMM');
             // SUENDO = TEMPORAL->KOSU (nombre de empresa), no centro_costo
             $suendoRaw = $temporal->kosu ?? $bodega->kosu ?? '';
@@ -1132,15 +1141,15 @@ class ManejoStockController extends Controller
                     TIPOOPCOM, CREFIYAF, NRODETRAC, IDPDAENCA, TIDEVE, TIDEVEFE, TIDEVEHO
                 ) VALUES (
                     {$siguienteId}, '{$empresa}', '{$tido}', '{$nudoFormateado}', '{$endo}', '{$suendo}', '', 'I', '{$sudo}', '',
-                    GETDATE(), '{$funcionario}', 'C', 'S', {$caprco}, {$caprad}, 0, 0,
+                    CONVERT(DATETIME, CONVERT(DATE, GETDATE())), '{$funcionario}', 'C', 'S', {$caprco}, {$caprad}, 0, 0,
                     'N', '$', 'N', {$tamodo}, 0, 0, 0,
                     0, 0, {$vaivdo}, 0, 0, {$vanedo}, {$vabrdo}, 0, 0,
-                    GETDATE(), GETDATE(), 1, 0, 'I', GETDATE(), '', '',
+                    CONVERT(DATETIME, CONVERT(DATE, GETDATE())), CONVERT(DATETIME, CONVERT(DATE, GETDATE())), 1, 0, 'I', CONVERT(DATETIME, CONVERT(DATE, GETDATE())), '', '',
                     '1', '', NULL, '', '', '', '', 0,
-                    '', 0, 0, '', GETDATE(), '', '',
+                    '', 0, 0, '', CONVERT(DATETIME, CONVERT(DATE, GETDATE())), '', '',
                     '', 1, {$horagrab}, '', 'AJU', 0, 'I',
                     0, '', '', NULL, 0, '',
-                    0, GETDATE(), 0, '', '', '', '',
+                    0, CONVERT(DATETIME, CONVERT(DATE, GETDATE())), 0, '', '', '', '',
                     '{$lisactiva}', '', '', 0, '', '',
                     '', 0, '', 0, 0, 0,
                     '', '', '', 0, '', NULL, ''
@@ -1262,7 +1271,12 @@ class ManejoStockController extends Controller
             $empresaCodigo = $temporal->empresa ?? $bodega->empresa ?? '02';
             $empresa = $empresaCodigo; // EMPRESA usa el código numérico
             $endo = '76427949-2'; // SETEADO EN LA APP
-            $funcionario = $temporal->funcionario ?? '';
+            // KOFULIDO debe ser el código de vendedor, no el centro de costo
+            $funcionarioRaw = $temporal->funcionario ?? '';
+            if (empty($funcionarioRaw) && auth()->user()) {
+                $funcionarioRaw = auth()->user()->codigo_vendedor ?? '';
+            }
+            $funcionario = str_pad(substr(trim($funcionarioRaw), 0, 3), 3, ' ', STR_PAD_RIGHT);
             // SUENDO = TEMPORAL->KOSU (nombre de empresa), no centro_costo
             $suendoDetalle = $temporal->kosu ?? $bodega->kosu ?? '';
             // SULIDO = TEMPORAL->KOSU (nombre de empresa), no centro_costo
@@ -1386,8 +1400,8 @@ class ManejoStockController extends Controller
                 'VAIVLI' => $vaivli,
                 'VABRLI' => $vabrli,
                 'TIGELI' => 'I',
-                'FEEMLI' => 'GETDATE()',
-                'FEERLI' => 'GETDATE()',
+                'FEEMLI' => 'CONVERT(DATETIME, CONVERT(DATE, GETDATE()))',
+                'FEERLI' => 'CONVERT(DATETIME, CONVERT(DATE, GETDATE()))',
                 'NUDTLI' => 0,
                 'ARCHIRST' => '',
                 'IDRST' => 0,
@@ -1400,7 +1414,7 @@ class ManejoStockController extends Controller
                 'POTENCIA' => 0,
                 'HUMEDAD' => 0,
                 'IDTABITPRE' => 0,
-                'FEERLIMODI' => 'GETDATE()',
+                'FEERLIMODI' => 'CONVERT(DATETIME, CONVERT(DATE, GETDATE()))',
                 'PPPRPMSUC' => $ppprpmsuc,
                 'PPPRPMIFRS' => $ppprpmifrs,
             ];
@@ -1517,12 +1531,13 @@ class ManejoStockController extends Controller
             $empresaCodigo = $temporal->empresa ?? $bodega->empresa ?? '02';
             $empresa = $this->escapeSqlString($empresaCodigo); // EMPRESA usa el código numérico
             $endo = '76427949-2'; // SETEADO EN LA APP
-            // Obtener código de funcionario del temporal, si no está, del usuario autenticado
+            // Obtener código de funcionario (vendedor) del temporal, si no está, del usuario autenticado
             $funcionarioRaw = $temporal->funcionario ?? '';
             if (empty($funcionarioRaw) && auth()->user()) {
                 $funcionarioRaw = auth()->user()->codigo_vendedor ?? '';
             }
-            $funcionario = $this->escapeSqlString($funcionarioRaw);
+            // KOFULIDO debe ser el código de vendedor, asegurar formato correcto (char(3))
+            $funcionario = $this->escapeSqlString(str_pad(substr(trim($funcionarioRaw), 0, 3), 3, ' ', STR_PAD_RIGHT));
             // SUENDO = TEMPORAL->KOSU (nombre de empresa), no centro_costo
             $suendoDetalle = $this->escapeSqlString($temporal->kosu ?? $bodega->kosu ?? '');
             // SULIDO = TEMPORAL->KOSU (nombre de empresa), no centro_costo
@@ -1666,9 +1681,9 @@ class ManejoStockController extends Controller
                     '{$koltpr}', '$', 'N', 1,
                     {$ppprne}, {$ppprnelt}, {$ppprbr}, {$ppprbrlt},
                     0, 0, {$vaneli}, 19, {$vaivli}, {$vabrli},
-                    'I', GETDATE(), GETDATE(), 0, '', 0,
+                    'I', CONVERT(DATETIME, CONVERT(DATE, GETDATE())), CONVERT(DATETIME, CONVERT(DATE, GETDATE())), 0, '', 0,
                     {$ppprpm}, {$ppprnere1}, {$ppprnere2}, 1, 0, '',
-                    0, 0, 0, GETDATE(), {$ppprpmsuc}, {$ppprpmifrs}
+                    0, 0, 0, CONVERT(DATETIME, CONVERT(DATE, GETDATE())), {$ppprpmsuc}, {$ppprpmifrs}
                 )
             ";
             

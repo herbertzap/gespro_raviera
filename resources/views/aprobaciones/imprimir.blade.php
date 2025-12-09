@@ -237,6 +237,9 @@
         @if($observacionesExtra)
         <p><strong>Observaciones Extra:</strong> {{ $observacionesExtra }}</p>
         @endif
+        @if($cotizacion->observaciones_picking)
+        <p><strong>Observaciones Picking:</strong> {{ $cotizacion->observaciones_picking }}</p>
+        @endif
     </div>
     
     <!-- Espacio para firmas -->

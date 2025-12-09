@@ -496,7 +496,40 @@ let searchCache = new Map();
 let lastSearchTerm = '';
 
 console.log('🔍 Script de cotizaciones cargándose...');
-console.log('🔍 Cliente data:', clienteData);
+console.log('🔍 Cliente data inicial:', clienteData);
+
+// Si clienteData es null, intentar reconstruirlo desde la URL o desde PHP
+if (!clienteData) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const clienteCodigo = urlParams.get('cliente');
+    const clienteNombre = urlParams.get('nombre');
+    
+    if (@json($cliente)) {
+        // Si hay cliente en PHP pero no se pasó correctamente a JS, reconstruirlo
+        clienteData = {
+            codigo: '{{ $cliente->codigo ?? '' }}',
+            nombre: '{{ $cliente->nombre ?? '' }}',
+            lista_precios_codigo: '{{ $cliente->lista_precios_codigo ?? '01P' }}',
+            lista_precios_nombre: '{{ $cliente->lista_precios_nombre ?? 'Lista Precios 01P' }}',
+            bloqueado: {{ $cliente->bloqueado ?? false ? 'true' : 'false' }},
+            puede_generar_nota_venta: {{ $puedeGenerarNotaVenta ? 'true' : 'false' }}
+        };
+        console.log('✅ ClienteData reconstruido desde PHP:', clienteData);
+    } else if (clienteCodigo) {
+        // Reconstruir desde URL como último recurso
+        clienteData = {
+            codigo: clienteCodigo,
+            nombre: decodeURIComponent(clienteNombre || ''),
+            lista_precios_codigo: '01P',
+            lista_precios_nombre: 'Lista Precios 01P',
+            bloqueado: false,
+            puede_generar_nota_venta: true
+        };
+        console.log('✅ ClienteData reconstruido desde URL:', clienteData);
+    }
+}
+
+console.log('🔍 Cliente data final:', clienteData);
 
 // Función para buscar productos con AJAX optimizada
 function buscarProductosAjax() {
@@ -579,13 +612,11 @@ function mostrarResultadosProductosAjax(productos) {
     contenido += '</button>';
     contenido += '</div>';
     contenido += '<table class="table table-striped table-hover">';
-    contenido += '<thead class="thead"><tr><th><input type="checkbox" id="selectAllProductos" onchange="toggleAllProductos()"></th><th>Código</th><th>Producto</th><th>Stock</th><th>Precio</th><th>Acción</th></tr></thead><tbody>';
+    contenido += '<thead class="thead"><tr><th><input type="checkbox" id="selectAllProductos" onchange="toggleAllProductos()"></th><th>Código</th><th>Producto</th><th>Precio</th><th>Acción</th></tr></thead><tbody>';
     
     productos.forEach(producto => {
-        // Usar información de stock mejorada
+        // Usar información de stock mejorada (se usará al agregar, pero no se muestra en la búsqueda)
         const stockReal = producto.STOCK_DISPONIBLE_REAL !== undefined ? producto.STOCK_DISPONIBLE_REAL : producto.STOCK_DISPONIBLE;
-        const stockClass = producto.CLASE_STOCK || (stockReal > 0 ? 'text-success' : 'text-danger');
-        const stockText = producto.ESTADO_STOCK || (stockReal > 0 ? 'Disponible' : 'Sin stock');
         
         // Verificar si el producto se puede agregar (precio válido)
         const precioValido = producto.PRECIO_VALIDO !== undefined ? producto.PRECIO_VALIDO : (producto.PRECIO_UD1 > 0);
@@ -610,12 +641,6 @@ function mostrarResultadosProductosAjax(productos) {
                     onchange="actualizarContadorSeleccionados()" ${checkboxDisabled}></td>
                 <td><strong>${producto.CODIGO_PRODUCTO || ''}</strong></td>
                 <td>${producto.NOMBRE_PRODUCTO || ''}${multiploInfo}</td>
-                <td class="${stockClass}">
-                    <i class="material-icons">${stockReal > 0 ? 'check_circle' : 'warning'}</i>
-                    ${stockReal || 0} ${producto.UNIDAD_MEDIDA || 'UN'}
-                    ${producto.STOCK_COMPROMETIDO > 0 ? `<br><small class="text-muted">Comprometido: ${producto.STOCK_COMPROMETIDO}</small>` : ''}
-                    ${stockReal <= 0 ? '<br><small class="text-warning"><i class="material-icons">info</i> Sin stock - Nota pendiente</small>' : ''}
-                </td>
                 <td>
                     <strong class="${!precioValido ? 'text-muted' : ''}" data-precio="${producto.PRECIO_UD1 || 0}">$${Math.round(producto.PRECIO_UD1 || 0).toLocaleString()}</strong>
                     ${!precioValido ? '<br><small class="text-danger"><i class="material-icons">warning</i> Precio no disponible</small>' : ''}
@@ -868,7 +893,7 @@ function mostrarResultadosProductos(productos) {
 // ========================================
 // SISTEMA DE AUTO-GUARDADO EN LOCALSTORAGE
 // ========================================
-const STORAGE_KEY = 'nvv_borrador_cliente_{{ $clienteData['CODIGO_CLIENTE'] ?? 'temp' }}';
+const STORAGE_KEY = 'nvv_borrador_cliente_{{ $cliente->codigo ?? 'temp' }}';
 
 // Guardar productos en LocalStorage
 function guardarBorradorLocal() {
@@ -881,8 +906,8 @@ function guardarBorradorLocal() {
             observacion_vendedor: document.getElementById('observacion_vendedor')?.value || '',
             tipo_documento: document.querySelector('input[name="tipo_documento"]:checked')?.value || 'nota_venta',
             timestamp: new Date().toISOString(),
-            cliente_codigo: '{{ $clienteData['CODIGO_CLIENTE'] ?? '' }}',
-            cliente_nombre: '{{ $clienteData['NOMBRE_CLIENTE'] ?? '' }}'
+            cliente_codigo: clienteData ? (clienteData.codigo || '') : '{{ $cliente->codigo ?? '' }}',
+            cliente_nombre: clienteData ? (clienteData.nombre || '') : '{{ $cliente->nombre ?? '' }}'
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(borrador));
         console.log('💾 Borrador guardado automáticamente');
@@ -901,7 +926,8 @@ function cargarBorradorLocal() {
             const borrador = JSON.parse(borradorStr);
             
             // Verificar que sea del mismo cliente
-            if (borrador.cliente_codigo === '{{ $clienteData['CODIGO_CLIENTE'] ?? '' }}') {
+            const clienteCodigoActual = clienteData ? (clienteData.codigo || '') : '{{ $cliente->codigo ?? '' }}';
+            if (borrador.cliente_codigo === clienteCodigoActual) {
                 // Preguntar al usuario si desea recuperar el borrador
                 const fechaBorrador = new Date(borrador.timestamp).toLocaleString('es-CL');
                 if (autoRecuperar || confirm(`📋 Se encontró un borrador guardado el ${fechaBorrador}\n\n¿Deseas recuperarlo?\n\nProductos: ${borrador.productos.length}`)) {
@@ -918,11 +944,19 @@ function cargarBorradorLocal() {
                         document.getElementById('numero_orden_compra').value = borrador.numero_orden_compra;
                     }
                     if (borrador.observacion_vendedor) {
-                        document.getElementById('observacion_vendedor').value = borrador.observacion_vendedor;
+                        const obsVendedor = document.getElementById('observacion_vendedor');
+                        if (obsVendedor) {
+                            obsVendedor.value = borrador.observacion_vendedor;
+                        }
                     }
                     if (borrador.tipo_documento) {
-                        document.getElementById(`tipo_${borrador.tipo_documento}`).checked = true;
-                        actualizarTituloDocumento();
+                        const tipoDoc = document.getElementById(`tipo_${borrador.tipo_documento}`);
+                        if (tipoDoc) {
+                            tipoDoc.checked = true;
+                            if (typeof actualizarTituloDocumento === 'function') {
+                                actualizarTituloDocumento();
+                            }
+                        }
                     }
                     
                     actualizarTablaProductos();
@@ -960,14 +994,99 @@ setInterval(function() {
 function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuentoMaximo = 0, multiplo = 1) {
     console.log('Agregando producto desde PHP:', { codigo, nombre, precio, stock, unidad, descuentoMaximo, multiplo });
     
+    // Consultar stock actualizado del producto antes de agregarlo
+    fetch(`/cotizaciones/stock-producto/${codigo}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Usar el stock actualizado del servidor
+                const stockActualizado = data.stock_disponible || 0;
+                const stockFisico = data.stock_fisico || 0;
+                const stockComprometido = data.stock_comprometido || 0;
+                
+                console.log(`📦 Stock actualizado para ${codigo}: Disponible=${stockActualizado}, Físico=${stockFisico}, Comprometido=${stockComprometido}`);
+                
+                // Verificar si el producto ya está en la cotización
+                const productoExistente = productosCotizacion.find(p => p.codigo === codigo);
+                
+                if (productoExistente) {
+                    // Actualizar stock del producto existente
+                    productoExistente.stock = stockActualizado;
+                    productoExistente.stock_fisico = stockFisico;
+                    productoExistente.stock_comprometido = stockComprometido;
+                    
+                    // Incrementar cantidad según el múltiplo del producto (no usar Math.max)
+                    const incremento = multiplo > 0 ? multiplo : 1;
+                    productoExistente.cantidad += incremento;
+                    productoExistente.multiplo = multiplo; // Actualizar múltiplo
+                    actualizarSubtotal(productosCotizacion.indexOf(productoExistente));
+                } else {
+                    // Validar límite máximo de productos diferentes (24)
+                    if (productosCotizacion.length >= 24) {
+                        alert('No se pueden agregar más de 24 productos diferentes a la cotización.\n\nProductos actuales: ' + productosCotizacion.length + '/24');
+                        return;
+                    }
+                    
+                    // Agregar nuevo producto con cantidad inicial = múltiplo y stock actualizado
+                    const cantidadInicial = multiplo > 0 ? multiplo : 1;
+                    productosCotizacion.push({
+                        codigo: codigo,
+                        nombre: nombre,
+                        cantidad: cantidadInicial,
+                        precio: parseFloat(precio),
+                        descuento: 0,
+                        descuentoMaximo: parseFloat(descuentoMaximo) || 0,
+                        subtotal: parseFloat(precio) * cantidadInicial,
+                        stock: stockActualizado,
+                        stock_fisico: stockFisico,
+                        stock_comprometido: stockComprometido,
+                        unidad: unidad,
+                        multiplo: multiplo // Guardar múltiplo para validaciones posteriores
+                    });
+                }
+                
+                actualizarTablaProductos();
+                calcularTotales();
+                guardarBorradorLocal(); // Auto-guardar después de agregar producto
+                
+                // Limpiar búsqueda después de agregar el producto
+                limpiarBusqueda();
+                
+                // Mostrar mensaje de confirmación con información de stock y múltiplo
+                const cantidadAgregada = multiplo > 0 ? multiplo : 1;
+                const stockInfo = stockActualizado <= 0 ? '\n⚠️ Sin stock - Se generará nota pendiente' : `\n📦 Stock disponible: ${stockActualizado} ${unidad}`;
+                const multiploInfo = multiplo > 1 ? `\n📦 Se vende en múltiplos de ${multiplo} unidades` : '';
+                const productosInfo = productosCotizacion.length > 1 ? `\n\n📋 Productos en cotización: ${productosCotizacion.length}/24` : '';
+                alert('✅ Producto agregado\n\n' + nombre + '\nCantidad: ' + cantidadAgregada + ' ' + unidad + multiploInfo + stockInfo + productosInfo);
+            } else {
+                console.error('Error obteniendo stock actualizado:', data.message);
+                // Si falla la consulta, usar el stock que se pasó como parámetro
+                alert('⚠️ No se pudo consultar el stock actualizado. Usando información de búsqueda.\n\n' + data.message);
+                
+                // Agregar producto con stock original
+                agregarProductoConStock(codigo, nombre, precio, stock, unidad, descuentoMaximo, multiplo);
+            }
+        })
+        .catch(error => {
+            console.error('Error en petición AJAX para obtener stock:', error);
+            // Si falla la consulta, usar el stock que se pasó como parámetro
+            alert('⚠️ No se pudo consultar el stock actualizado. Usando información de búsqueda.');
+            
+            // Agregar producto con stock original
+            agregarProductoConStock(codigo, nombre, precio, stock, unidad, descuentoMaximo, multiplo);
+        });
+}
+
+// Función auxiliar para agregar producto con stock (sin consultar)
+function agregarProductoConStock(codigo, nombre, precio, stock, unidad, descuentoMaximo = 0, multiplo = 1) {
     // Verificar si el producto ya está en la cotización
     const productoExistente = productosCotizacion.find(p => p.codigo === codigo);
     
     if (productoExistente) {
-        // Incrementar cantidad según el múltiplo del producto (no usar Math.max)
+        // Incrementar cantidad según el múltiplo del producto
         const incremento = multiplo > 0 ? multiplo : 1;
         productoExistente.cantidad += incremento;
-        productoExistente.multiplo = multiplo; // Actualizar múltiplo
+        productoExistente.multiplo = multiplo;
         actualizarSubtotal(productosCotizacion.indexOf(productoExistente));
     } else {
         // Validar límite máximo de productos diferentes (24)
@@ -988,18 +1107,15 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
             subtotal: parseFloat(precio) * cantidadInicial,
             stock: parseFloat(stock),
             unidad: unidad,
-            multiplo: multiplo // Guardar múltiplo para validaciones posteriores
+            multiplo: multiplo
         });
     }
     
     actualizarTablaProductos();
     calcularTotales();
-    guardarBorradorLocal(); // Auto-guardar después de agregar producto
-    
-    // Limpiar búsqueda después de agregar el producto
+    guardarBorradorLocal();
     limpiarBusqueda();
     
-    // Mostrar mensaje de confirmación con información de stock y múltiplo
     const cantidadAgregada = multiplo > 0 ? multiplo : 1;
     const stockInfo = parseFloat(stock) <= 0 ? '\n⚠️ Sin stock - Se generará nota pendiente' : '';
     const multiploInfo = multiplo > 1 ? `\n📦 Se vende en múltiplos de ${multiplo} unidades` : '';
@@ -1093,6 +1209,8 @@ function actualizarTablaProductos() {
                 <td class="${stockClass}">
                     ${stockText}
                     ${producto.stock > 0 ? `<br><small>Disponible: ${producto.stock} ${producto.unidad}</small>` : '<br><small>Nota pendiente de stock</small>'}
+                    ${producto.stock_fisico !== undefined ? `<br><small class="text-muted">Físico: ${producto.stock_fisico} ${producto.unidad}</small>` : ''}
+                    ${producto.stock_comprometido !== undefined && producto.stock_comprometido > 0 ? `<br><small class="text-warning">Comprometido: ${producto.stock_comprometido} ${producto.unidad}</small>` : ''}
                 </td>
                 <td>
                     <button class="btn btn-sm btn-danger" onclick="eliminarProducto(${index})">
@@ -1348,9 +1466,28 @@ function guardarNotaVenta() {
         return;
     }
 
-    if (!clienteData) {
-        alert('No hay cliente seleccionado');
-        return;
+    // Verificar que clienteData esté inicializado correctamente
+    if (!clienteData || !clienteData.codigo) {
+        // Intentar obtener el cliente desde la URL o desde los campos ocultos
+        const urlParams = new URLSearchParams(window.location.search);
+        const clienteCodigo = urlParams.get('cliente');
+        const clienteNombre = urlParams.get('nombre');
+        
+        if (clienteCodigo) {
+            // Reconstruir clienteData desde la URL
+            clienteData = {
+                codigo: clienteCodigo,
+                nombre: decodeURIComponent(clienteNombre || ''),
+                lista_precios_codigo: '{{ $cliente->lista_precios_codigo ?? '01P' }}',
+                lista_precios_nombre: '{{ $cliente->lista_precios_nombre ?? 'Lista Precios 01P' }}',
+                bloqueado: {{ $cliente->bloqueado ?? false ? 'true' : 'false' }},
+                puede_generar_nota_venta: {{ $puedeGenerarNotaVenta ? 'true' : 'false' }}
+            };
+            console.log('✅ ClienteData reconstruido desde URL:', clienteData);
+        } else {
+            alert('No hay cliente seleccionado');
+            return;
+        }
     }
 
     // Esta página es específica para Nota de Venta
@@ -1465,8 +1602,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Forzar que el wrapper no tenga altura fija (solo en páginas de cotizaciones)
+    let wrapper = null;
     if (window.location.pathname.includes('/cotizacion/') || window.location.pathname.includes('/nota-venta/')) {
-        const wrapper = document.querySelector('.wrapper');
+        wrapper = document.querySelector('.wrapper');
         if (wrapper) {
             wrapper.style.height = 'auto';
             wrapper.style.minHeight = '100vh';

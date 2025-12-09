@@ -224,6 +224,21 @@
                             <div class="col-md-6">
                                 <p><strong>Observaciones:</strong></p>
                                 <p class="text-muted">{{ $cotizacion->observaciones ?: 'Sin observaciones' }}</p>
+                                
+                                @if(auth()->user()->hasRole('Picking') && ($cotizacion->puedeAprobarPicking() || $cotizacion->estado_aprobacion === 'pendiente_picking' || $cotizacion->estado_aprobacion === 'aprobada_picking'))
+                                <div class="mt-3">
+                                    <p><strong>Observaciones Picking:</strong></p>
+                                    <p class="text-muted" id="observaciones-picking-text">{{ $cotizacion->observaciones_picking ?: 'Sin observaciones adicionales' }}</p>
+                                    <button type="button" class="btn btn-sm btn-info" data-toggle="modal" data-target="#modalObservacionesPicking">
+                                        <i class="material-icons">note_add</i> Agregar Nota
+                                    </button>
+                                </div>
+                                @elseif($cotizacion->observaciones_picking)
+                                <div class="mt-3">
+                                    <p><strong>Observaciones Picking:</strong></p>
+                                    <p class="text-muted">{{ $cotizacion->observaciones_picking }}</p>
+                                </div>
+                                @endif
                             </div>
                         </div>
                     </div>
@@ -1673,5 +1688,206 @@ function sincronizarStock() {
 }
 </script>
 @endpush
+
+<!-- Modal para Observaciones de Picking -->
+@if(auth()->user()->hasRole('Picking') && ($cotizacion->puedeAprobarPicking() || $cotizacion->estado_aprobacion === 'pendiente_picking' || $cotizacion->estado_aprobacion === 'aprobada_picking'))
+<div class="modal fade" id="modalObservacionesPicking" tabindex="-1" role="dialog" aria-labelledby="modalObservacionesPickingLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalObservacionesPickingLabel">
+                    <i class="material-icons">note_add</i> Agregar Observaciones de Picking
+                </h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <form id="formObservacionesPicking" action="{{ route('aprobaciones.agregar-observaciones-picking', $cotizacion->id) }}" method="POST">
+                @csrf
+                <input type="hidden" name="_method" value="PUT">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="observaciones_picking_modal">Observaciones:</label>
+                        <textarea 
+                            class="form-control" 
+                            id="observaciones_picking_modal" 
+                            name="observaciones_picking" 
+                            rows="5" 
+                            placeholder="Agregar observaciones adicionales de picking que aparecerán en el PDF..."
+                            maxlength="1000">{{ $cotizacion->observaciones_picking }}</textarea>
+                        <small class="form-text text-muted">Máximo 1000 caracteres. Estas observaciones aparecerán en el PDF de picking.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="material-icons">save</i> Guardar Observaciones
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@push('js')
+<script>
+(function() {
+    // Usar IIFE para evitar conflictos y asegurar que el código se ejecute
+    const formId = 'formObservacionesPicking';
+    const textareaName = 'observaciones_picking';
+    
+    // Esperar a que el DOM esté listo
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initForm);
+    } else {
+        initForm();
+    }
+    
+    function initForm() {
+        const form = document.getElementById(formId);
+        if (!form) {
+            console.warn('Formulario no encontrado, reintentando...');
+            setTimeout(initForm, 500);
+            return;
+        }
+        
+        console.log('✅ Formulario encontrado:', form);
+        
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            console.log('🔄 Submit event capturado');
+            
+            // Buscar el textarea de múltiples formas
+            let textarea = form.querySelector('textarea[name="' + textareaName + '"]');
+            if (!textarea) {
+                textarea = document.getElementById('observaciones_picking');
+            }
+            if (!textarea) {
+                textarea = form.querySelector('textarea');
+            }
+            
+            if (!textarea) {
+                console.error('❌ No se encontró el textarea');
+                alert('Error: No se encontró el campo de observaciones');
+                return false;
+            }
+            
+            const observacionesValue = (textarea.value || '').trim();
+            
+            console.log('📝 Textarea encontrado:', textarea);
+            console.log('📝 Valor capturado:', observacionesValue);
+            console.log('📝 Longitud:', observacionesValue.length);
+            console.log('📝 Textarea HTML:', textarea.outerHTML.substring(0, 100));
+            
+            if (!observacionesValue) {
+                console.warn('⚠️ El textarea está vacío');
+                // Permitir guardar vacío (puede ser intencional para limpiar)
+            }
+            
+            // Crear FormData manualmente
+            const formData = new FormData();
+            formData.append(textareaName, observacionesValue);
+            formData.append('_token', document.querySelector('meta[name="csrf-token"]').getAttribute('content'));
+            formData.append('_method', 'PUT');
+            
+            // Verificar FormData
+            console.log('📦 FormData creado');
+            console.log('📦 observaciones_picking:', formData.get(textareaName));
+            console.log('📦 _method:', formData.get('_method'));
+            console.log('📦 _token:', formData.get('_token') ? 'presente' : 'ausente');
+            
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="material-icons">hourglass_empty</i> Guardando...';
+            
+            fetch(form.action, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                },
+                body: formData
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                if (!response.ok) {
+                    return response.text().then(text => {
+                        console.error('Error response:', text);
+                        try {
+                            return JSON.parse(text);
+                        } catch (e) {
+                            throw new Error('Error en la respuesta del servidor: ' + response.status);
+                        }
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Response data:', data);
+                if (data.success) {
+                    // Actualizar el texto de observaciones en la página
+                    const observacionesText = document.getElementById('observaciones-picking-text');
+                    console.log('Buscando elemento observaciones-picking-text:', observacionesText);
+                    if (observacionesText) {
+                        observacionesText.textContent = data.observaciones || 'Sin observaciones adicionales';
+                        console.log('Texto actualizado:', observacionesText.textContent);
+                    } else {
+                        console.warn('No se encontró el elemento observaciones-picking-text, recargando página...');
+                        // Si no se encuentra el elemento, recargar la página
+                        window.location.reload();
+                        return;
+                    }
+                    
+                    // Cerrar modal
+                    const modal = document.getElementById('modalObservacionesPicking');
+                    if (modal && typeof $ !== 'undefined' && $.fn.modal) {
+                        $('#modalObservacionesPicking').modal('hide');
+                    } else if (modal) {
+                        modal.style.display = 'none';
+                        document.body.classList.remove('modal-open');
+                        const backdrop = document.querySelector('.modal-backdrop');
+                        if (backdrop) backdrop.remove();
+                    }
+                    
+                    // Mostrar mensaje de éxito
+                    if (typeof showNotification === 'function') {
+                        showNotification('Observaciones guardadas exitosamente', 'success');
+                    } else {
+                        alert('Observaciones guardadas exitosamente');
+                    }
+                } else {
+                    console.error('Error en respuesta:', data);
+                    if (typeof showNotification === 'function') {
+                        showNotification(data.message || 'Error al guardar observaciones', 'error');
+                    } else {
+                        alert(data.message || 'Error al guardar observaciones');
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error completo:', error);
+                console.error('Error stack:', error.stack);
+                if (typeof showNotification === 'function') {
+                    showNotification('Error al guardar observaciones. Por favor, intente nuevamente.', 'error');
+                } else {
+                    alert('Error al guardar observaciones. Por favor, intente nuevamente. Error: ' + error.message);
+                }
+            })
+            .finally(() => {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            });
+            
+            return false;
+        });
+    }
+})();
+</script>
+@endpush
+@endif
 
 @endsection

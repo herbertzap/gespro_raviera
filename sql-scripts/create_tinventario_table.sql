@@ -1,0 +1,41 @@
+-- Script para crear la tabla TINVENTARIO en SQL Server
+-- Tabla informativa para almacenar registros de barrido de inventario
+
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[TINVENTARIO]') AND type in (N'U'))
+BEGIN
+    CREATE TABLE [dbo].[TINVENTARIO] (
+        [ID] INT IDENTITY(1,1) PRIMARY KEY,
+        [EMPRESA] VARCHAR(5) NULL,
+        [KOSU] VARCHAR(10) NULL,
+        [KOBO] VARCHAR(10) NOT NULL,
+        [CC] VARCHAR(10) NULL,
+        [SKU] VARCHAR(50) NOT NULL,
+        [NOKOPR] VARCHAR(200) NULL,
+        [RLUD] DECIMAL(18, 3) DEFAULT 1,
+        [UD01PR] VARCHAR(10) NULL,
+        [UD02PR] VARCHAR(10) NULL,
+        [CAPTURA1] DECIMAL(18, 3) DEFAULT 0,
+        [CAPTURA2] DECIMAL(18, 3) NULL,
+        [STFI1] DECIMAL(18, 3) DEFAULT 0,
+        [STFI2] DECIMAL(18, 3) NULL,
+        [FUNCIONARIO] VARCHAR(20) NULL,
+        [FECHA] DATETIME DEFAULT GETDATE(),
+        [UBICACION] VARCHAR(50) NULL,
+        [CREATED_AT] DATETIME DEFAULT GETDATE(),
+        [UPDATED_AT] DATETIME DEFAULT GETDATE()
+    );
+
+    -- Índices para optimizar consultas
+    CREATE INDEX [IX_TINVENTARIO_SKU_KOBO] ON [dbo].[TINVENTARIO] ([SKU], [KOBO]);
+    CREATE INDEX [IX_TINVENTARIO_FECHA] ON [dbo].[TINVENTARIO] ([FECHA]);
+    CREATE INDEX [IX_TINVENTARIO_FUNCIONARIO] ON [dbo].[TINVENTARIO] ([FUNCIONARIO]);
+    CREATE INDEX [IX_TINVENTARIO_KOBO_FECHA] ON [dbo].[TINVENTARIO] ([KOBO], [FECHA]);
+
+    PRINT 'Tabla TINVENTARIO creada exitosamente.';
+END
+ELSE
+BEGIN
+    PRINT 'La tabla TINVENTARIO ya existe.';
+END
+GO
+

@@ -69,9 +69,10 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="codigo_vendedor" class="bmd-label-floating">Código Vendedor</label>
+                                    <label for="codigo_vendedor" class="bmd-label-floating">Código de Usuario *</label>
                                     <input type="text" name="codigo_vendedor" id="codigo_vendedor" class="form-control @error('codigo_vendedor') is-invalid @enderror" 
-                                           value="{{ old('codigo_vendedor', $user->codigo_vendedor) }}">
+                                           value="{{ old('codigo_vendedor', $user->codigo_vendedor) }}" required>
+                                    <small class="form-text text-muted">Obligatorio. Usar el código del empleado.</small>
                                     @error('codigo_vendedor')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -80,13 +81,14 @@
                             
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <div class="form-check">
-                                        <input type="checkbox" name="es_vendedor" id="es_vendedor" class="form-check-input" 
-                                               value="1" {{ old('es_vendedor', $user->es_vendedor) ? 'checked' : '' }}>
-                                        <label for="es_vendedor" class="form-check-label">
-                                            Es Vendedor
-                                        </label>
-                                    </div>
+                                        <div class="form-check">
+                                            <input type="checkbox" name="es_vendedor" id="es_vendedor" class="form-check-input" 
+                                                   value="1" {{ old('es_vendedor', $user->es_vendedor) ? 'checked' : '' }}>
+                                            <label for="es_vendedor" class="form-check-label">
+                                                Es Vendedor
+                                            </label>
+                                            <small class="form-text text-muted">Marca si debe comportarse como vendedor en el flujo (asigna flag adicional al rol).</small>
+                                        </div>
                                 </div>
                             </div>
                         </div>
@@ -97,6 +99,10 @@
                                     <label class="bmd-label-floating">Roles *</label>
                                     <div class="row">
                                         @foreach($roles as $role)
+                                            {{-- Solo mostrar rol "Super Admin" si el usuario actual es Super Admin --}}
+                                            @if($role->name === 'Super Admin' && !auth()->user()->hasRole('Super Admin'))
+                                                @continue
+                                            @endif
                                         <div class="col-md-3">
                                             <div class="form-check">
                                                 <input type="checkbox" name="roles[]" value="{{ $role->id }}" 
@@ -142,10 +148,10 @@
                                         <div class="form-group">
                                             <label for="new_password" class="bmd-label-floating">{{ __('Nueva Contraseña') }} *</label>
                                             <div class="input-group">
-                                                <input type="password" name="password" id="new_password" class="form-control" required minlength="8">
+                                                <input type="password" name="password" id="new_password" class="form-control" required minlength="8" aria-label="Nueva contraseña">
                                                 <div class="input-group-append">
-                                                    <button class="btn btn-outline-secondary" type="button" id="togglePassword" onclick="togglePasswordVisibility('new_password', 'togglePassword')">
-                                                        <i class="tim-icons icon-single-02" id="iconPassword"></i>
+                                                    <button class="btn btn-outline-secondary" type="button" id="togglePassword" aria-label="Mostrar u ocultar contraseña" onclick="togglePasswordVisibility('new_password', 'iconPassword')">
+                                                        <i class="material-icons" id="iconPassword">visibility_off</i>
                                                     </button>
                                                 </div>
                                             </div>
@@ -156,10 +162,10 @@
                                         <div class="form-group">
                                             <label for="password_confirmation" class="bmd-label-floating">{{ __('Confirmar Contraseña') }} *</label>
                                             <div class="input-group">
-                                                <input type="password" name="password_confirmation" id="password_confirmation" class="form-control" required minlength="8">
+                                                <input type="password" name="password_confirmation" id="password_confirmation" class="form-control" required minlength="8" aria-label="Confirmar contraseña">
                                                 <div class="input-group-append">
-                                                    <button class="btn btn-outline-secondary" type="button" id="togglePasswordConfirmation" onclick="togglePasswordVisibility('password_confirmation', 'togglePasswordConfirmation')">
-                                                        <i class="tim-icons icon-single-02" id="iconPasswordConfirmation"></i>
+                                                    <button class="btn btn-outline-secondary" type="button" id="togglePasswordConfirmation" aria-label="Mostrar u ocultar contraseña" onclick="togglePasswordVisibility('password_confirmation', 'iconPasswordConfirmation')">
+                                                        <i class="material-icons" id="iconPasswordConfirmation">visibility_off</i>
                                                     </button>
                                                 </div>
                                             </div>
@@ -293,29 +299,17 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Función para mostrar/ocultar contraseña
-function togglePasswordVisibility(inputId, buttonId) {
+// Función para mostrar/ocultar contraseña (material icons)
+function togglePasswordVisibility(inputId, iconId) {
     const input = document.getElementById(inputId);
-    if (!input) return;
-
-    let iconId;
-    if (inputId === 'new_password') {
-        iconId = 'iconPassword';
-    } else if (inputId === 'password_confirmation') {
-        iconId = 'iconPasswordConfirmation';
-    } else {
-        return;
-    }
-
     const icon = document.getElementById(iconId);
-    if (!icon) return;
-
+    if (!input || !icon) return;
     if (input.type === 'password') {
         input.type = 'text';
-        icon.className = 'tim-icons icon-lock-circle';
+        icon.textContent = 'visibility';
     } else {
         input.type = 'password';
-        icon.className = 'tim-icons icon-single-02';
+        icon.textContent = 'visibility_off';
     }
 }
 </script>

@@ -362,7 +362,18 @@
             }
 
             return fetch(`${productoDetalleUrl}?sku=${encodeURIComponent(sku)}&bodega_id=${bodegaId}`)
-                .then(response => response.json())
+                .then(response => {
+                    // Verificar si la respuesta es exitosa
+                    if (!response.ok) {
+                        // Intentar parsear JSON para obtener el mensaje de error
+                        return response.json().then(data => {
+                            throw new Error(data.message || `Error ${response.status}: ${response.statusText}`);
+                        }).catch(() => {
+                            throw new Error(`Error ${response.status}: No se pudo obtener el producto.`);
+                        });
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     if (!data.success || !data.producto) {
                         throw new Error(data.message || 'No se encontró el producto.');
@@ -370,6 +381,7 @@
                     mostrarDetalleProducto(data.producto);
                 })
                 .catch(error => {
+                    console.error('Error cargando producto:', error);
                     mostrarMensajeResultado(error.message, 'danger');
                 });
         }
@@ -616,7 +628,22 @@
             mostrarMensajeResultado('Buscando código <strong>' + code + '</strong>...', 'info');
 
             fetch(`${barcodeLookupUrl}?code=${encodeURIComponent(code)}&bodega_id=${bodegaId}`)
-                .then(response => response.json())
+                .then(response => {
+                    // Verificar si la respuesta es exitosa
+                    if (!response.ok) {
+                        // Intentar parsear JSON para obtener el mensaje de error
+                        return response.json().then(data => {
+                            // Si el código de barras no se encuentra, es un caso válido
+                            if (response.status === 404 && data.found === false) {
+                                return data; // Retornar data para procesarlo normalmente
+                            }
+                            throw new Error(data.message || `Error ${response.status}: ${response.statusText}`);
+                        }).catch(() => {
+                            throw new Error(`Error ${response.status}: No se pudo consultar el código de barras.`);
+                        });
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     if (data.found) {
                         mostrarMensajeResultado(`Código <strong>${data.barcode}</strong> asociado a <strong>${data.producto.codigo}</strong> - ${data.producto.nombre}`, 'success');
@@ -630,8 +657,9 @@
                         modalCodigo.modal('show');
                     }
                 })
-                .catch(() => {
-                    mostrarMensajeResultado('Error consultando el código de barras.', 'danger');
+                .catch(error => {
+                    console.error('Error consultando código de barras:', error);
+                    mostrarMensajeResultado(error.message || 'Error consultando el código de barras.', 'danger');
                 });
         }
 

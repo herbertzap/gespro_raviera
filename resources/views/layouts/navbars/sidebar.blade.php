@@ -171,12 +171,6 @@
                                 <p>{{ __('Bodegas y Ubicaciones') }}</p>
                             </a>
                         </li>
-                        <li @if ($pageSlug == 'manejo-stock') class="active " @endif>
-                            <a href="{{ route('manejo-stock.select') }}">
-                                <i class="tim-icons icon-notes"></i>
-                                <p>{{ __('Contabilidad de Productos') }}</p>
-                            </a>
-                        </li>
                     </ul>
                 </div>
             </li>

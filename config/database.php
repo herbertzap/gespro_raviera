@@ -104,7 +104,8 @@ return [
                     't-sql' => true,
                 ];
             } else {
-                // Sin TLS - para servidores antiguos
+                // Sin TLS - para servidores antiguos (SQL Server 2016 o anterior)
+                // No agregar opciones - Laravel usará encrypt='no' del array principal
                 $options['options'] = [];
             }
             
@@ -136,7 +137,8 @@ return [
                     't-sql' => true,
                 ];
             } else {
-                // Sin TLS - para servidores antiguos
+                // Sin TLS - para servidores antiguos (SQL Server 2016 o anterior)
+                // No agregar ninguna opción de TLS/SSL
                 $options['options'] = [];
             }
             
