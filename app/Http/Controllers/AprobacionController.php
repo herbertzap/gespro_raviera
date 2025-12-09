@@ -644,13 +644,13 @@ class AprobacionController extends Controller
             $preview .= sprintf("║ %-30s = %-39s ║\n", "ENDOFI", "");
             $preview .= sprintf("║ %-30s = %-39s ║\n", "SUDO", "LIB");
             $preview .= sprintf("║ %-30s = %-39s ║\n", "TIGEDO", "I");
-            $preview .= sprintf("║ %-30s = %-39s ║\n", "LUVTDO", "LIB");
+            $preview .= sprintf("║ %-30s = %-39s ║\n", "LUVTDO", "");
             $preview .= sprintf("║ %-30s = %-39s ║\n", "MEARDO", "N");
             $preview .= sprintf("║ %-30s = %-39s ║\n", "ESPGDO", "S");
             $preview .= sprintf("║ %-30s = %-39s ║\n", "FEEMDO", "GETDATE()");
             $preview .= sprintf("║ %-30s = %-39s ║\n", "FE01VEDO", "GETDATE() + {$diasPago} días");
             $preview .= sprintf("║ %-30s = %-39s ║\n", "FEULVEDO", "GETDATE() + {$diasPago} días");
-            $preview .= sprintf("║ %-30s = %-39s ║\n", "FEER", $cotizacion->fecha_despacho->format('Y-m-d H:i:s'));
+            $preview .= sprintf("║ %-30s = %-39s ║\n", "FEER", "GETDATE() (igual que FEEMDO)");
             $preview .= sprintf("║ %-30s = %-39s ║\n", "CAPRCO (suma cantidades)", $sumaCantidades);
             $preview .= sprintf("║ %-30s = %-39s ║\n", "CAPRAD", "0");
             $preview .= sprintf("║ %-30s = %-39s ║\n", "CAPREX", "0");
@@ -692,7 +692,9 @@ class AprobacionController extends Controller
                 if ($productoDB) {
                     $rludpr = $productoDB->RLUD ?? 1;
                     $ud01pr = trim($productoDB->UD01PR ?? 'UN');
-                    $ud02pr = trim($productoDB->UD02PR ?? 'UN');
+                    // UD02PR: usar el valor de la BD si existe y no está vacío, sino 'UN' por defecto
+                    $ud02prAux = trim($productoDB->UD02PR ?? '');
+                    $ud02pr = !empty($ud02prAux) ? $ud02prAux : 'UN';
                     $udtrpr = ($rludpr > 1) ? 2 : 1;
                 }
                 
@@ -782,8 +784,8 @@ class AprobacionController extends Controller
                 $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "VAIVLI (IVA)", number_format($ivaConDescuento, 2));
                 $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "VABRLI (total)", number_format($total, 2));
                 $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "TIGELI", "I");
-                $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "FEEMLI", "GETDATE()");
-                $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "FEERLI", $cotizacion->fecha_despacho->format('Y-m-d'));
+                $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "FEEMLI", "GETDATE() con hora 00:00:00.000");
+                $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "FEERLI", "GETDATE() con hora 00:00:00.000 (igual que FEEMLI)");
                 $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "NUDTLI", $nudtli);
                 $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "ARCHIRST", "");
                 $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "IDRST", "0");
@@ -796,7 +798,7 @@ class AprobacionController extends Controller
                 $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "POTENCIA", "0");
                 $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "HUMEDAD", "0");
                 $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "IDTABITPRE", "0");
-                $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "FEERLIMODI", $cotizacion->fecha_despacho->format('Y-m-d'));
+                $previewDetalle .= sprintf("║ %-30s = %-39s ║\n", "FEERLIMODI", "GETDATE() con hora 00:00:00.000 (igual que FEEMLI)");
                 $previewDetalle .= "╚══════════════════════════════════════════════════════════════════════════╝\n";
                 
                 Log::info($previewDetalle);
@@ -1019,6 +1021,12 @@ class AprobacionController extends Controller
             // Si la sucursal está vacía o no se encontró, dejar vacío (no usar '001' como fallback)
             Log::info("Sucursal del cliente '{$cotizacion->cliente_codigo}': '{$sucursalCliente}' " . (empty($sucursalCliente) ? "(vacía - correcto)" : ""));
             
+            // Calcular HORAGRAB (función de Excel: convertir fecha/hora a número serial)
+            $fechaActual = now();
+            $diasDesde1900 = $fechaActual->diffInDays('1900-01-01') + 2; // +2 por bug de Excel (año 1900 bisiesto)
+            $horaDecimal = ($fechaActual->hour * 3600 + $fechaActual->minute * 60 + $fechaActual->second) / 86400;
+            $horagrab = $diasDesde1900 + $horaDecimal;
+            
             // CAPRCO = suma de cantidades de productos
             $sumaCantidades = $cotizacion->productos->sum('cantidad');
             
@@ -1073,14 +1081,14 @@ class AprobacionController extends Controller
                     CUOGASDIF, BODESTI, PROYECTO, FLIQUIFCV, LISACTIVA
                 ) VALUES (
                     {$siguienteId}, '01', 'NVV', '{$nudoFormateado}', '{$cotizacion->cliente_codigo}', 
-                    '{$sucursalCliente}', '{$cotizacion->cliente_codigo}', 'LIB',
-                    'I', 'LIB', 'N', 'S',
-                    GETDATE(), GETDATE(), GETDATE(), '{$cotizacion->fecha->format('Y-m-d H:i:s')}',
+                    '{$sucursalCliente}', '', 'LIB',
+                    'I', '', 'N', 'S',
+                    CONVERT(DATETIME, CONVERT(DATE, GETDATE())), CONVERT(DATETIME, DATEADD(DAY, {$diasPago}, CONVERT(DATE, GETDATE()))), CONVERT(DATETIME, DATEADD(DAY, {$diasPago}, CONVERT(DATE, GETDATE()))), CONVERT(DATETIME, CONVERT(DATE, GETDATE())),
                     {$sumaCantidades}, 0, 0, 0,
                     '$', 'N', 1,
                     {$VAIVDO}, {$VANEDO}, {$VABRDO}, 0,
-                    '', '{$codigoVendedor}', 1, GETDATE(), 1, 0,
-                    0, '', '', GETDATE(), 'TABPP01P'
+                    '', '{$codigoVendedor}', 1, CONVERT(DATETIME, CONVERT(DATE, GETDATE())), 1, {$horagrab},
+                    0, '', '', CONVERT(DATETIME, CONVERT(DATE, GETDATE())), 'TABPP01P'
                 )
                 
                 SET IDENTITY_INSERT MAEEDO OFF
@@ -1117,7 +1125,9 @@ class AprobacionController extends Controller
                 if ($productoDB) {
                     $rludpr = $productoDB->RLUD ?? 1;
                     $ud01pr = trim($productoDB->UD01PR ?? 'UN');
-                    $ud02pr = trim($productoDB->UD02PR ?? 'UN');
+                    // UD02PR: usar el valor de la BD si existe y no está vacío, sino 'UN' por defecto
+                    $ud02prAux = trim($productoDB->UD02PR ?? '');
+                    $ud02pr = !empty($ud02prAux) ? $ud02prAux : 'UN';
                     $udtrpr = ($rludpr > 1) ? 2 : 1;
                 }
                 
@@ -1189,9 +1199,9 @@ class AprobacionController extends Controller
                         '{$listaPrecios}', '$', 'N', 1,
                         {$precioNeto}, {$precioNeto}, " . ($precioNeto * 1.19) . ", " . ($precioNeto * 1.19) . ",
                         {$porcentajeDescuento}, {$vadtneli}, {$subtotalConDescuento}, 19, {$ivaConDescuento}, {$total},
-                        'I', GETDATE(), '{$cotizacion->fecha->format('Y-m-d')}', {$nudtli}, '', 0,
+                        'I', CONVERT(DATETIME, CONVERT(DATE, GETDATE())), CONVERT(DATETIME, CONVERT(DATE, GETDATE())), {$nudtli}, '', 0,
                         {$ppprpm}, {$ppprnere1}, {$ppprnere2}, 1, 0, 0,
-                        0, 0, 0, '{$cotizacion->fecha->format('Y-m-d')}'
+                        0, 0, 0, CONVERT(DATETIME, CONVERT(DATE, GETDATE()))
                     )
                 ";
                 
@@ -1541,6 +1551,12 @@ class AprobacionController extends Controller
             Log::info("🧪 Sucursal Cliente: '{$sucursalCliente}'");
             Log::info("🧪 Vendedor: {$codigoVendedor}");
             
+            // Calcular HORAGRAB (función de Excel: convertir fecha/hora a número serial)
+            $fechaActual = now();
+            $diasDesde1900 = $fechaActual->diffInDays('1900-01-01') + 2; // +2 por bug de Excel (año 1900 bisiesto)
+            $horaDecimal = ($fechaActual->hour * 3600 + $fechaActual->minute * 60 + $fechaActual->second) / 86400;
+            $horagrab = $diasDesde1900 + $horaDecimal;
+            
             // Fecha de vencimiento
             $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
             
@@ -1559,14 +1575,14 @@ class AprobacionController extends Controller
                     CUOGASDIF, BODESTI, PROYECTO, FLIQUIFCV, LISACTIVA
                 ) VALUES (
                     {$siguienteId}, '01', 'NVV', '{$nudoFormateado}', '{$cotizacion->cliente_codigo}', 
-                    '{$sucursalCliente}', '{$cotizacion->cliente_codigo}', 'LIB',
-                    'I', 'LIB', 'N', 'S',
-                    GETDATE(), GETDATE(), GETDATE(), '{$cotizacion->fecha->format('Y-m-d H:i:s')}',
+                    '{$sucursalCliente}', '', 'LIB',
+                    'I', '', 'N', 'S',
+                    CONVERT(DATETIME, CONVERT(DATE, GETDATE())), CONVERT(DATETIME, DATEADD(DAY, 30, CONVERT(DATE, GETDATE()))), CONVERT(DATETIME, DATEADD(DAY, 30, CONVERT(DATE, GETDATE()))), CONVERT(DATETIME, CONVERT(DATE, GETDATE())),
                     {$cotizacion->subtotal_neto}, 0, 0, 0,
                     '$', 'N', 1,
                     {$cotizacion->iva}, {$cotizacion->subtotal_neto}, {$cotizacion->total}, 0,
-                    '', '{$codigoVendedor}', 1, GETDATE(), 1, 0,
-                    0, '', '', GETDATE(), 'TABPP01P'
+                    '', '{$codigoVendedor}', 1, CONVERT(DATETIME, CONVERT(DATE, GETDATE())), 1, {$horagrab},
+                    0, '', '', CONVERT(DATETIME, CONVERT(DATE, GETDATE())), 'TABPP01P'
                 )
                 
                 SET IDENTITY_INSERT MAEEDO OFF
@@ -1603,7 +1619,9 @@ class AprobacionController extends Controller
                 if ($productoDB) {
                     $rludpr = $productoDB->RLUD ?? 1;
                     $ud01pr = trim($productoDB->UD01PR ?? 'UN');
-                    $ud02pr = trim($productoDB->UD02PR ?? 'CJ');
+                    // UD02PR: usar el valor de la BD si existe y no está vacío, sino 'UN' por defecto
+                    $ud02prAux = trim($productoDB->UD02PR ?? '');
+                    $ud02pr = !empty($ud02prAux) ? $ud02prAux : 'UN';
                     $udtrpr = ($rludpr > 1) ? 2 : 1;
                 }
                 
@@ -1631,9 +1649,9 @@ class AprobacionController extends Controller
                         'TABPP01P', '$', 'N', 1,
                         {$producto->precio_unitario}, {$producto->precio_unitario}, {$precioBruto}, {$precioBruto},
                         {$porcentajeDescuento}, {$valorDescuento}, {$subtotalConDescuento}, 19, {$ivaConDescuento}, {$totalConIVA},
-                        'I', GETDATE(), '{$cotizacion->fecha->format('Y-m-d H:i:s')}', 1, '', 0,
+                        'I', CONVERT(DATETIME, CONVERT(DATE, GETDATE())), CONVERT(DATETIME, CONVERT(DATE, GETDATE())), 1, '', 0,
                         {$precioMinimo}, {$precioNetoReal}, {$precioNetoReal}, 1, 0, 0,
-                        0, 0, 0, '{$cotizacion->fecha->format('Y-m-d')}'
+                        0, 0, 0, CONVERT(DATETIME, CONVERT(DATE, GETDATE()))
                     )
                 ";
                 

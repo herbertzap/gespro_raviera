@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Guía de Despacho - Nota de Venta #{{ $cotizacion->id }}</title>
+    <title>Guía de Picking - Nota de Venta #{{ $cotizacion->id }}</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -111,7 +111,7 @@
         </div>
         <div class="company-right">
             <p><strong>R.U.T.:</strong> 76.426.104-6</p>
-            <h2>GUÍA DE DESPACHO</h2>
+            <h2>GUÍA DE PICKING</h2>
             <p><strong>Nro.:</strong> {{ str_pad($cotizacion->id, 10, '0', STR_PAD_LEFT) }}</p>
             <p><strong>Fecha:</strong> {{ date('d/m/Y', strtotime($cotizacion->created_at)) }}</p>
             <p><strong>Hora:</strong> {{ date('H:i:s', strtotime($cotizacion->created_at)) }}</p>
@@ -131,7 +131,7 @@
             <tr>
                 <td><strong>Señor(es):</strong> {{ $cliente->nombre_cliente ?? $cotizacion->cliente_nombre }}</td>
                 <td><strong>Dirección:</strong> {{ $cliente->direccion ?? 'No especificada' }}</td>
-                <td><strong>RUT:</strong> {{ $cliente->rut_cliente ?? 'No especificado' }}</td>
+                <td><strong>RUT:</strong> {{ !empty($cliente->rut_cliente) ? $cliente->rut_cliente : ($cotizacion->cliente_codigo ?? 'No especificado') }}</td>
             </tr>
             <tr>
                 <td><strong>Teléfono:</strong> {{ $cliente->telefono ?? 'No especificado' }}</td>
@@ -168,10 +168,9 @@
             @php
                 $descuentoPorcentaje = $producto->descuento_porcentaje ?? 0;
                 $descuentoValor = $producto->descuento_valor ?? 0;
-                $precioConDescuento = $producto->precio_unitario - $descuentoValor;
-                $subtotal = $producto->cantidad * $precioConDescuento;
-                $iva = $subtotal * 0.19;
-                $total = $subtotal + $iva;
+                // Usar los valores ya calculados y guardados en la BD
+                $subtotalConDescuento = $producto->subtotal_con_descuento ?? ($producto->cantidad * $producto->precio_unitario - $descuentoValor);
+                $total = $producto->total_producto ?? ($subtotalConDescuento * 1.19);
             @endphp
             <tr>
                 <td>{{ $producto->codigo_producto }}</td>
@@ -208,15 +207,21 @@
     
     <div class="totals">
         @php
+            // Calcular subtotal sin descuentos
             $totalSinDescuento = $cotizacion->productos->sum(function($producto) {
                 return $producto->cantidad * $producto->precio_unitario;
             });
+            // descuento_valor ya es el valor total del descuento para esa línea (no multiplicar por cantidad)
             $totalDescuentos = $cotizacion->productos->sum(function($producto) {
-                $descuentoValor = $producto->descuento_valor ?? 0;
-                return $producto->cantidad * $descuentoValor;
+                return $producto->descuento_valor ?? 0;
             });
-            $totalNeto = $totalSinDescuento - $totalDescuentos;
+            // Usar subtotal_con_descuento si está disponible, sino calcular
+            $totalNeto = $cotizacion->productos->sum(function($producto) {
+                return $producto->subtotal_con_descuento ?? ($producto->cantidad * $producto->precio_unitario - ($producto->descuento_valor ?? 0));
+            });
+            // Calcular IVA sobre el neto
             $iva = $totalNeto * 0.19;
+            // Total final con IVA
             $totalFinal = $totalNeto + $iva;
         @endphp
         <p><strong>DESCTO. GLOBAL:</strong> ${{ number_format($totalDescuentos, 0, ',', '.') }}</p>
