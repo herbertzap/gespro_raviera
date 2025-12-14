@@ -63,8 +63,8 @@
 
         <!-- Tablas de Información -->
         <div class="row">
-            <!-- Notas de Venta Pendientes (col-6) -->
-            <div class="col-md-6">
+            <!-- Notas de Venta Pendientes (100% ancho) -->
+            <div class="col-md-12">
                 <div class="card">
                     <div class="card-header card-header-warning">
                         <h4 class="card-title">Notas de Venta Pendientes</h4>
@@ -91,12 +91,19 @@
                                         <td>{{ $nota['cliente_nombre'] ?? 'N/A' }}</td>
                                         <td>${{ number_format($nota['total'] ?? 0, 2) }}</td>
                                         <td>
-                                            <span class="badge badge-{{ 
-                                                $nota['estado'] == 'pendiente_supervisor' ? 'warning' : 
-                                                ($nota['estado'] == 'aprobada_supervisor' ? 'info' : 'primary')
-                                            }}">
-                                                {{ ucfirst(str_replace('_', ' ', $nota['estado'] ?? 'pendiente')) }}
-                                            </span>
+                                            @if(isset($nota['estado']) && $nota['estado'] == 'separado_pendiente_compras')
+                                                <span class="badge badge-warning">
+                                                    Separado / Pendiente Compras
+                                                </span>
+                                            @else
+                                                <span class="badge badge-{{ 
+                                                    $nota['estado'] == 'pendiente_supervisor' ? 'warning' : 
+                                                    ($nota['estado'] == 'aprobada_supervisor' ? 'info' : 
+                                                    ($nota['estado'] == 'pendiente' ? 'warning' : 'primary'))
+                                                }}">
+                                                    {{ ucfirst(str_replace('_', ' ', $nota['estado'] ?? 'pendiente')) }}
+                                                </span>
+                                            @endif
                                         </td>
                                         <td>
                                             <a href="{{ $nota['url'] ?? '#' }}" class="btn btn-sm btn-primary">
@@ -115,9 +122,11 @@
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Notas de Venta en Sistema SQL (col-6) -->
-            <div class="col-md-6" id="notas-sql">
+        <!-- Notas de Venta en Sistema SQL (100% ancho) -->
+        <div class="row">
+            <div class="col-md-12" id="notas-sql">
                 <div class="card">
                     <div class="card-header card-header-info">
                         <h4 class="card-title">Notas de Venta en Sistema</h4>

@@ -128,21 +128,26 @@ class HistorialCotizacionService
     /**
      * Registrar rechazo de una cotización
      */
-    public static function registrarRechazo(Cotizacion $cotizacion, string $motivo, string $comentarios = null): void
+    public static function registrarRechazo(Cotizacion $cotizacion, string $motivo, string $estadoAnterior, string $rol, string $comentarios = null): void
     {
+        $user = auth()->user();
+        
         CotizacionHistorial::crearRegistro(
             $cotizacion->id,
             'rechazada',
             'rechazo',
-            $cotizacion->estado_aprobacion,
-            $comentarios ?? "Rechazada: {$motivo}",
+            $estadoAnterior,
+            $comentarios ?? "Rechazada por {$rol}: {$motivo}",
             [
                 'motivo_rechazo' => $motivo,
-                'estado_anterior' => $cotizacion->estado_aprobacion
+                'rol_rechazador' => $rol,
+                'usuario_rechazador' => $user?->name,
+                'usuario_id_rechazador' => $user?->id,
+                'estado_anterior' => $estadoAnterior
             ]
         );
         
-        Log::info("❌ Historial: Cotización {$cotizacion->id} rechazada - {$motivo}");
+        Log::info("❌ Historial: Cotización {$cotizacion->id} rechazada por {$rol} - {$motivo}");
     }
 
     /**

@@ -56,8 +56,16 @@
                                 <div class="col-md-2">
                                     <div class="form-group">
                                         <label for="cliente">Cliente:</label>
-                                        <input type="text" name="cliente" id="cliente" class="form-control" 
-                                               value="{{ $filtros['cliente'] }}" placeholder="Código o nombre">
+                                        <select name="cliente" id="cliente" class="form-control">
+                                            <option value="">Todos</option>
+                                            @if(isset($clientes) && is_array($clientes))
+                                                @foreach($clientes as $cli)
+                                                    <option value="{{ $cli['codigo'] }}" {{ ($filtros['cliente'] ?? '') == $cli['codigo'] ? 'selected' : '' }}>
+                                                        {{ $cli['codigo'] }} - {{ $cli['nombre'] }}
+                                                    </option>
+                                                @endforeach
+                                            @endif
+                                        </select>
                                     </div>
                                 </div>
                                 <div class="col-md-2">
@@ -76,35 +84,38 @@
                                 </div>
                             </div>
                             
-                            @if(isset($vendedores) && count($vendedores) > 0)
                             <div class="row">
-                                <div class="col-md-4">
+                                @if(isset($vendedores) && count($vendedores) > 0)
+                                <div class="col-md-2">
                                     <div class="form-group">
-                                        <label for="vendedores">Vendedores:</label>
-                                        <select name="vendedores[]" id="vendedores" class="form-control" multiple>
+                                        <label for="vendedor">Vendedor:</label>
+                                        <select name="vendedor" id="vendedor" class="form-control">
+                                            <option value="">Todos</option>
                                             @foreach($vendedores as $vendedor)
                                                 <option value="{{ $vendedor['codigo'] }}" 
-                                                        {{ in_array($vendedor['codigo'], $filtros['vendedores']) ? 'selected' : '' }}>
+                                                        {{ ($filtros['vendedor'] ?? '') == $vendedor['codigo'] ? 'selected' : '' }}>
                                                     {{ $vendedor['codigo'] }} - {{ $vendedor['nombre'] }}
                                                 </option>
                                             @endforeach
                                         </select>
                                     </div>
                                 </div>
+                                @endif
                             </div>
-                            @endif
                             
-                            <div class="row">
+                            <div class="row mt-3">
                                 <div class="col-md-12">
-                                    <button type="submit" class="btn btn-primary">
-                                        <i class="material-icons">search</i> Filtrar
-                                    </button>
-                                    <a href="{{ route('facturas-emitidas.index') }}" class="btn btn-secondary">
-                                        <i class="material-icons">clear</i> Limpiar
-                                    </a>
-                                    <button type="button" class="btn btn-success" onclick="exportarFacturas()">
-                                        <i class="material-icons">file_download</i> Exportar Excel
-                                    </button>
+                                    <div class="form-group d-flex align-items-center">
+                                        <button type="submit" class="btn btn-primary mr-2">
+                                            <i class="material-icons">search</i> Filtrar
+                                        </button>
+                                        <a href="{{ route('facturas-emitidas.index') }}" class="btn btn-secondary mr-2">
+                                            <i class="material-icons">clear</i> Limpiar
+                                        </a>
+                                        <button type="button" class="btn btn-success" onclick="exportarFacturas()">
+                                            <i class="material-icons">file_download</i> Exportar Excel
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </form>
@@ -240,11 +251,10 @@ function exportarFacturas() {
         fecha_hasta: document.getElementById('fecha_hasta').value
     };
     
-    // Agregar vendedores si es administrador
-    const vendedoresSelect = document.getElementById('vendedores');
-    if (vendedoresSelect) {
-        const vendedores = Array.from(vendedoresSelect.selectedOptions).map(option => option.value);
-        filtros.vendedores = vendedores;
+    // Agregar vendedor si es administrador
+    const vendedorSelect = document.getElementById('vendedor');
+    if (vendedorSelect) {
+        filtros.vendedor = vendedorSelect.value;
     }
     
     // Construir URL con filtros

@@ -25,6 +25,12 @@ class Kernel extends ConsoleKernel
                 ->hourly()
                 ->withoutOverlapping()
                 ->runInBackground();
+        
+        // Sincronización diaria de cheques protestados a las 3:00 AM
+        $schedule->command('cheques:sincronizar')
+                ->dailyAt('03:00')
+                ->withoutOverlapping()
+                ->runInBackground();
     }
 
     /**

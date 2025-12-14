@@ -349,6 +349,7 @@ class Cotizacion extends Model
         $campoComentarios = 'comentarios_' . $rol;
 
         $this->update([
+            'estado' => 'rechazada',
             'estado_aprobacion' => 'rechazada',
             $campoAprobado => $usuarioId,
             $campoFecha => now(),

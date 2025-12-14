@@ -45,7 +45,7 @@ class FacturasEmitidasController extends Controller
             'dias_max' => $request->get('dias_max', ''),
             'fecha_desde' => $request->get('fecha_desde', ''),
             'fecha_hasta' => $request->get('fecha_hasta', ''),
-            'vendedores' => $request->get('vendedores', []), // Para supervisor
+            'vendedor' => $request->get('vendedor', ''), // Para supervisor (select simple)
             'ordenar_por' => $request->get('ordenar_por', 'NRO_DOCTO'),
             'orden' => $request->get('orden', 'desc'),
         ];
@@ -91,7 +91,10 @@ class FacturasEmitidasController extends Controller
             $vendedores = $this->cobranzaService->getVendedores();
         }
 
-        return view('facturas-emitidas.index', compact('facturasFiltradas', 'filtros', 'vendedores', 'pagination'));
+        // Obtener lista de clientes únicos para el select
+        $clientes = $this->obtenerClientesUnicos($facturasEmitidas);
+
+        return view('facturas-emitidas.index', compact('facturasFiltradas', 'filtros', 'vendedores', 'pagination', 'clientes'));
     }
 
     public function export(Request $request)
@@ -115,7 +118,7 @@ class FacturasEmitidasController extends Controller
             'dias_max' => $request->get('dias_min', ''),
             'fecha_desde' => $request->get('fecha_desde', ''),
             'fecha_hasta' => $request->get('fecha_hasta', ''),
-            'vendedores' => $request->get('vendedores', []),
+            'vendedor' => $request->get('vendedor', ''),
             'ordenar_por' => $request->get('ordenar_por', 'NRO_DOCTO'),
             'orden' => $request->get('orden', 'desc'),
         ];
@@ -187,11 +190,12 @@ class FacturasEmitidasController extends Controller
             });
         }
 
+        // Filtrar por cliente (código exacto del select)
         if (!empty($filtros['cliente'])) {
-            $cliente = strtolower($filtros['cliente']);
-            $facturas = array_filter($facturas, function($factura) use ($cliente) {
-                return strpos(strtolower($factura['CODIGO_CLIENTE'] ?? ''), $cliente) !== false ||
-                       strpos(strtolower($factura['NOMBRE_CLIENTE'] ?? ''), $cliente) !== false;
+            $clienteCodigo = strtolower($filtros['cliente']);
+            $facturas = array_filter($facturas, function($factura) use ($clienteCodigo) {
+                $codigoFactura = strtolower($factura['CODIGO_CLIENTE'] ?? '');
+                return $codigoFactura === $clienteCodigo;
             });
         }
 
@@ -213,9 +217,12 @@ class FacturasEmitidasController extends Controller
             });
         }
 
-        if (!empty($filtros['vendedores']) && is_array($filtros['vendedores'])) {
-            $facturas = array_filter($facturas, function($factura) use ($filtros) {
-                return in_array($factura['CODIGO_VENDEDOR'] ?? '', $filtros['vendedores']);
+        // Filtrar por vendedor (para supervisor)
+        if (!empty($filtros['vendedor'])) {
+            $vendedorFiltro = $filtros['vendedor'];
+            $facturas = array_filter($facturas, function($factura) use ($vendedorFiltro) {
+                $codigoVendedor = $factura['CODIGO_VENDEDOR'] ?? '';
+                return $codigoVendedor === $vendedorFiltro;
             });
         }
 
@@ -438,5 +445,34 @@ class FacturasEmitidasController extends Controller
         $writer->save($tempFile);
         
         return response()->download($tempFile, $filename)->deleteFileAfterSend(true);
+    }
+
+    /**
+     * Obtener lista de clientes únicos para el select
+     */
+    private function obtenerClientesUnicos($facturasEmitidas)
+    {
+        $clientes = [];
+        $clientesMap = [];
+        
+        foreach ($facturasEmitidas as $factura) {
+            $codigo = $factura['CODIGO_CLIENTE'] ?? '';
+            $nombre = $factura['CLIENTE'] ?? '';
+            
+            if (!empty($codigo) && !isset($clientesMap[$codigo])) {
+                $clientesMap[$codigo] = true;
+                $clientes[] = [
+                    'codigo' => $codigo,
+                    'nombre' => $nombre
+                ];
+            }
+        }
+        
+        // Ordenar por nombre
+        usort($clientes, function($a, $b) {
+            return strcmp($a['nombre'], $b['nombre']);
+        });
+        
+        return $clientes;
     }
 }

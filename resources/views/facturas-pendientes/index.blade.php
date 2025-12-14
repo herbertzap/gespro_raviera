@@ -136,9 +136,16 @@
                                 <div class="col-md-2">
                                     <div class="form-group">
                                         <label for="cliente">Cliente</label>
-                                        <input type="text" class="form-control" id="cliente" name="cliente" 
-                                               value="{{ $filtros['cliente'] ?? '' }}" 
-                                               placeholder="Nombre del cliente...">
+                                        <select class="form-control" id="cliente" name="cliente">
+                                            <option value="">Todos</option>
+                                            @if(isset($clientes) && is_array($clientes))
+                                                @foreach($clientes as $cli)
+                                                    <option value="{{ $cli['codigo'] }}" {{ ($filtros['cliente'] ?? '') == $cli['codigo'] ? 'selected' : '' }}>
+                                                        {{ $cli['codigo'] }} - {{ $cli['nombre'] }}
+                                                    </option>
+                                                @endforeach
+                                            @endif
+                                        </select>
                                     </div>
                                 </div>
                                 <div class="col-md-2">
@@ -173,16 +180,19 @@
                                                value="{{ $filtros['fecha_hasta'] ?? '' }}">
                                     </div>
                                 </div>
-                                @if($tipoUsuario === 'Administrador')
-                                <div class="col-md-3">
+                                @if($tipoUsuario === 'Administrador' || $tipoUsuario === 'Supervisor' || $tipoUsuario === 'Super Admin')
+                                <div class="col-md-2">
                                     <div class="form-group">
-                                        <label for="vendedores">Vendedores</label>
-                                        <select class="form-control" id="vendedores" name="vendedores[]" multiple>
-                                            <option value="AVS" {{ in_array('AVS', $filtros['vendedores'] ?? []) ? 'selected' : '' }}>ANDRES EDMUNDO VASQUEZ</option>
-                                            <option value="GOP" {{ in_array('GOP', $filtros['vendedores'] ?? []) ? 'selected' : '' }}>GOP</option>
-                                            <option value="LCB" {{ in_array('LCB', $filtros['vendedores'] ?? []) ? 'selected' : '' }}>LCB</option>
-                                            <option value="LCC" {{ in_array('LCC', $filtros['vendedores'] ?? []) ? 'selected' : '' }}>LCC</option>
-                                            <option value="LCD" {{ in_array('LCD', $filtros['vendedores'] ?? []) ? 'selected' : '' }}>LCD</option>
+                                        <label for="vendedor">Vendedor</label>
+                                        <select class="form-control" id="vendedor" name="vendedor">
+                                            <option value="">Todos</option>
+                                            @if(isset($vendedores) && is_array($vendedores))
+                                                @foreach($vendedores as $vend)
+                                                    <option value="{{ $vend['codigo'] }}" {{ ($filtros['vendedor'] ?? '') == $vend['codigo'] ? 'selected' : '' }}>
+                                                        {{ $vend['codigo'] }} - {{ $vend['nombre'] }}
+                                                    </option>
+                                                @endforeach
+                                            @endif
                                         </select>
                                     </div>
                                 </div>
@@ -198,28 +208,16 @@
                                         </select>
                                     </div>
                                 </div>
-                                <div class="col-md-1">
-                                    <div class="form-group">
-                                        <label>&nbsp;</label>
-                                        <button type="submit" class="btn btn-primary btn-block">
-                                            <i class="material-icons">search</i>
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="col-md-2">
-                                    <div class="form-group">
-                                        <label>&nbsp;</label>
-                                        <div>
-                                            <a href="{{ route('facturas-pendientes.index') }}" class="btn btn-secondary">
-                                                <i class="material-icons">clear</i> Limpiar
-                                            </a>
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
-                            <div class="row">
+                            <div class="row mt-3">
                                 <div class="col-md-12">
-                                    <div class="form-group">
+                                    <div class="form-group d-flex align-items-center">
+                                        <button type="submit" class="btn btn-primary mr-2">
+                                            <i class="material-icons">search</i> Filtrar
+                                        </button>
+                                        <a href="{{ route('facturas-pendientes.index') }}" class="btn btn-secondary mr-2">
+                                            <i class="material-icons">clear</i> Limpiar
+                                        </a>
                                         <button type="button" class="btn btn-success" onclick="exportarFacturas()">
                                             <i class="material-icons">file_download</i> Exportar Excel
                                         </button>
@@ -377,6 +375,87 @@
         </div>
     </div>
 
+@push('css')
+<style>
+    /* Estilo para select múltiple personalizado */
+    .select-multiple-wrapper {
+        position: relative;
+    }
+    
+    select.select-multiple-custom {
+        height: 38px !important;
+        min-height: 38px !important;
+        max-height: 38px !important;
+        overflow: hidden !important;
+        padding: 8px 12px;
+        transition: max-height 0.3s ease;
+    }
+    
+    select.select-multiple-custom:focus {
+        height: auto !important;
+        max-height: 200px !important;
+        overflow-y: auto !important;
+        position: absolute;
+        z-index: 1000;
+        width: 100%;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+    
+    select.select-multiple-custom option {
+        padding: 8px 12px;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    
+    select.select-multiple-custom option:checked {
+        background-color: #1e88e5 !important;
+        color: #ffffff !important;
+    }
+    
+    /* Placeholder visual cuando está colapsado */
+    select.select-multiple-custom[data-selected-count="0"]::before {
+        content: attr(data-placeholder);
+        color: #999;
+    }
+    
+    /* Estilos para botones - evitar cortes de texto */
+    .btn {
+        white-space: nowrap !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        min-width: auto !important;
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    
+    .btn .material-icons {
+        margin-right: 4px;
+        font-size: 18px;
+        line-height: 1;
+        vertical-align: middle;
+    }
+    
+    .btn i.material-icons:only-child {
+        margin-right: 0;
+    }
+    
+    /* Ajustar botones dentro de col-md-auto */
+    .col-md-auto .btn {
+        width: auto !important;
+        min-width: fit-content;
+    }
+    
+    /* Asegurar que los botones con texto e ícono se vean bien */
+    .btn .material-icons + span,
+    .btn .material-icons + text {
+        margin-left: 4px;
+    }
+</style>
+@endpush
+
 @push('js')
 <script>
 function exportarFacturas() {
@@ -392,11 +471,10 @@ function exportarFacturas() {
         fecha_hasta: document.getElementById('fecha_hasta').value
     };
     
-    // Agregar vendedores si es administrador
-    const vendedoresSelect = document.getElementById('vendedores');
-    if (vendedoresSelect) {
-        const vendedores = Array.from(vendedoresSelect.selectedOptions).map(option => option.value);
-        filtros.vendedores = vendedores;
+    // Agregar vendedor si es administrador
+    const vendedorSelect = document.getElementById('vendedor');
+    if (vendedorSelect && vendedorSelect.value) {
+        filtros.vendedor = vendedorSelect.value;
     }
     
     // Construir URL con filtros

@@ -51,10 +51,55 @@
                     <div class="card-body">
                         <form method="GET" action="{{ route('aprobaciones.index') }}" id="filtrosForm">
                             <div class="row">
-                                <div class="col-md-3">
+                                <div class="col-md-2">
                                     <div class="form-group">
                                         <label for="buscar">Buscar por Cliente o Código</label>
                                         <input type="text" id="buscar" name="buscar" class="form-control" placeholder="Buscar..." value="{{ request('buscar') }}">
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="form-group">
+                                        <label for="cliente">Cliente</label>
+                                        <select id="cliente" name="cliente" class="form-control">
+                                            <option value="">Todos</option>
+                                            @if(isset($clientes) && is_array($clientes))
+                                                @foreach($clientes as $cli)
+                                                    <option value="{{ $cli['codigo'] }}" {{ request('cliente') == $cli['codigo'] ? 'selected' : '' }}>
+                                                        {{ $cli['codigo'] }} - {{ $cli['nombre'] }}
+                                                    </option>
+                                                @endforeach
+                                            @endif
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="form-group">
+                                        <label for="vendedor">Vendedor</label>
+                                        <select id="vendedor" name="vendedor" class="form-control">
+                                            <option value="">Todos</option>
+                                            @if(isset($vendedores) && is_array($vendedores))
+                                                @foreach($vendedores as $vend)
+                                                    <option value="{{ $vend['codigo'] }}" {{ request('vendedor') == $vend['codigo'] ? 'selected' : '' }}>
+                                                        {{ $vend['codigo'] }} - {{ $vend['nombre'] }}
+                                                    </option>
+                                                @endforeach
+                                            @endif
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="form-group">
+                                        <label for="estado">Estado</label>
+                                        <select id="estado" name="estado" class="form-control">
+                                            <option value="">Todos</option>
+                                            @if(isset($estados) && is_array($estados))
+                                                @foreach($estados as $key => $label)
+                                                    <option value="{{ $key }}" {{ request('estado') == $key ? 'selected' : '' }}>
+                                                        {{ $label }}
+                                                    </option>
+                                                @endforeach
+                                            @endif
+                                        </select>
                                     </div>
                                 </div>
                                 <div class="col-md-2">
@@ -79,6 +124,8 @@
                                         </select>
                                     </div>
                                 </div>
+                            </div>
+                            <div class="row">
                                 <div class="col-md-2">
                                     <div class="form-group">
                                         <label for="fecha_desde">Fecha Desde</label>
@@ -91,7 +138,7 @@
                                         <input type="date" id="fecha_hasta" name="fecha_hasta" class="form-control" value="{{ request('fecha_hasta') }}">
                                     </div>
                                 </div>
-                                <div class="col-md-1">
+                                <div class="col-md-2">
                                     <div class="form-group">
                                         <label>&nbsp;</label>
                                         <button type="submit" class="btn btn-primary btn-block">
@@ -100,7 +147,7 @@
                                     </div>
                                 </div>
                             </div>
-                            @if(request()->hasAny(['region', 'comuna', 'fecha_desde', 'fecha_hasta', 'buscar']))
+                            @if(request()->hasAny(['region', 'comuna', 'fecha_desde', 'fecha_hasta', 'buscar', 'vendedor', 'estado', 'cliente']))
                             <div class="row">
                                 <div class="col-md-12">
                                     <a href="{{ route('aprobaciones.index') }}" class="btn btn-sm btn-secondary">
@@ -162,34 +209,46 @@
                                                     <strong>${{ number_format($cotizacion->total, 0) }}</strong>
                                                 </td>
                                                 <td>
-                                                    @switch($cotizacion->estado_aprobacion)
-                                                        @case('pendiente')
-                                                            <span class="badge badge-warning">Pendiente Supervisor</span>
-                                                            @break
-                                                        @case('pendiente_picking')
-                                                            <span class="badge badge-info">Pendiente Picking</span>
-                                                            @break
-                                                        @case('pendiente_entrega')
-                                                            <span class="badge badge-warning">Pendiente de Entrega</span>
-                                                            @if($cotizacion->observaciones_picking)
-                                                                <br><small class="text-muted"><i class="material-icons">info</i> {{ Str::limit($cotizacion->observaciones_picking, 40) }}</small>
-                                                            @endif
-                                                            @break
-                                                        @case('aprobada_supervisor')
-                                                            <span class="badge badge-success">Aprobada Supervisor</span>
-                                                            @break
-                                                        @case('aprobada_compras')
-                                                            <span class="badge badge-primary">Aprobada Compras</span>
-                                                            @break
-                                                        @case('aprobada_picking')
-                                                            <span class="badge badge-success">Aprobada Picking</span>
-                                                            @break
-                                                        @case('rechazada')
-                                                            <span class="badge badge-danger">Rechazada</span>
-                                                            @break
-                                                        @default
-                                                            <span class="badge badge-secondary">{{ $cotizacion->estado_aprobacion }}</span>
-                                                    @endswitch
+                                                    @php
+                                                        // Verificar primero si es una NVV separada
+                                                        $esSeparada = in_array($cotizacion->estado, ['separado_por_compras', 'separado_por_picking']);
+                                                        $estadoMostrar = $cotizacion->estado_aprobacion;
+                                                    @endphp
+                                                    
+                                                    @if($esSeparada && $cotizacion->estado === 'separado_por_compras')
+                                                        <span class="badge badge-warning">Separado / Pendiente Compras</span>
+                                                    @elseif($esSeparada && $cotizacion->estado === 'separado_por_picking')
+                                                        <span class="badge badge-warning">Separado / Pendiente Compras</span>
+                                                    @else
+                                                        @switch($estadoMostrar)
+                                                            @case('pendiente')
+                                                                <span class="badge badge-warning">Pendiente Supervisor</span>
+                                                                @break
+                                                            @case('pendiente_picking')
+                                                                <span class="badge badge-info">Pendiente Picking</span>
+                                                                @break
+                                                            @case('pendiente_entrega')
+                                                                <span class="badge badge-warning">Pendiente de Entrega</span>
+                                                                @if($cotizacion->observaciones_picking)
+                                                                    <br><small class="text-muted"><i class="material-icons">info</i> {{ Str::limit($cotizacion->observaciones_picking, 40) }}</small>
+                                                                @endif
+                                                                @break
+                                                            @case('aprobada_supervisor')
+                                                                <span class="badge badge-success">Aprobada Supervisor</span>
+                                                                @break
+                                                            @case('aprobada_compras')
+                                                                <span class="badge badge-primary">Aprobada Compras</span>
+                                                                @break
+                                                            @case('aprobada_picking')
+                                                                <span class="badge badge-success">Aprobada Picking</span>
+                                                                @break
+                                                            @case('rechazada')
+                                                                <span class="badge badge-danger">Rechazada</span>
+                                                                @break
+                                                            @default
+                                                                <span class="badge badge-secondary">{{ $estadoMostrar }}</span>
+                                                        @endswitch
+                                                    @endif
                                                 </td>
                                                 <td>
                                                     @if($cotizacion->tiene_problemas_credito)

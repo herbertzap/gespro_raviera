@@ -9,7 +9,7 @@
                 <div class="card">
                     <div class="card-header card-header-primary">
                         <div class="row">
-                            <div class="col-md-8">
+                            <div class="col-md-6">
                                 <h4 class="card-title">
                                     <i class="material-icons">description</i>
                                     Nota de Venta #{{ $cotizacion->id }}
@@ -18,14 +18,14 @@
                                     Cliente: {{ $cotizacion->cliente_codigo }} - {{ $cotizacion->cliente_nombre }}
                                 </p>
                             </div>
-                            <div class="col-md-4 text-right d-inline-flex items-center">
+                            <div class="col-md-6 text-right d-inline-flex items-center justify-content-end">
                                 <a href="{{ route('aprobaciones.index') }}" class="btn btn-secondary">
                                     <i class="material-icons">arrow_back</i> Volver
                                 </a>
                                 @if(!auth()->user()->hasRole('Picking'))
-                                    <a href="{{ route('clientes.show', $cotizacion->cliente_codigo) }}" class="btn btn-primary ml-2">
+                                    <button type="button" class="btn btn-primary ml-2" onclick="activarTabCliente()" id="btnVerCliente">
                                         <i class="material-icons">person</i> Ver Cliente
-                                    </a>
+                                    </button>
                                 @else
                                     <button onclick="mostrarModalImpresion()" class="btn btn-success ml-2">
                                         <i class="material-icons">print</i> Imprimir Nota de Venta
@@ -137,6 +137,35 @@
             </div>
         @endif
 
+        <!-- Sistema de Tabs -->
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <ul class="nav nav-tabs card-header-tabs" role="tablist">
+                            <li class="nav-item">
+                                <a class="nav-link active" id="tab-nvv" data-toggle="tab" href="#content-nvv" role="tab" aria-controls="content-nvv" aria-selected="true">
+                                    <i class="material-icons">description</i> NVV
+                                </a>
+                            </li>
+                            @if(!auth()->user()->hasRole('Picking'))
+                            <li class="nav-item">
+                                <a class="nav-link" id="tab-cliente" data-toggle="tab" href="#content-cliente" role="tab" aria-controls="content-cliente" aria-selected="false">
+                                    <i class="material-icons">person</i> Cliente
+                                    <span id="cliente-loading" class="ml-2" style="display: none;">
+                                        <i class="material-icons spinner" style="animation: spin 1s linear infinite;">hourglass_empty</i>
+                                    </span>
+                                </a>
+                            </li>
+                            @endif
+                        </ul>
+                    </div>
+                    <div class="card-body">
+                        <div class="tab-content" id="tabContent">
+                            <!-- Tab NVV -->
+                            <div class="tab-pane fade show active" id="content-nvv" role="tabpanel" aria-labelledby="tab-nvv">
+                                <!-- Todo el contenido de la NVV va aquí -->
+                                
         <!-- Información General -->
         <div class="row">
             <div class="col-md-6">
@@ -154,28 +183,40 @@
                                 <p><strong>Fecha:</strong> {{ $cotizacion->fecha->format('d/m/Y H:i') }}</p>
                                 <p><strong>Vendedor:</strong> {{ $cotizacion->user->name ?? 'N/A' }}</p>
                                 <p><strong>Estado:</strong> 
-                                    @switch($cotizacion->estado_aprobacion)
-                                        @case('pendiente')
-                                            <span class="badge badge-warning">Pendiente Supervisor</span>
-                                            @break
-                                        @case('pendiente_picking')
-                                            <span class="badge badge-info">Pendiente Picking</span>
-                                            @break
-                                        @case('aprobada_supervisor')
-                                            <span class="badge badge-success">Aprobada Supervisor</span>
-                                            @break
-                                        @case('aprobada_compras')
-                                            <span class="badge badge-primary">Aprobada Compras</span>
-                                            @break
-                                        @case('aprobada_picking')
-                                            <span class="badge badge-success">Aprobada Picking</span>
-                                            @break
-                                        @case('rechazada')
-                                            <span class="badge badge-danger">Rechazada</span>
-                                            @break
-                                        @default
-                                            <span class="badge badge-secondary">{{ $cotizacion->estado_aprobacion }}</span>
-                                    @endswitch
+                                    @php
+                                        // Verificar primero si es una NVV separada
+                                        $esSeparada = in_array($cotizacion->estado, ['separado_por_compras', 'separado_por_picking']);
+                                        $estadoMostrar = $cotizacion->estado_aprobacion;
+                                    @endphp
+                                    
+                                    @if($esSeparada && $cotizacion->estado === 'separado_por_compras')
+                                        <span class="badge badge-warning">Separado / Pendiente Compras</span>
+                                    @elseif($esSeparada && $cotizacion->estado === 'separado_por_picking')
+                                        <span class="badge badge-warning">Separado / Pendiente Compras</span>
+                                    @else
+                                        @switch($estadoMostrar)
+                                            @case('pendiente')
+                                                <span class="badge badge-warning">Pendiente Supervisor</span>
+                                                @break
+                                            @case('pendiente_picking')
+                                                <span class="badge badge-info">Pendiente Picking</span>
+                                                @break
+                                            @case('aprobada_supervisor')
+                                                <span class="badge badge-success">Aprobada Supervisor</span>
+                                                @break
+                                            @case('aprobada_compras')
+                                                <span class="badge badge-primary">Aprobada Compras</span>
+                                                @break
+                                            @case('aprobada_picking')
+                                                <span class="badge badge-success">Aprobada Picking</span>
+                                                @break
+                                            @case('rechazada')
+                                                <span class="badge badge-danger">Rechazada</span>
+                                                @break
+                                            @default
+                                                <span class="badge badge-secondary">{{ $estadoMostrar }}</span>
+                                        @endswitch
+                                    @endif
                                 </p>
                                 @if($cotizacion->tiene_problemas_credito)
                                     <p><strong>Solicita Descuento Extra:</strong> <span class="badge badge-warning">SÍ</span></p>
@@ -261,7 +302,11 @@
                             <div class="col-md-3">
                                 <div class="text-center">
                                     <h5>Supervisor</h5>
-                                    @if($cotizacion->aprobado_por_supervisor)
+                                    @if($cotizacion->estado_aprobacion === 'rechazada' && $cotizacion->aprobado_por_supervisor)
+                                        <span class="badge badge-danger">Rechazada</span>
+                                        <br><small>{{ $cotizacion->fecha_aprobacion_supervisor ? $cotizacion->fecha_aprobacion_supervisor->format('d/m/Y H:i') : '' }}</small>
+                                        <br><small>Por: {{ $cotizacion->aprobadoPorSupervisor->name ?? 'N/A' }}</small>
+                                    @elseif($cotizacion->aprobado_por_supervisor && $cotizacion->estado_aprobacion !== 'rechazada')
                                         <span class="badge badge-success">Aprobada</span>
                                         <br><small>{{ $cotizacion->fecha_aprobacion_supervisor ? $cotizacion->fecha_aprobacion_supervisor->format('d/m/Y H:i') : '' }}</small>
                                         <br><small>Por: {{ $cotizacion->aprobadoPorSupervisor->name ?? 'N/A' }}</small>
@@ -277,10 +322,16 @@
                             <div class="col-md-3">
                                 <div class="text-center">
                                     <h5>Compras</h5>
-                                    @if($cotizacion->aprobado_por_compras)
+                                    @if($cotizacion->estado_aprobacion === 'rechazada' && $cotizacion->aprobado_por_compras)
+                                        <span class="badge badge-danger">Rechazada</span>
+                                        <br><small>{{ $cotizacion->fecha_aprobacion_compras ? $cotizacion->fecha_aprobacion_compras->format('d/m/Y H:i') : '' }}</small>
+                                        <br><small>Por: {{ $cotizacion->aprobadoPorCompras->name ?? 'N/A' }}</small>
+                                    @elseif($cotizacion->aprobado_por_compras && $cotizacion->estado_aprobacion !== 'rechazada')
                                         <span class="badge badge-success">Aprobada</span>
                                         <br><small>{{ $cotizacion->fecha_aprobacion_compras ? $cotizacion->fecha_aprobacion_compras->format('d/m/Y H:i') : '' }}</small>
                                         <br><small>Por: {{ $cotizacion->aprobadoPorCompras->name ?? 'N/A' }}</small>
+                                    @elseif(in_array($cotizacion->estado, ['separado_por_compras', 'separado_por_picking']) && $cotizacion->estado_aprobacion === 'pendiente')
+                                        <span class="badge badge-warning">Separado / Pendiente</span>
                                     @elseif($cotizacion->tiene_problemas_stock && $cotizacion->estado_aprobacion === 'pendiente')
                                         <span class="badge badge-warning">Pendiente</span>
                                     @elseif($cotizacion->estado_aprobacion === 'aprobada_supervisor' && $cotizacion->tiene_problemas_stock)
@@ -355,8 +406,15 @@
                             @endif
                         </div>
 
-                        <!-- Comentarios de Aprobación -->
-                        @if($cotizacion->comentarios_supervisor || $cotizacion->comentarios_compras || $cotizacion->comentarios_picking)
+                        <!-- Comentarios de Aprobación / Motivo de Rechazo -->
+                        @if($cotizacion->estado_aprobacion === 'rechazada' && $cotizacion->motivo_rechazo)
+                            <hr>
+                            <h6>Motivo del Rechazo:</h6>
+                            <div class="alert alert-danger">
+                                <strong><i class="material-icons">cancel</i> Rechazada:</strong><br>
+                                {{ $cotizacion->motivo_rechazo }}
+                            </div>
+                        @elseif($cotizacion->comentarios_supervisor || $cotizacion->comentarios_compras || $cotizacion->comentarios_picking)
                             <hr>
                             <h6>Comentarios de Aprobación:</h6>
                             <div class="row">
@@ -495,7 +553,7 @@
                                                     ${{ number_format($producto->precio_unitario, 0) }}
                                                 </td>
                                                 <td>
-                                                    @if(Auth::user()->hasRole('Supervisor') && $cotizacion->puedeAprobarSupervisor())
+                                                    @if(Auth::user()->hasRole('Supervisor') && $cotizacion->puedeAprobarSupervisor() && $cotizacion->estado_aprobacion !== 'rechazada')
                                                         <input type="number" 
                                                                class="form-control form-control-sm descuento-porcentaje" 
                                                                value="{{ $producto->descuento_porcentaje ?? 0 }}" 
@@ -604,17 +662,45 @@
         </div>
 
         <!-- Problemas Identificados -->
-        @if($cotizacion->tiene_problemas_credito || $cotizacion->tiene_problemas_stock)
+        @if($cotizacion->tiene_problemas_credito || $cotizacion->tiene_problemas_stock || $cotizacion->estado_aprobacion === 'rechazada')
             <div class="row">
                 <div class="col-md-12">
                     <div class="card">
-                        <div class="card-header card-header-danger">
+                        <div class="card-header {{ $cotizacion->estado_aprobacion === 'rechazada' ? 'card-header-danger' : 'card-header-danger' }}">
                             <h4 class="card-title">
-                                <i class="material-icons">warning</i>
-                                Problemas Identificados
+                                <i class="material-icons">{{ $cotizacion->estado_aprobacion === 'rechazada' ? 'cancel' : 'warning' }}</i>
+                                @if($cotizacion->estado_aprobacion === 'rechazada')
+                                    Nota de Venta Rechazada
+                                @else
+                                    Problemas Identificados
+                                @endif
                             </h4>
                         </div>
                         <div class="card-body">
+                            @if($cotizacion->estado_aprobacion === 'rechazada')
+                                <div class="alert alert-danger">
+                                    <h6><i class="material-icons">cancel</i> Motivo del Rechazo</h6>
+                                    <p><strong>{{ $cotizacion->motivo_rechazo ?? 'No se especificó motivo' }}</strong></p>
+                                    @if($cotizacion->fecha_aprobacion_supervisor || $cotizacion->fecha_aprobacion_compras || $cotizacion->fecha_aprobacion_picking)
+                                        <p class="text-muted mt-2">
+                                            <small>
+                                                Rechazada el: 
+                                                @if($cotizacion->fecha_aprobacion_supervisor)
+                                                    {{ $cotizacion->fecha_aprobacion_supervisor->format('d/m/Y H:i') }}
+                                                    por Supervisor
+                                                @elseif($cotizacion->fecha_aprobacion_compras)
+                                                    {{ $cotizacion->fecha_aprobacion_compras->format('d/m/Y H:i') }}
+                                                    por Compras
+                                                @elseif($cotizacion->fecha_aprobacion_picking)
+                                                    {{ $cotizacion->fecha_aprobacion_picking->format('d/m/Y H:i') }}
+                                                    por Picking
+                                                @endif
+                                            </small>
+                                        </p>
+                                    @endif
+                                </div>
+                            @endif
+
                             @if($cotizacion->tiene_problemas_credito)
                                 <div class="alert alert-danger">
                                     <h6><i class="material-icons">credit_card_off</i> Problemas de Crédito</h6>
@@ -635,10 +721,11 @@
         @endif
 
         <!-- Botones de Acción -->
-        @if(($cotizacion->puedeAprobarSupervisor() && Auth::user()->hasRole('Supervisor')) || 
+        @if($cotizacion->estado_aprobacion !== 'rechazada' && 
+            (($cotizacion->puedeAprobarSupervisor() && Auth::user()->hasRole('Supervisor')) || 
             ($cotizacion->puedeAprobarCompras() && Auth::user()->hasRole('Compras')) || 
             ($cotizacion->puedeAprobarPicking() && Auth::user()->hasRole('Picking')) ||
-            ($cotizacion->estado_aprobacion === 'pendiente_entrega' && Auth::user()->hasRole('Picking')))
+            ($cotizacion->estado_aprobacion === 'pendiente_entrega' && Auth::user()->hasRole('Picking'))))
             <div class="row">
                 <div class="col-md-12">
                     <div class="card">
@@ -719,6 +806,30 @@
             </div>
         @endif
 
+                            </div>
+                            <!-- Fin Tab NVV -->
+
+                            <!-- Tab Cliente -->
+                            @if(!auth()->user()->hasRole('Picking'))
+                            <div class="tab-pane fade" id="content-cliente" role="tabpanel" aria-labelledby="tab-cliente">
+                                <div id="cliente-content">
+                                    <div class="text-center py-5">
+                                        <div class="spinner-border text-primary" role="status">
+                                            <span class="sr-only">Cargando información del cliente...</span>
+                                        </div>
+                                        <p class="mt-3 text-muted">Cargando información del cliente...</p>
+                                    </div>
+                                </div>
+                            </div>
+                            @endif
+                            <!-- Fin Tab Cliente -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Fin Sistema de Tabs -->
+
     </div>
 </div>
 
@@ -762,6 +873,117 @@ $(document).ready(function() {
     $('#modalExitoNVV').modal('show');
 });
 @endif
+
+// Variables globales
+let clienteCargado = false;
+const clienteCodigo = '{{ $cotizacion->cliente_codigo }}';
+const esSupervisor = {{ auth()->user()->hasRole('Supervisor') ? 'true' : 'false' }};
+
+// Función para activar el tab del cliente
+function activarTabCliente() {
+    // Cambiar al tab cliente
+    $('#tab-cliente').tab('show');
+    
+    // Si no está cargado, cargarlo
+    if (!clienteCargado) {
+        cargarInfoCliente();
+    }
+}
+
+// Función para cargar información del cliente vía AJAX
+function cargarInfoCliente() {
+    const clienteContent = document.getElementById('cliente-content');
+    const clienteLoading = document.getElementById('cliente-loading');
+    
+    if (clienteLoading) {
+        clienteLoading.style.display = 'inline-block';
+    }
+    
+    // Mostrar spinner mientras carga
+    clienteContent.innerHTML = `
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="sr-only">Cargando información del cliente...</span>
+            </div>
+            <p class="mt-3 text-muted">Cargando información del cliente...</p>
+        </div>
+    `;
+    
+    fetch('{{ route("clientes.info-ajax", ":codigo") }}'.replace(':codigo', clienteCodigo), {
+        method: 'GET',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Error en la respuesta del servidor: ' + response.status);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            clienteContent.innerHTML = data.html;
+            clienteCargado = true;
+        } else {
+            clienteContent.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="material-icons">error</i>
+                    ${data.message || 'Error al cargar información del cliente'}
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        console.error('Error al cargar información del cliente:', error);
+        clienteContent.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="material-icons">error</i>
+                Error al cargar información del cliente. Por favor, intente nuevamente.
+            </div>
+        `;
+    })
+    .finally(() => {
+        if (clienteLoading) {
+            clienteLoading.style.display = 'none';
+        }
+    });
+}
+
+// Pre-cargar información del cliente si es Supervisor
+@if(auth()->user()->hasRole('Supervisor'))
+$(document).ready(function() {
+    // Precargar información del cliente en segundo plano
+    setTimeout(function() {
+        cargarInfoCliente();
+    }, 1000);
+});
+@endif
+
+// Event listener para cuando se cambia de tab
+$('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+    const targetTab = $(e.target).attr('href'); // e.target es el tab activo
+    
+    // Si se activa el tab cliente y no está cargado, cargarlo
+    if (targetTab === '#content-cliente' && !clienteCargado) {
+        cargarInfoCliente();
+    }
+});
+
+// Estilo para spinner
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    .spinner {
+        animation: spin 1s linear infinite;
+    }
+`;
+document.head.appendChild(style);
 </script>
 @endpush
 
@@ -954,25 +1176,31 @@ function aprobarNota(notaId, tipo) {
 function rechazarNota(notaId) {
     const motivo = prompt('¿Cuál es el motivo del rechazo?');
     if (motivo && motivo.trim() !== '') {
-        // Crear formulario y enviar
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = `/aprobaciones/${notaId}/rechazar`;
-        
-        const csrfToken = document.createElement('input');
-        csrfToken.type = 'hidden';
-        csrfToken.name = '_token';
-        csrfToken.value = '{{ csrf_token() }}';
-        
-        const motivoInput = document.createElement('input');
-        motivoInput.type = 'hidden';
-        motivoInput.name = 'motivo';
-        motivoInput.value = motivo.trim();
-        
-        form.appendChild(csrfToken);
-        form.appendChild(motivoInput);
-        document.body.appendChild(form);
-        form.submit();
+        // Usar AJAX para rechazar
+        fetch(`/aprobaciones/${notaId}/rechazar`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                motivo: motivo.trim()
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Redirigir a la página de aprobaciones
+                window.location.href = '{{ route("aprobaciones.index") }}';
+            } else {
+                alert('Error al rechazar la nota de venta: ' + (data.error || data.message || 'Error desconocido'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error al rechazar la nota de venta. Por favor, intente nuevamente.');
+        });
     }
 }
 
@@ -1367,12 +1595,11 @@ function separarProductosSeleccionados() {
     const totalCantidades = productosConSeparar.reduce((sum, p) => sum + p.cantidad, 0);
     
     if (confirm(`¿Estás seguro de que quieres separar ${totalProductos} productos (${totalCantidades} unidades totales) en una nueva NVV?`)) {
-        // Separar cada producto individualmente
-        let separacionesExitosas = 0;
-        let separacionesFallidas = 0;
+        console.log('Iniciando separación de productos...', productosConSeparar);
         
-        productosConSeparar.forEach((producto, index) => {
-            fetch('{{ route("aprobaciones.separar-producto-individual", $cotizacion->id) }}', {
+        // Primero guardar todas las cantidades a separar
+        const promesasGuardar = productosConSeparar.map(producto => {
+            return fetch('{{ route("aprobaciones.guardar-separar", $cotizacion->id) }}', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1380,46 +1607,93 @@ function separarProductosSeleccionados() {
                 },
                 body: JSON.stringify({
                     producto_id: producto.id,
-                    motivo: 'Separación múltiple de productos por Compras'
+                    cantidad_separar: producto.cantidad
                 })
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    separacionesExitosas++;
+                    console.log(`Cantidad guardada para producto ${producto.id}`);
+                    return { success: true, producto_id: producto.id };
                 } else {
-                    separacionesFallidas++;
-                }
-                
-                // Si es el último producto, mostrar resultado final
-                if (index === productosConSeparar.length - 1) {
-                    if (separacionesExitosas === totalProductos) {
-                        showNotification(`Todos los productos separados correctamente (${separacionesExitosas} productos)`, 'success');
-                    } else if (separacionesExitosas > 0) {
-                        showNotification(`Separación parcial: ${separacionesExitosas} exitosas, ${separacionesFallidas} fallidas`, 'warning');
-                    } else {
-                        showNotification('Error al separar todos los productos', 'error');
-                    }
-                    
-                    // Recargar la página después de un momento
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 2000);
+                    console.error('Error guardando cantidad:', data.error);
+                    return { success: false, producto_id: producto.id, error: data.error };
                 }
             })
             .catch(error => {
-                console.error('Error:', error);
-                separacionesFallidas++;
-                
-                // Si es el último producto, mostrar resultado final
-                if (index === productosConSeparar.length - 1) {
-                    showNotification(`Error en la separación: ${separacionesExitosas} exitosas, ${separacionesFallidas} fallidas`, 'error');
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 2000);
-                }
+                console.error('Error guardando cantidad:', error);
+                return { success: false, producto_id: producto.id, error: error.message };
             });
         });
+        
+        // Esperar a que todas las cantidades se guarden
+        Promise.all(promesasGuardar)
+            .then(resultadosGuardar => {
+                const fallidos = resultadosGuardar.filter(r => !r.success);
+                if (fallidos.length > 0) {
+                    showNotification(`Error guardando cantidades: ${fallidos.length} productos fallaron`, 'error');
+                    return;
+                }
+                
+                console.log('Todas las cantidades guardadas, iniciando separación...');
+                
+                // Ahora separar todos los productos
+                const promesasSeparar = resultadosGuardar.map(resultado => {
+                    return fetch('{{ route("aprobaciones.separar-producto-individual", $cotizacion->id) }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                        },
+                        body: JSON.stringify({
+                            producto_id: resultado.producto_id,
+                            motivo: 'Separación múltiple de productos por Compras'
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            console.log(`Producto ${resultado.producto_id} separado exitosamente`);
+                            return { success: true };
+                        } else {
+                            console.error('Error separando producto:', data.error);
+                            return { success: false, error: data.error };
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error separando producto:', error);
+                        return { success: false, error: error.message };
+                    });
+                });
+                
+                // Esperar a que todas las separaciones terminen
+                Promise.all(promesasSeparar)
+                    .then(resultadosSeparar => {
+                        const exitosas = resultadosSeparar.filter(r => r.success).length;
+                        const fallidas = resultadosSeparar.filter(r => !r.success).length;
+                        
+                        if (exitosas === totalProductos) {
+                            showNotification(`Todos los productos separados correctamente (${exitosas} productos)`, 'success');
+                        } else if (exitosas > 0) {
+                            showNotification(`Separación parcial: ${exitosas} exitosas, ${fallidas} fallidas`, 'warning');
+                        } else {
+                            showNotification('Error al separar todos los productos', 'error');
+                        }
+                        
+                        // Recargar la página después de un momento
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 2000);
+                    })
+                    .catch(error => {
+                        console.error('Error en separación:', error);
+                        showNotification('Error al separar productos: ' + error.message, 'error');
+                    });
+            })
+            .catch(error => {
+                console.error('Error guardando cantidades:', error);
+                showNotification('Error al guardar cantidades a separar: ' + error.message, 'error');
+            });
     }
 }
 

@@ -45,7 +45,7 @@ class FacturasPendientesController extends Controller
             'dias_max' => $request->get('dias_max', ''),
             'fecha_desde' => $request->get('fecha_desde', ''),
             'fecha_hasta' => $request->get('fecha_hasta', ''),
-            'vendedores' => $request->get('vendedores', []), // Para supervisor
+            'vendedor' => $request->get('vendedor', ''), // Para supervisor (select simple)
             'ordenar_por' => $request->get('ordenar_por', 'NRO_DOCTO'),
             'orden' => $request->get('orden', 'desc'),
             'por_pagina' => $request->get('por_pagina', 10)
@@ -59,6 +59,12 @@ class FacturasPendientesController extends Controller
 
         // Obtener datos de facturas pendientes con paginación
         $facturasPendientes = $this->cobranzaService->getFacturasPendientes($codigoVendedor, 1000);
+        
+        // Obtener lista de clientes únicos para el select (antes de filtrar)
+        $clientes = $this->obtenerClientesUnicos($facturasPendientes);
+        
+        // Obtener lista de vendedores únicos con código y nombre
+        $vendedores = $this->obtenerVendedoresUnicos($facturasPendientes);
         
         // Aplicar filtros
         $facturasFiltradas = $this->aplicarFiltrosFacturas($facturasPendientes, $filtros);
@@ -83,6 +89,8 @@ class FacturasPendientesController extends Controller
             'facturasPendientes' => $facturasPaginated,
             'resumen' => $resumen,
             'filtros' => $filtros,
+            'clientes' => $clientes,
+            'vendedores' => $vendedores,
             'tipoUsuario' => $user->hasRole('Vendedor') ? 'Vendedor' : 'Administrador',
             'pageSlug' => 'facturas-pendientes'
         ]);
@@ -171,7 +179,7 @@ class FacturasPendientesController extends Controller
             'saldo_max' => $request->get('saldo_max', ''),
             'fecha_desde' => $request->get('fecha_desde', ''),
             'fecha_hasta' => $request->get('fecha_hasta', ''),
-            'vendedores' => $request->get('vendedores', [])
+            'vendedor' => $request->get('vendedor', '')
         ];
         
         $facturasFiltradas = $this->aplicarFiltrosFacturas($facturasPendientes, $filtros);
@@ -393,11 +401,12 @@ class FacturasPendientesController extends Controller
             });
         }
 
-        // Filtrar por cliente
+        // Filtrar por cliente (código exacto del select)
         if (!empty($filtros['cliente'])) {
-            $cliente = strtolower($filtros['cliente']);
-            $facturasPendientes = array_filter($facturasPendientes, function($factura) use ($cliente) {
-                return strpos(strtolower($factura['CLIENTE'] ?? ''), $cliente) !== false;
+            $clienteCodigo = strtolower($filtros['cliente']);
+            $facturasPendientes = array_filter($facturasPendientes, function($factura) use ($clienteCodigo) {
+                $codigoFactura = strtolower($factura['CODIGO'] ?? '');
+                return $codigoFactura === $clienteCodigo;
             });
         }
 
@@ -438,12 +447,12 @@ class FacturasPendientesController extends Controller
             });
         }
 
-        // Filtrar por vendedores (para supervisor)
-        if (!empty($filtros['vendedores']) && is_array($filtros['vendedores'])) {
-            $vendedores = $filtros['vendedores'];
-            $facturasPendientes = array_filter($facturasPendientes, function($factura) use ($vendedores) {
-                $vendedor = $factura['VENDEDOR'] ?? '';
-                return in_array($vendedor, $vendedores);
+        // Filtrar por vendedor (para supervisor)
+        if (!empty($filtros['vendedor'])) {
+            $vendedorFiltro = $filtros['vendedor'];
+            $facturasPendientes = array_filter($facturasPendientes, function($factura) use ($vendedorFiltro) {
+                $codigoVendedor = $factura['COD_VEN'] ?? '';
+                return $codigoVendedor === $vendedorFiltro;
             });
         }
 
@@ -502,5 +511,64 @@ class FacturasPendientesController extends Controller
         }
         
         return $fechaSqlServer;
+    }
+
+    /**
+     * Obtener lista de clientes únicos para el select
+     */
+    private function obtenerClientesUnicos($facturasPendientes)
+    {
+        $clientes = [];
+        $clientesMap = [];
+        
+        foreach ($facturasPendientes as $factura) {
+            $codigo = $factura['CODIGO'] ?? '';
+            $nombre = $factura['CLIENTE'] ?? '';
+            
+            if (!empty($codigo) && !isset($clientesMap[$codigo])) {
+                $clientesMap[$codigo] = true;
+                $clientes[] = [
+                    'codigo' => $codigo,
+                    'nombre' => $nombre
+                ];
+            }
+        }
+        
+        // Ordenar por nombre
+        usort($clientes, function($a, $b) {
+            return strcmp($a['nombre'], $b['nombre']);
+        });
+        
+        return $clientes;
+    }
+
+    /**
+     * Obtener lista de vendedores únicos para el select
+     */
+    private function obtenerVendedoresUnicos($facturasPendientes)
+    {
+        $vendedores = [];
+        $vendedoresMap = [];
+
+        foreach ($facturasPendientes as $factura) {
+            // Las facturas tienen COD_VEN (código) y VENDEDOR (nombre)
+            $codigo = $factura['COD_VEN'] ?? '';
+            $nombre = $factura['VENDEDOR'] ?? '';
+            
+            if (!empty($codigo) && !isset($vendedoresMap[$codigo])) {
+                $vendedoresMap[$codigo] = true;
+                $vendedores[] = [
+                    'codigo' => $codigo,
+                    'nombre' => !empty($nombre) ? $nombre : $codigo
+                ];
+            }
+        }
+        
+        // Ordenar por código
+        usort($vendedores, function($a, $b) {
+            return strcmp($a['codigo'], $b['codigo']);
+        });
+        
+        return $vendedores;
     }
 }

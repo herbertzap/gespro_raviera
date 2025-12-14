@@ -19,8 +19,13 @@ class SincronizarClientesMiddleware
      */
     public function handle(Request $request, Closure $next)
     {
-        // Solo aplicar a usuarios autenticados con rol de vendedor
-        if (!auth()->check() || !auth()->user()->hasRole('Vendedor')) {
+        // Aplicar a usuarios autenticados con rol de vendedor o supervisor
+        if (!auth()->check()) {
+            return $next($request);
+        }
+        
+        $user = auth()->user();
+        if (!$user->hasRole('Vendedor') && !$user->hasRole('Supervisor') && !$user->hasRole('Super Admin')) {
             return $next($request);
         }
 
@@ -52,7 +57,7 @@ class SincronizarClientesMiddleware
         }
 
         $user = auth()->user();
-        $codigoVendedor = $user->codigo_vendedor ?? 'GOP';
+        $codigoVendedor = $user->codigo_vendedor ?? null; // Puede ser null para supervisor
         
         // Crear clave única para el usuario y fecha
         $cacheKey = "sincronizacion_clientes_{$user->id}_" . date('Y-m-d');
@@ -60,7 +65,8 @@ class SincronizarClientesMiddleware
         // Verificar si ya se sincronizó hoy
         if (!Cache::has($cacheKey)) {
             try {
-                Log::info("🔄 Sincronización automática de clientes para vendedor: {$codigoVendedor} en ruta: {$rutaActual}");
+                $rolUsuario = $user->roles->first()->name ?? 'Usuario';
+                Log::info("🔄 Sincronización automática para {$rolUsuario}: " . ($codigoVendedor ?? 'todos') . " en ruta: {$rutaActual}");
                 
                 // Ejecutar sincronización en segundo plano para no bloquear la respuesta
                 $this->sincronizarEnSegundoPlano($codigoVendedor, $cacheKey);
@@ -68,7 +74,7 @@ class SincronizarClientesMiddleware
                 // Marcar como sincronizado (con TTL de 24 horas)
                 Cache::put($cacheKey, true, now()->addHours(24));
                 
-                Log::info("✅ Sincronización automática iniciada para vendedor: {$codigoVendedor}");
+                Log::info("✅ Sincronización automática iniciada para {$rolUsuario}: " . ($codigoVendedor ?? 'todos'));
                 
             } catch (\Exception $e) {
                 Log::error("❌ Error en sincronización automática: " . $e->getMessage());
@@ -87,30 +93,41 @@ class SincronizarClientesMiddleware
         // Usar dispatch para ejecutar en segundo plano
         dispatch(function () use ($codigoVendedor, $cacheKey) {
             try {
-                // Sincronizar clientes
-                $resultado = \App\Console\Commands\SincronizarClientesSimple::sincronizarVendedorDirecto($codigoVendedor);
-                
-                if ($resultado['success']) {
-                    Log::info("✅ Sincronización automática de clientes completada: {$resultado['nuevos']} nuevos, {$resultado['actualizados']} actualizados");
+                // Solo sincronizar clientes si hay código de vendedor (vendedores)
+                if ($codigoVendedor) {
+                    // Sincronizar clientes
+                    $resultado = \App\Console\Commands\SincronizarClientesSimple::sincronizarVendedorDirecto($codigoVendedor);
                     
-                    // Sincronizar productos después de sincronizar clientes
-                    try {
-                        $stockService = new \App\Services\StockService();
-                        $productosSincronizados = $stockService->sincronizarStockDesdeSQLServer();
-                        Log::info("✅ Sincronización automática de productos completada: {$productosSincronizados} productos actualizados");
-                    } catch (\Exception $e) {
-                        Log::error("❌ Error sincronizando productos: " . $e->getMessage());
-                        // No remover cache de clientes si falla productos
+                    if ($resultado['success']) {
+                        Log::info("✅ Sincronización automática de clientes completada: {$resultado['nuevos']} nuevos, {$resultado['actualizados']} actualizados");
+                    } else {
+                        Log::error("❌ Error en sincronización automática de clientes: " . $resultado['message']);
+                        // Continuar con otros procesos aunque falle clientes
                     }
-                } else {
-                    Log::error("❌ Error en sincronización automática de clientes: " . $resultado['message']);
-                    // Remover cache para permitir reintento
-                    Cache::forget($cacheKey);
+                }
+                
+                // Sincronizar productos (para todos)
+                try {
+                    $stockService = new \App\Services\StockService();
+                    $productosSincronizados = $stockService->sincronizarStockDesdeSQLServer();
+                    Log::info("✅ Sincronización automática de productos completada: {$productosSincronizados} productos actualizados");
+                } catch (\Exception $e) {
+                    Log::error("❌ Error sincronizando productos: " . $e->getMessage());
+                    // Continuar con cheques aunque falle productos
+                }
+                
+                // Sincronizar cheques protestados (para todos, sin filtro de vendedor para que quede completo)
+                try {
+                    \App\Console\Commands\SincronizarChequesProtestados::sincronizarDirecto(null);
+                    Log::info("✅ Sincronización automática de cheques protestados completada");
+                } catch (\Exception $e) {
+                    Log::error("❌ Error sincronizando cheques protestados: " . $e->getMessage());
+                    // No remover cache si falla cheques, es opcional
                 }
                 
             } catch (\Exception $e) {
                 Log::error("❌ Error en sincronización automática: " . $e->getMessage());
-                // Remover cache para permitir reintento
+                // Remover cache para permitir reintento solo en errores críticos
                 Cache::forget($cacheKey);
             }
         })->afterResponse();

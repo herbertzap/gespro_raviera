@@ -189,38 +189,41 @@
                                             @endif
                                         </a>
                                     </th>
-                                    <th>Teléfono</th>
-                                    <th>Dirección</th>
                                     <th>Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @forelse($clientes ?? [] as $cliente)
                                 <tr>
-                                    <td>
+                                    <td style="background-color: #2c3e50;">
                                         @if(isset($cliente['BLOQUEADO']) && $cliente['BLOQUEADO'] == 1)
-                                            <span class="text-muted">{{ $cliente['CODIGO_CLIENTE'] }}</span>
+                                            <span class="text-muted" style="font-size: 15px;">{{ $cliente['CODIGO_CLIENTE'] }}</span>
                                         @else
                                             <a href="{{ route('cliente.show', $cliente['CODIGO_CLIENTE']) }}" 
-                                               class="text-primary font-weight-bold" 
+                                               class="font-weight-bold" 
+                                               style="color: #ffffff; font-size: 15px; text-decoration: none;" 
+                                               onmouseover="this.style.color='#e0e0e0'" 
+                                               onmouseout="this.style.color='#ffffff'"
                                                title="Ver información de {{ $cliente['NOMBRE_CLIENTE'] }}">
                                                 {{ $cliente['CODIGO_CLIENTE'] }}
                                             </a>
                                         @endif
                                     </td>
-                                    <td>
+                                    <td style="background-color: #2c3e50;">
                                         <div>
                                             @if(isset($cliente['BLOQUEADO']) && $cliente['BLOQUEADO'] == 1)
-                                                <span class="text-muted">{{ $cliente['NOMBRE_CLIENTE'] }}</span>
+                                                <span class="text-muted" style="font-size: 15px;">{{ $cliente['NOMBRE_CLIENTE'] }}</span>
                                             @else
                                                 <a href="{{ route('cliente.show', $cliente['CODIGO_CLIENTE']) }}" 
-                                                   class="text-primary" 
+                                                   style="color: #ffffff; font-size: 15px; text-decoration: none; font-weight: 500;" 
+                                                   onmouseover="this.style.color='#e0e0e0'" 
+                                                   onmouseout="this.style.color='#ffffff'"
                                                    title="Ver información de {{ $cliente['NOMBRE_CLIENTE'] }}">
                                                     {{ $cliente['NOMBRE_CLIENTE'] }}
                                                 </a>
                                             @endif
                                             <br>
-                                            <small class="text-muted">{{ $cliente['REGION'] }} - {{ $cliente['COMUNA'] }}</small>
+                                            <small style="color: #b0bec5;">{{ $cliente['REGION'] }} - {{ $cliente['COMUNA'] }}</small>
                                         </div>
                                     </td>
                                     <td>
@@ -258,12 +261,6 @@
                                         @endif
                                     </td>
                                     <td>
-                                        <small>{{ $cliente['TELEFONO'] ?? 'N/A' }}</small>
-                                    </td>
-                                    <td>
-                                        <small class="text-muted">{{ Str::limit($cliente['DIRECCION'] ?? 'N/A', 30) }}</small>
-                                    </td>
-                                    <td>
                                         <div class="btn-group" role="group">
                                             <a href="{{ route('cliente.show', $cliente['CODIGO_CLIENTE']) }}" 
                                                class="btn btn-sm btn-outline-primary"
@@ -288,7 +285,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="8" class="text-center">
+                                    <td colspan="6" class="text-center">
                                         <div class="alert alert-info">
                                             <i class="material-icons">info</i>
                                             No se encontraron clientes con los filtros aplicados

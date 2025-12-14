@@ -195,12 +195,19 @@ class DashboardController extends Controller
             // 9. CHEQUES PROTESTADOS - TODOS los cheques protestados del sistema
             $chequesProtestados = $this->cobranzaService->getChequesProtestados(null);
 
+            // Calcular valor total de facturas del mes actual (no pagadas)
+            $valorTotalFacturasMesActual = 0;
+            foreach ($facturasMesActual as $factura) {
+                $valorTotalFacturasMesActual += floatval($factura['SALDO'] ?? $factura['VALOR'] ?? 0);
+            }
+            
             // Resumen para las tarjetas principales
             $resumenCobranza = [
                 'TOTAL_FACTURAS_PENDIENTES' => $totalFacturasPendientes, // Total real, no solo 10
                 'TOTAL_NOTAS_VENTA_SQL' => $this->cobranzaService->getTotalNotasVentaSQL(),
                 'TOTAL_NOTAS_VENTA_MES_ACTUAL' => $nvvMesActual,
                 'TOTAL_FACTURAS_MES_ACTUAL' => count($facturasMesActual),
+                'VALOR_TOTAL_FACTURAS_MES_ACTUAL' => $valorTotalFacturasMesActual, // Nuevo: valor total mensual
                 'TOTAL_NOTAS_PENDIENTES_VALIDAR' => $notasPendientesSupervisor,
                 'TOTAL_FACTURAS' => $totalFacturasPendientes,
                 'TOTAL_NOTAS_VENTA' => $this->cobranzaService->getTotalNotasVentaSQL(),
@@ -211,12 +218,62 @@ class DashboardController extends Controller
                                    ($resumenFacturasPendientes['por_estado']['BLOQUEAR']['valor'] ?? 0)
             ];
 
+            // Obtener cheques en cartera (detalle) desde SQL Server con paginación
+            $pageCartera = request()->get('page_cartera', 1);
+            $pageProtestados = request()->get('page_protestados', 1);
+            $perPage = 10;
+            
+            // Obtener cheques en cartera con paginación (usando método que acepta offset)
+            $chequesEnCarteraResult = $this->cobranzaService->getChequesEnCarteraDetalle(null, $perPage, ($pageCartera - 1) * $perPage);
+            $chequesEnCarteraDetalle = is_array($chequesEnCarteraResult) && isset($chequesEnCarteraResult['data']) ? $chequesEnCarteraResult['data'] : $chequesEnCarteraResult;
+            $chequesEnCarteraPagination = null;
+            
+            // Si el resultado tiene estructura de paginación, usar esos datos
+            if (is_array($chequesEnCarteraResult) && isset($chequesEnCarteraResult['total'])) {
+                $chequesEnCarteraPagination = [
+                    'current_page' => $chequesEnCarteraResult['current_page'] ?? $pageCartera,
+                    'last_page' => $chequesEnCarteraResult['last_page'] ?? 1,
+                    'total' => $chequesEnCarteraResult['total'] ?? count($chequesEnCarteraDetalle),
+                    'per_page' => $perPage
+                ];
+            }
+            
+            // Obtener cheques protestados con paginación
+            $totalProtestados = \DB::table('cheques_protestados')->count();
+            $chequesProtestadosDetalle = \DB::table('cheques_protestados')
+                ->orderBy('fecha_vencimiento', 'desc')
+                ->offset(($pageProtestados - 1) * $perPage)
+                ->limit($perPage)
+                ->get()
+                ->map(function($cheque) {
+                    return [
+                        'numero' => $cheque->numero_documento ?? '',
+                        'cliente' => $cheque->nombre_cliente ?? '',
+                        'codigo_cliente' => $cheque->codigo_cliente ?? '',
+                        'valor' => $cheque->valor ?? 0,
+                        'fecha_vencimiento' => $cheque->fecha_vencimiento ?? null,
+                        'vendedor' => $cheque->nombre_vendedor ?? ''
+                    ];
+                })
+                ->toArray();
+            
+            $chequesProtestadosPagination = [
+                'current_page' => $pageProtestados,
+                'last_page' => ceil($totalProtestados / $perPage),
+                'total' => $totalProtestados,
+                'per_page' => $perPage
+            ];
+
             return [
                 'notasPendientes' => $notasPendientes,
                 'notasVentaSQL' => $notasVentaSQL,
                 'facturasPendientes' => $facturasPendientes, // Solo 10 para la tabla
                 'resumenFacturasPendientes' => $resumenFacturasPendientes, // Resumen completo
                 'resumenCobranza' => $resumenCobranza,
+                'chequesEnCarteraDetalle' => $chequesEnCarteraDetalle,
+                'chequesProtestadosDetalle' => $chequesProtestadosDetalle,
+                'chequesEnCarteraPagination' => $chequesEnCarteraPagination,
+                'chequesProtestadosPagination' => $chequesProtestadosPagination,
                 'tipoUsuario' => 'Supervisor'
             ];
 
@@ -252,6 +309,73 @@ class DashboardController extends Controller
                 ],
                 'tipoUsuario' => 'Supervisor'
             ];
+        }
+    }
+
+    /**
+     * Obtener cheques paginados vía AJAX
+     */
+    public function getCheques()
+    {
+        try {
+            $tipo = request()->get('tipo', 'cartera'); // 'cartera' o 'protestados'
+            $page = (int)request()->get('page', 1);
+            $perPage = 10;
+            
+            if ($tipo === 'cartera') {
+                // Obtener cheques en cartera con paginación
+                $chequesResult = $this->cobranzaService->getChequesEnCarteraDetalle(null, $perPage, ($page - 1) * $perPage);
+                $cheques = is_array($chequesResult) && isset($chequesResult['data']) ? $chequesResult['data'] : $chequesResult;
+                $pagination = null;
+                
+                if (is_array($chequesResult) && isset($chequesResult['total'])) {
+                    $pagination = [
+                        'current_page' => $chequesResult['current_page'] ?? $page,
+                        'last_page' => $chequesResult['last_page'] ?? 1,
+                        'total' => $chequesResult['total'] ?? count($cheques),
+                        'per_page' => $perPage
+                    ];
+                }
+            } else {
+                // Obtener cheques protestados con paginación
+                $total = \DB::table('cheques_protestados')->count();
+                $cheques = \DB::table('cheques_protestados')
+                    ->orderBy('fecha_vencimiento', 'desc')
+                    ->offset(($page - 1) * $perPage)
+                    ->limit($perPage)
+                    ->get()
+                    ->map(function($cheque) {
+                        return [
+                            'numero' => $cheque->numero_documento ?? '',
+                            'cliente' => mb_convert_encoding($cheque->nombre_cliente ?? '', 'UTF-8', 'ISO-8859-1'),
+                            'codigo_cliente' => $cheque->codigo_cliente ?? '',
+                            'valor' => $cheque->valor ?? 0,
+                            'fecha_vencimiento' => $cheque->fecha_vencimiento ?? null,
+                            'vendedor' => mb_convert_encoding($cheque->nombre_vendedor ?? '', 'UTF-8', 'ISO-8859-1')
+                        ];
+                    })
+                    ->toArray();
+                
+                $pagination = [
+                    'current_page' => $page,
+                    'last_page' => ceil($total / $perPage),
+                    'total' => $total,
+                    'per_page' => $perPage
+                ];
+            }
+            
+            return response()->json([
+                'success' => true,
+                'cheques' => $cheques,
+                'pagination' => $pagination
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo cheques para dashboard: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener cheques: ' . $e->getMessage()
+            ], 500);
         }
     }
 
@@ -331,7 +455,7 @@ class DashboardController extends Controller
             $buscar = strtolower($filtros['buscar']);
             $terminos = array_filter(explode(' ', trim($buscar)));
             
-            $clientes = array_filter($clientes, function($cliente) use ($terminos) {
+            $clientes = array_filter($clientes, function($cliente) use ($terminos, $buscar) {
                 $codigoCliente = strtolower($cliente['CODIGO_CLIENTE']);
                 $nombreCliente = strtolower($cliente['NOMBRE_CLIENTE']);
                 
@@ -1035,6 +1159,15 @@ class DashboardController extends Controller
                 ->get();
 
             return $cotizaciones->map(function($cotizacion) {
+                // Verificar si viene de una separación
+                $esSeparada = !is_null($cotizacion->nota_original_id);
+                
+                // Si viene de separación y está pendiente, mostrar estado especial
+                $estadoMostrar = $cotizacion->estado_aprobacion;
+                if ($esSeparada && $cotizacion->estado_aprobacion === 'pendiente') {
+                    $estadoMostrar = 'separado_pendiente_compras';
+                }
+                
                 return [
                     'id' => $cotizacion->id,
                     'numero' => 'N°' . $cotizacion->id,
@@ -1046,7 +1179,9 @@ class DashboardController extends Controller
                     'productos_count' => $cotizacion->productos->count(),
                     'tiene_problemas_stock' => $cotizacion->tiene_problemas_stock ?? false,
                     'tiene_problemas_credito' => $cotizacion->tiene_problemas_credito ?? false,
-                    'estado' => $cotizacion->estado_aprobacion,
+                    'estado' => $estadoMostrar,
+                    'es_separada' => $esSeparada,
+                    'nota_original_id' => $cotizacion->nota_original_id,
                     'url' => route('aprobaciones.show', $cotizacion->id)
                 ];
             })->toArray();

@@ -75,6 +75,41 @@
                 color: #ffffff !important;
             }
 
+            /* Estilos globales para botones - evitar cortes de texto */
+            .btn {
+                white-space: nowrap !important;
+                overflow: visible !important;
+                text-overflow: clip !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                word-wrap: normal !important;
+            }
+
+            .btn .material-icons {
+                flex-shrink: 0;
+                margin-right: 4px;
+                font-size: 18px;
+                line-height: 1;
+            }
+
+            .btn .material-icons:only-child {
+                margin-right: 0;
+            }
+
+            /* Botones con texto después del ícono */
+            .btn .material-icons + *:not(.material-icons) {
+                margin-left: 0;
+            }
+
+            /* Asegurar que los botones no se corten en columnas pequeñas */
+            .col-md-auto .btn,
+            .col-sm-auto .btn,
+            .col-auto .btn {
+                width: auto !important;
+                min-width: fit-content;
+            }
+
             /* Estilos para select cuando tiene focus */
             select.form-control:focus {
                 border-color: rgba(50, 151, 211, 0.5) !important;

@@ -125,9 +125,16 @@
                                 <div class="col-md-2">
                                     <div class="form-group">
                                         <label for="cliente">Cliente</label>
-                                        <input type="text" class="form-control" id="cliente" name="cliente" 
-                                               value="{{ $filtros['cliente'] ?? '' }}" 
-                                               placeholder="Nombre del cliente...">
+                                        <select class="form-control" id="cliente" name="cliente">
+                                            <option value="">Todos</option>
+                                            @if(isset($clientes) && is_array($clientes))
+                                                @foreach($clientes as $cli)
+                                                    <option value="{{ $cli['codigo'] }}" {{ ($filtros['cliente'] ?? '') == $cli['codigo'] ? 'selected' : '' }}>
+                                                        {{ $cli['codigo'] }} - {{ $cli['nombre'] }}
+                                                    </option>
+                                                @endforeach
+                                            @endif
+                                        </select>
                                     </div>
                                 </div>
                                 <div class="col-md-2">
@@ -334,52 +341,36 @@ function exportarNvv() {
         buscar: document.getElementById('buscar').value,
         rango_dias: document.getElementById('rango_dias').value,
         cliente: document.getElementById('cliente').value,
-        producto: document.getElementById('producto').value
+        producto: document.getElementById('producto').value,
+        ordenar_por: '{{ request("ordenar_por", "DIAS") }}',
+        orden: '{{ request("orden", "desc") }}'
     };
     
     // Construir URL con filtros
     const params = new URLSearchParams(filtros);
     const url = '{{ route("nvv-pendientes.export") }}?' + params.toString();
     
-    // Mostrar mensaje de carga
-    Swal.fire({
-        title: 'Exportando...',
-        text: 'Generando archivo Excel',
-        allowOutsideClick: false,
-        didOpen: () => {
-            Swal.showLoading();
-        }
-    });
+    // Mostrar mensaje simple de carga
+    const mensaje = document.createElement('div');
+    mensaje.innerHTML = '<div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2b3553; color: white; padding: 20px; border-radius: 5px; z-index: 10000; box-shadow: 0 4px 6px rgba(0,0,0,0.3);"><i class="material-icons" style="vertical-align: middle; margin-right: 10px;">hourglass_empty</i>Generando archivo Excel...</div>';
+    document.body.appendChild(mensaje);
     
-    // Realizar petición AJAX
-    fetch(url)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                Swal.fire({
-                    icon: 'success',
-                    title: '¡Exportación completada!',
-                    text: `Se exportaron ${data.total_registros} registros`,
-                    confirmButtonText: 'OK'
-                });
-            } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'No se pudo exportar el archivo',
-                    confirmButtonText: 'OK'
-                });
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: 'Ocurrió un error durante la exportación',
-                confirmButtonText: 'OK'
-            });
-        });
+    // Crear un enlace temporal para descargar el archivo
+    const link = document.createElement('a');
+    link.href = url;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    
+    // Remover el mensaje y el enlace después de un momento
+    setTimeout(() => {
+        if (document.body.contains(mensaje)) {
+            document.body.removeChild(mensaje);
+        }
+        if (document.body.contains(link)) {
+            document.body.removeChild(link);
+        }
+    }, 2000);
 }
 </script>
 @endpush

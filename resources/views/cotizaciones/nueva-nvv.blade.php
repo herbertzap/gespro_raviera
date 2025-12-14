@@ -1338,13 +1338,25 @@ function agregarProductosSeleccionados() {
         const row = checkbox.closest('tr');
         const codigo = row.cells[1].textContent.trim();
         const nombre = row.cells[2].textContent.trim();
-        // Obtener el precio desde el atributo data-precio para evitar problemas de parsing
-        const precioElement = row.cells[4].querySelector('[data-precio]');
-        const precio = precioElement ? parseFloat(precioElement.getAttribute('data-precio')) : 0;
-        console.log('Precio desde data-precio:', precio);
-        const stockText = row.cells[3].textContent;
-        const stock = parseFloat(stockText.split(' ')[0]) || 0;
-        const unidad = stockText.includes('UN') ? 'UN' : 'UN';
+        
+        // Obtener el precio desde el atributo data-precio (columna 3 = índice 3)
+        let precio = 0;
+        const precioElement = row.cells[3].querySelector('[data-precio]');
+        if (precioElement) {
+            precio = parseFloat(precioElement.getAttribute('data-precio')) || 0;
+        } else {
+            // Si no hay data-precio, intentar parsear del texto (formato: $1.234)
+            const precioText = row.cells[3].textContent.trim();
+            const precioMatch = precioText.match(/[\d.]+/);
+            if (precioMatch) {
+                precio = parseFloat(precioMatch[0].replace(/\./g, '')) || 0;
+            }
+        }
+        console.log('Precio obtenido para', codigo, ':', precio);
+        
+        // Stock no está visible en la tabla de resultados, usar valor por defecto
+        const stock = 0;
+        const unidad = 'UN';
         
         // Obtener múltiplo y descuento máximo desde los data attributes del checkbox
         const multiplo = parseInt(checkbox.getAttribute('data-multiplo')) || 1;

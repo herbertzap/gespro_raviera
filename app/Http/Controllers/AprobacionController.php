@@ -36,6 +36,9 @@ class AprobacionController extends Controller
             'comuna' => $request->get('comuna'),
             'fecha_desde' => $request->get('fecha_desde'),
             'fecha_hasta' => $request->get('fecha_hasta'),
+            'vendedor' => $request->get('vendedor'),
+            'estado' => $request->get('estado'),
+            'cliente' => $request->get('cliente'),
         ];
 
         // Función para aplicar filtros comunes
@@ -75,6 +78,27 @@ class AprobacionController extends Controller
             // Filtro por fecha hasta
             if (!empty($filtros['fecha_hasta'])) {
                 $query->whereDate('created_at', '<=', $filtros['fecha_hasta']);
+            }
+            
+            // Filtro por vendedor (buscando por código de vendedor en usuarios)
+            if (!empty($filtros['vendedor'])) {
+                $userIds = \App\Models\User::where('codigo_vendedor', $filtros['vendedor'])->pluck('id');
+                if ($userIds->count() > 0) {
+                    $query->whereIn('user_id', $userIds);
+                } else {
+                    // Si no hay usuarios con ese código, no mostrar resultados
+                    $query->whereRaw('1 = 0');
+                }
+            }
+            
+            // Filtro por estado
+            if (!empty($filtros['estado'])) {
+                $query->where('estado_aprobacion', $filtros['estado']);
+            }
+            
+            // Filtro por cliente (código exacto)
+            if (!empty($filtros['cliente'])) {
+                $query->where('cliente_codigo', $filtros['cliente']);
             }
         };
 
@@ -155,7 +179,51 @@ class AprobacionController extends Controller
             ->sort()
             ->values();
 
-        return view('aprobaciones.index', compact('cotizaciones', 'tipoAprobacion', 'filtros', 'regiones', 'comunas'));
+        // Obtener vendedores únicos con código y nombre
+        $vendedores = [];
+        try {
+            $vendedoresList = $this->cobranzaService->getVendedores();
+            foreach ($vendedoresList as $vend) {
+                $vendedores[] = [
+                    'codigo' => $vend['codigo'] ?? '',
+                    'nombre' => $vend['nombre'] ?? ''
+                ];
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo vendedores para filtros: ' . $e->getMessage());
+        }
+        
+        // Obtener clientes únicos con código y nombre
+        $clientes = [];
+        try {
+            $clientesList = Cotizacion::whereNotNull('cliente_codigo')
+                ->whereNotNull('cliente_nombre')
+                ->select('cliente_codigo', 'cliente_nombre')
+                ->distinct()
+                ->orderBy('cliente_nombre')
+                ->get();
+            
+            foreach ($clientesList as $cli) {
+                $clientes[] = [
+                    'codigo' => $cli->cliente_codigo,
+                    'nombre' => $cli->cliente_nombre
+                ];
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error obteniendo clientes para filtros: ' . $e->getMessage());
+        }
+
+        // Estados posibles para el filtro
+        $estados = [
+            'pendiente' => 'Pendiente',
+            'aprobada_supervisor' => 'Aprobada Supervisor',
+            'pendiente_picking' => 'Pendiente Picking',
+            'aprobada_compras' => 'Aprobada Compras',
+            'aprobada_picking' => 'Aprobada Picking',
+            'rechazada' => 'Rechazada'
+        ];
+
+        return view('aprobaciones.index', compact('cotizaciones', 'tipoAprobacion', 'filtros', 'regiones', 'comunas', 'vendedores', 'clientes', 'estados'));
     }
 
     /**
@@ -1925,18 +1993,48 @@ class AprobacionController extends Controller
         }
 
         try {
+            DB::beginTransaction();
+
+            // Guardar estado anterior para el historial ANTES de actualizar
+            $estadoAnterior = $cotizacion->estado_aprobacion;
+
+            // Rechazar la cotización
             $cotizacion->rechazar($user->id, $request->motivo, $rol);
             
-            Log::info("Nota de venta {$cotizacion->id} rechazada por {$rol} {$user->id}");
+            // Recargar el modelo para obtener el estado actualizado
+            $cotizacion->refresh();
+
+            // Liberar stock comprometido si existe
+            $stockComprometidoService = new \App\Services\StockComprometidoService();
+            $stockComprometidoService->liberarStock($cotizacion->id, "Rechazada por {$rol}: {$request->motivo}");
+
+            // Registrar en el historial (pasar estado anterior antes de la actualización)
+            \App\Services\HistorialCotizacionService::registrarRechazo(
+                $cotizacion,
+                $request->motivo,
+                $estadoAnterior, // Estado anterior antes del rechazo
+                $rol,
+                "Rechazada por {$rol}: {$request->motivo}"
+            );
+
+            DB::commit();
+            
+            Log::info("Nota de venta {$cotizacion->id} rechazada por {$rol} {$user->id} - Motivo: {$request->motivo}");
             
             return response()->json([
                 'success' => true,
-                'message' => 'Nota de venta rechazada',
-                'estado_aprobacion' => $cotizacion->estado_aprobacion
+                'message' => 'Nota de venta rechazada exitosamente',
+                'estado_aprobacion' => $cotizacion->estado_aprobacion,
+                'redirect' => route('aprobaciones.index')
             ]);
         } catch (\Exception $e) {
-            Log::error("Error rechazando nota de venta: " . $e->getMessage());
-            return response()->json(['error' => 'Error al rechazar la nota de venta'], 500);
+            DB::rollBack();
+            Log::error("Error rechazando nota de venta {$id}: " . $e->getMessage());
+            Log::error("Stack trace: " . $e->getTraceAsString());
+            return response()->json([
+                'success' => false,
+                'error' => 'Error al rechazar la nota de venta: ' . $e->getMessage()
+            ], 500);
         }
     }
 
@@ -2186,17 +2284,62 @@ class AprobacionController extends Controller
      */
     private function actualizarTotalesCotizacion($cotizacion)
     {
-        $productos = $cotizacion->productos;
+        $productos = $cotizacion->fresh()->productos; // Recargar relación para asegurar datos actualizados
+        
+        // Calcular subtotal sin descuentos (precio base * cantidad)
         $subtotal = $productos->sum(function($producto) {
             return $producto->precio_unitario * $producto->cantidad;
         });
         
-        $descuento = $subtotal * ($cotizacion->descuento_porcentaje / 100);
-        $total = $subtotal - $descuento;
+        // Calcular descuento total (suma de descuento_valor de cada producto)
+        $descuentoGlobal = $productos->sum(function($producto) {
+            return floatval($producto->descuento_valor ?? 0);
+        });
+        
+        // Calcular subtotal neto (suma de subtotal_con_descuento de cada producto)
+        $subtotalNeto = $productos->sum(function($producto) {
+            // Si existe subtotal_con_descuento usarlo, sino calcularlo
+            if (isset($producto->subtotal_con_descuento) && $producto->subtotal_con_descuento > 0) {
+                return floatval($producto->subtotal_con_descuento);
+            }
+            // Calcular: precio * cantidad - descuento
+            $subtotalBruto = $producto->precio_unitario * $producto->cantidad;
+            $descuentoValor = floatval($producto->descuento_valor ?? 0);
+            return $subtotalBruto - $descuentoValor;
+        });
+        
+        // Calcular IVA total (suma de iva_valor de cada producto)
+        $iva = $productos->sum(function($producto) {
+            // Si existe iva_valor usarlo, sino calcularlo
+            if (isset($producto->iva_valor) && $producto->iva_valor > 0) {
+                return floatval($producto->iva_valor);
+            }
+            // Calcular IVA sobre subtotal con descuento
+            $subtotalBruto = $producto->precio_unitario * $producto->cantidad;
+            $descuentoValor = floatval($producto->descuento_valor ?? 0);
+            $subtotalConDescuento = $subtotalBruto - $descuentoValor;
+            return $subtotalConDescuento * 0.19;
+        });
+        
+        // Calcular total final (suma de total_producto de cada producto)
+        $total = $productos->sum(function($producto) {
+            // Si existe total_producto usarlo, sino calcularlo
+            if (isset($producto->total_producto) && $producto->total_producto > 0) {
+                return floatval($producto->total_producto);
+            }
+            // Calcular: subtotal con descuento + IVA
+            $subtotalBruto = $producto->precio_unitario * $producto->cantidad;
+            $descuentoValor = floatval($producto->descuento_valor ?? 0);
+            $subtotalConDescuento = $subtotalBruto - $descuentoValor;
+            $ivaProducto = $subtotalConDescuento * 0.19;
+            return $subtotalConDescuento + $ivaProducto;
+        });
 
         $cotizacion->update([
             'subtotal' => $subtotal,
-            'descuento_monto' => $descuento,
+            'descuento_global' => $descuentoGlobal,
+            'subtotal_neto' => $subtotalNeto,
+            'iva' => $iva,
             'total' => $total
         ]);
     }
@@ -2381,7 +2524,7 @@ class AprobacionController extends Controller
             }
 
             // Crear la nueva NVV duplicada con los productos seleccionados
-            $nuevaCotizacion = $this->crearNvvDuplicadaMultiple($cotizacion, $productosSeleccionados, $request->motivo);
+            $nuevaCotizacion = $this->crearNvvDuplicadaMultiple($cotizacion, $productosSeleccionados, $request->motivo, $user);
             
             // Eliminar los productos seleccionados de la NVV original
             $cotizacion->productos()->whereIn('id', $request->productos_ids)->delete();
@@ -2503,22 +2646,56 @@ class AprobacionController extends Controller
     /**
      * Crear una nueva NVV duplicada con múltiples productos problemáticos
      */
-    private function crearNvvDuplicadaMultiple($cotizacionOriginal, $productos, $motivo)
+    private function crearNvvDuplicadaMultiple($cotizacionOriginal, $productos, $motivo, $user)
     {
+        // La separación múltiple solo puede hacerla Compras, así que siempre es "separado_por_compras"
+        $estadoSeparado = 'separado_por_compras';
+        
+        // Las NVVs separadas SIEMPRE deben quedar pendientes de compras
+        // porque ellos son los que generan las compras de productos
+        $estadoAprobacion = 'pendiente';
+        
         // Crear nueva cotización con los productos seleccionados
         $nuevaCotizacion = $cotizacionOriginal->replicate();
-        $nuevaCotizacion->estado = 'pendiente_stock';
-        $nuevaCotizacion->estado_aprobacion = 'pendiente';
+        $nuevaCotizacion->estado = $estadoSeparado; // Usar el nuevo estado separado
+        $nuevaCotizacion->estado_aprobacion = $estadoAprobacion;
+        // Las NVVs separadas siempre tienen problemas de stock (necesitan compras)
+        $nuevaCotizacion->tiene_problemas_stock = true;
         $nuevaCotizacion->created_at = now();
         $nuevaCotizacion->updated_at = now();
         $nuevaCotizacion->observaciones = "NVV creada con productos separados por problemas de stock. Motivo: {$motivo}";
         $nuevaCotizacion->nota_original_id = $cotizacionOriginal->id; // Referencia a la NVV original
+        
+        // Las NVVs separadas siempre empiezan desde cero, sin aprobaciones previas
+        // ya que deben ser revisadas nuevamente
+        $nuevaCotizacion->aprobado_por_supervisor = null;
+        $nuevaCotizacion->fecha_aprobacion_supervisor = null;
+        $nuevaCotizacion->comentarios_supervisor = null;
+        $nuevaCotizacion->aprobado_por_compras = null;
+        $nuevaCotizacion->fecha_aprobacion_compras = null;
+        $nuevaCotizacion->comentarios_compras = null;
+        
         $nuevaCotizacion->save();
 
         // Duplicar los productos problemáticos
         foreach ($productos as $producto) {
             $nuevoProducto = $producto->replicate();
             $nuevoProducto->cotizacion_id = $nuevaCotizacion->id;
+            // Asegurar que los valores calculados estén presentes
+            if (!$nuevoProducto->subtotal_con_descuento || $nuevoProducto->subtotal_con_descuento == 0) {
+                $subtotalBruto = $nuevoProducto->precio_unitario * $nuevoProducto->cantidad;
+                $descuentoValor = floatval($nuevoProducto->descuento_valor ?? 0);
+                $nuevoProducto->subtotal_con_descuento = $subtotalBruto - $descuentoValor;
+            }
+            if (!$nuevoProducto->iva_valor || $nuevoProducto->iva_valor == 0) {
+                $subtotalConDescuento = $nuevoProducto->subtotal_con_descuento ?? ($nuevoProducto->precio_unitario * $nuevoProducto->cantidad - floatval($nuevoProducto->descuento_valor ?? 0));
+                $nuevoProducto->iva_valor = $subtotalConDescuento * 0.19;
+            }
+            if (!$nuevoProducto->total_producto || $nuevoProducto->total_producto == 0) {
+                $subtotalConDescuento = $nuevoProducto->subtotal_con_descuento ?? ($nuevoProducto->precio_unitario * $nuevoProducto->cantidad - floatval($nuevoProducto->descuento_valor ?? 0));
+                $ivaValor = $nuevoProducto->iva_valor ?? ($subtotalConDescuento * 0.19);
+                $nuevoProducto->total_producto = $subtotalConDescuento + $ivaValor;
+            }
             $nuevoProducto->save();
         }
 
@@ -2558,15 +2735,17 @@ class AprobacionController extends Controller
             'cotizacion_id' => $cotizacionNueva->id,
             'usuario_id' => $user->id,
             'estado_anterior' => null,
-            'estado_nuevo' => 'pendiente',
+            'estado_nuevo' => $cotizacionNueva->estado_aprobacion ?? 'pendiente',
             'fecha_accion' => now(),
-            'comentarios' => "NVV creada con {$productos->count()} productos separados por problemas de stock. NVV original: #{$cotizacionOriginal->id}",
+            'comentarios' => "NVV creada con {$productos->count()} productos separados por problemas de stock. NVV original: #{$cotizacionOriginal->id}. Estado: {$cotizacionNueva->estado}",
             'detalles_adicionales' => [
                 'accion' => 'creada_por_separacion_productos',
                 'cotizacion_original_id' => $cotizacionOriginal->id,
                 'productos_count' => $productos->count(),
                 'productos_nombres' => $productosNombres,
                 'motivo' => $motivo,
+                'estado_separado' => $cotizacionNueva->estado,
+                'estado_aprobacion' => $cotizacionNueva->estado_aprobacion,
                 'descripcion' => 'Nueva NVV creada con productos separados de NVV original'
             ]
         ]);
@@ -2696,7 +2875,7 @@ class AprobacionController extends Controller
             }
 
             // Crear nueva NVV con el producto separado
-            $nuevaCotizacion = $this->crearNvvConProductoSeparado($cotizacion, $producto, $cantidadSeparar, $request->motivo);
+            $nuevaCotizacion = $this->crearNvvConProductoSeparado($cotizacion, $producto, $cantidadSeparar, $request->motivo, $user);
 
             // Lógica de separación:
             if ($cantidadSeparar == $producto->cantidad) {
@@ -2747,16 +2926,41 @@ class AprobacionController extends Controller
     /**
      * Crear nueva NVV con producto separado
      */
-    private function crearNvvConProductoSeparado($cotizacionOriginal, $producto, $cantidadSeparar, $motivo)
+    private function crearNvvConProductoSeparado($cotizacionOriginal, $producto, $cantidadSeparar, $motivo, $user)
     {
+        // Determinar estado según el rol del usuario
+        $estadoSeparado = 'separado_por_compras'; // Por defecto
+        if ($user->hasRole('Picking')) {
+            $estadoSeparado = 'separado_por_picking';
+        }
+        
+        // Las NVVs separadas SIEMPRE deben quedar pendientes de compras
+        // porque ellos son los que generan las compras de productos
+        $estadoAprobacion = 'pendiente';
+        
         // Crear nueva cotización
         $nuevaCotizacion = $cotizacionOriginal->replicate();
-        $nuevaCotizacion->estado = 'pendiente_stock';
-        $nuevaCotizacion->estado_aprobacion = 'pendiente';
+        $nuevaCotizacion->estado = $estadoSeparado; // Usar el nuevo estado separado
+        $nuevaCotizacion->estado_aprobacion = $estadoAprobacion;
+        // Las NVVs separadas siempre tienen problemas de stock (necesitan compras)
+        $nuevaCotizacion->tiene_problemas_stock = true;
         $nuevaCotizacion->created_at = now();
         $nuevaCotizacion->updated_at = now();
         $nuevaCotizacion->observaciones = "NVV creada con producto separado: {$producto->nombre_producto} (Cantidad: {$cantidadSeparar}). Motivo: {$motivo}";
         $nuevaCotizacion->nota_original_id = $cotizacionOriginal->id;
+        
+        // Las NVVs separadas siempre empiezan desde cero, sin aprobaciones previas
+        // ya que deben ser revisadas nuevamente
+        $nuevaCotizacion->aprobado_por_supervisor = null;
+        $nuevaCotizacion->fecha_aprobacion_supervisor = null;
+        $nuevaCotizacion->comentarios_supervisor = null;
+        $nuevaCotizacion->aprobado_por_compras = null;
+        $nuevaCotizacion->fecha_aprobacion_compras = null;
+        $nuevaCotizacion->comentarios_compras = null;
+        
+        // Las NVVs separadas siempre empiezan desde cero, sin aprobaciones previas
+        // ya que deben ser revisadas nuevamente
+        
         $nuevaCotizacion->save();
 
         // Crear el producto separado con la cantidad especificada
@@ -2764,7 +2968,28 @@ class AprobacionController extends Controller
         $nuevoProducto->cotizacion_id = $nuevaCotizacion->id;
         $nuevoProducto->cantidad = $cantidadSeparar;
         $nuevoProducto->cantidad_separar = 0; // Resetear cantidad a separar
-        $nuevoProducto->subtotal = $producto->precio_unitario * $cantidadSeparar;
+        
+        // Recalcular subtotal y valores del producto con la nueva cantidad
+        $subtotalBruto = $producto->precio_unitario * $cantidadSeparar;
+        $descuentoPorcentaje = $producto->descuento_porcentaje ?? 0;
+        $descuentoValor = $producto->descuento_valor ?? 0;
+        // Si hay descuento porcentual, calcularlo proporcionalmente
+        if ($descuentoPorcentaje > 0 && $descuentoValor == 0) {
+            $descuentoValor = $subtotalBruto * ($descuentoPorcentaje / 100);
+        } elseif ($descuentoValor > 0) {
+            // Proporcional al porcentaje de cantidad separada
+            $porcentajeCantidad = $cantidadSeparar / $producto->cantidad;
+            $descuentoValor = $descuentoValor * $porcentajeCantidad;
+        }
+        $subtotalConDescuento = $subtotalBruto - $descuentoValor;
+        $ivaValor = $subtotalConDescuento * 0.19;
+        $totalProducto = $subtotalConDescuento + $ivaValor;
+        
+        $nuevoProducto->subtotal = $subtotalBruto;
+        $nuevoProducto->descuento_valor = $descuentoValor;
+        $nuevoProducto->subtotal_con_descuento = $subtotalConDescuento;
+        $nuevoProducto->iva_valor = $ivaValor;
+        $nuevoProducto->total_producto = $totalProducto;
         $nuevoProducto->save();
 
         // Calcular totales de la nueva cotización
@@ -2803,9 +3028,9 @@ class AprobacionController extends Controller
             'cotizacion_id' => $cotizacionNueva->id,
             'usuario_id' => $user->id,
             'estado_anterior' => null,
-            'estado_nuevo' => 'pendiente',
+            'estado_nuevo' => $cotizacionNueva->estado_aprobacion ?? 'pendiente',
             'fecha_accion' => now(),
-            'comentarios' => "NVV creada por separación de producto '{$producto->nombre_producto}' de la NVV #{$cotizacionOriginal->id}. Cantidad: {$cantidadSeparada}.",
+            'comentarios' => "NVV creada por separación de producto '{$producto->nombre_producto}' de la NVV #{$cotizacionOriginal->id}. Cantidad: {$cantidadSeparada}. Estado: {$cotizacionNueva->estado}",
             'detalles_adicionales' => [
                 'accion' => 'crear_por_separacion',
                 'cotizacion_origen_id' => $cotizacionOriginal->id,
@@ -2813,6 +3038,8 @@ class AprobacionController extends Controller
                 'producto_nombre' => $producto->nombre_producto,
                 'cantidad_separada' => $cantidadSeparada,
                 'motivo' => $motivo,
+                'estado_separado' => $cotizacionNueva->estado,
+                'estado_aprobacion' => $cotizacionNueva->estado_aprobacion,
                 'descripcion' => 'NVV creada por separación de producto'
             ]
         ]);

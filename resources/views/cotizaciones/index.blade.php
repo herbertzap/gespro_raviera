@@ -59,8 +59,16 @@
                             <div class="col-md-2">
                                 <div class="form-group">
                                     <label for="cliente">Cliente:</label>
-                                    <input type="text" name="cliente" id="cliente" class="form-control" 
-                                           value="{{ $cliente }}" placeholder="Código o nombre del cliente">
+                                    <select name="cliente" id="cliente" class="form-control">
+                                        <option value="">Todos</option>
+                                        @if(isset($clientes) && is_array($clientes))
+                                            @foreach($clientes as $cli)
+                                                <option value="{{ $cli['codigo'] }}" {{ $cliente == $cli['codigo'] ? 'selected' : '' }}>
+                                                    {{ $cli['codigo'] }} - {{ $cli['nombre'] }}
+                                                </option>
+                                            @endforeach
+                                        @endif
+                                    </select>
                                 </div>
                             </div>
                             <div class="col-md-2">
@@ -174,7 +182,19 @@
                                             @endif
                                         </td>
                                         <td>
-                                            @switch($cotizacion['estado'])
+                                            @php
+                                                // Priorizar estado_aprobacion si está rechazada
+                                                // Pero mantener estados separados si existen
+                                                $estadoMostrar = $cotizacion['estado'];
+                                                
+                                                // Si tiene estado separado, mantenerlo
+                                                if (in_array($estadoMostrar, ['separado_por_compras', 'separado_por_picking'])) {
+                                                    // Mantener el estado separado
+                                                } elseif (isset($cotizacion['estado_aprobacion']) && $cotizacion['estado_aprobacion'] === 'rechazada') {
+                                                    $estadoMostrar = 'rechazada';
+                                                }
+                                            @endphp
+                                            @switch($estadoMostrar)
                                                 @case('borrador')
                                                     <span class="badge badge-secondary">Borrador</span>
                                                     @break
@@ -186,6 +206,12 @@
                                                     @break
                                                 @case('rechazada')
                                                     <span class="badge badge-danger">Rechazada</span>
+                                                    @break
+                                                @case('separado_por_compras')
+                                                    <span class="badge badge-warning">Separado por Compras</span>
+                                                    @break
+                                                @case('separado_por_picking')
+                                                    <span class="badge badge-warning">Separado por Picking</span>
                                                     @break
                                                 @case('pendiente_stock')
                                                     <span class="badge badge-warning">Pendiente por Stock</span>

@@ -26,7 +26,8 @@ Route::get('/error/{code?}', [App\Http\Controllers\ErrorController::class, 'show
     ->where('code', '[0-9]+');
 
 // Dashboard
-Route::get('/dashboard', [App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard')->middleware(['auth']);
+Route::get('/dashboard', [App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard')->middleware(['auth', 'sincronizar.clientes']);
+Route::get('/dashboard/cheques', [App\Http\Controllers\DashboardController::class, 'getCheques'])->name('dashboard.cheques')->middleware(['auth']);
 
 // Rutas de Cobranza
 Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
@@ -203,6 +204,7 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
 Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/clientes', [App\Http\Controllers\ClienteController::class, 'index'])->name('clientes.index');
     Route::get('/clientes/{codigo}', [App\Http\Controllers\ClienteController::class, 'show'])->name('clientes.show');
+    Route::get('/clientes/{codigo}/info-ajax', [App\Http\Controllers\ClienteController::class, 'getInfoAjax'])->name('clientes.info-ajax');
     Route::post('/clientes/buscar', [App\Http\Controllers\ClienteController::class, 'buscar'])->name('clientes.buscar');
     Route::get('/clientes/buscar', [App\Http\Controllers\ClienteController::class, 'buscarAjax'])->name('clientes.buscar.ajax');
     Route::post('/clientes/sincronizar', [App\Http\Controllers\ClienteController::class, 'sincronizar'])->name('clientes.sincronizar');
@@ -234,6 +236,7 @@ Route::middleware(['auth', 'handle.errors'])->group(function () {
 
 // Ruta para página de cliente
 Route::get('/cliente/{codigo}', [App\Http\Controllers\ClienteController::class, 'show'])->name('cliente.show');
+Route::get('/cliente/{codigo}/imprimir', [App\Http\Controllers\ClienteController::class, 'imprimir'])->name('cliente.imprimir');
 
 // Autenticación
 Auth::routes();

@@ -249,4 +249,60 @@ class Cliente extends Model
         
         return $this;
     }
+
+    /**
+     * Sincronizar todos los datos del cliente desde SQL Server
+     * Incluye: datos básicos, crédito, y actualiza última sincronización
+     */
+    public function sincronizarDatosCompletos()
+    {
+        try {
+            $cobranzaService = new \App\Services\CobranzaService();
+            
+            // 1. Sincronizar datos básicos del cliente
+            $clienteExterno = $cobranzaService->getClienteInfoCompleto($this->codigo_cliente);
+            
+            if ($clienteExterno) {
+                // Actualizar datos básicos
+                $this->update([
+                    'nombre_cliente' => $clienteExterno['NOMBRE_CLIENTE'] ?? $this->nombre_cliente,
+                    'direccion' => $clienteExterno['DIRECCION'] ?? $this->direccion,
+                    'telefono' => $clienteExterno['TELEFONO'] ?? $this->telefono,
+                    'email' => $clienteExterno['EMAIL'] ?? $this->email,
+                    'region' => $clienteExterno['REGION'] ?? $this->region,
+                    'comuna' => $clienteExterno['COMUNA'] ?? $this->comuna,
+                    'codigo_vendedor' => $clienteExterno['CODIGO_VENDEDOR'] ?? $this->codigo_vendedor,
+                    'lista_precios_codigo' => $clienteExterno['LISTA_PRECIOS_CODIGO'] ?? $this->lista_precios_codigo,
+                    'lista_precios_nombre' => $clienteExterno['LISTA_PRECIOS_NOMBRE'] ?? $this->lista_precios_nombre,
+                    'bloqueado' => !empty($clienteExterno['BLOQUEADO']) && $clienteExterno['BLOQUEADO'] != '0',
+                    'condicion_pago' => $clienteExterno['CONDICION_PAGO'] ?? $this->condicion_pago,
+                    'dias_credito' => intval($clienteExterno['DIAS_CREDITO'] ?? $this->dias_credito ?? 0),
+                    'rut_cliente' => $clienteExterno['RUT_CLIENTE'] ?? $this->rut_cliente,
+                    'ultima_sincronizacion' => now()
+                ]);
+            }
+            
+            // 2. Sincronizar datos de crédito
+            $creditoInfo = $cobranzaService->getCreditoCliente($this->codigo_cliente);
+            
+            if ($creditoInfo) {
+                $this->update([
+                    'credito_total' => floatval($creditoInfo['credito_total'] ?? 0),
+                    'credito_utilizado' => floatval($creditoInfo['credito_total_util'] ?? 0),
+                    'credito_disponible' => floatval($creditoInfo['credito_total_disp'] ?? 0),
+                    'ultima_sincronizacion' => now()
+                ]);
+            }
+            
+            // Refrescar el modelo para tener los datos actualizados
+            $this->refresh();
+            
+            \Log::info("Cliente {$this->codigo_cliente} sincronizado correctamente");
+            
+        } catch (\Exception $e) {
+            \Log::error("Error sincronizando datos completos del cliente {$this->codigo_cliente}: " . $e->getMessage());
+        }
+        
+        return $this;
+    }
 }

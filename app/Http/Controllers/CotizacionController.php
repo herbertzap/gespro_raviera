@@ -1315,7 +1315,10 @@ class CotizacionController extends Controller
             return strtotime($fechaB) - strtotime($fechaA);
         });
         
-        return view('cotizaciones.index', compact('cotizaciones', 'estado', 'cliente', 'fechaInicio', 'fechaFin', 'buscar', 'montoMin', 'montoMax'))->with('pageSlug', 'cotizaciones');
+        // Obtener lista de clientes únicos para el select
+        $clientes = $this->obtenerClientesUnicos($cotizaciones);
+
+        return view('cotizaciones.index', compact('cotizaciones', 'estado', 'cliente', 'fechaInicio', 'fechaFin', 'buscar', 'montoMin', 'montoMax', 'clientes'))->with('pageSlug', 'cotizaciones');
     }
     
     /**
@@ -1363,12 +1366,9 @@ class CotizacionController extends Controller
                 }
             }
             
-            // Filtro por cliente
+            // Filtro por cliente (código exacto del select)
             if ($cliente) {
-                $query->where(function($q) use ($cliente) {
-                    $q->where('cliente_codigo', 'LIKE', "%{$cliente}%")
-                      ->orWhere('cliente_nombre', 'LIKE', "%{$cliente}%");
-                });
+                $query->where('cliente_codigo', $cliente);
             }
             
             // Filtro de búsqueda general
@@ -1411,7 +1411,8 @@ class CotizacionController extends Controller
                     'total' => $cotizacion->total,
                     'subtotal' => $cotizacion->subtotal,
                     'descuento_global' => $cotizacion->descuento_global,
-                    'estado' => $cotizacion->estado,
+                    'estado' => ($cotizacion->estado_aprobacion === 'rechazada') ? 'rechazada' : $cotizacion->estado,
+                    'estado_aprobacion' => $cotizacion->estado_aprobacion,
                     'requiere_aprobacion' => $cotizacion->requiere_aprobacion,
                     'observaciones' => $cotizacion->observaciones,
                     'productos_count' => $cotizacion->productos->count(),
@@ -1470,8 +1471,8 @@ class CotizacionController extends Controller
             }
             
             if ($cliente) {
-                $cliente = strtoupper(addslashes($cliente));
-                $whereClause .= " AND (MAEDDO.ENDO LIKE '%{$cliente}%' OR MAEEN.NOKOEN LIKE '%{$cliente}%')";
+                $clienteEscaped = str_replace("'", "''", trim($cliente));
+                $whereClause .= " AND MAEDDO.ENDO = '{$clienteEscaped}'";
             }
             
             // Filtro de búsqueda general (código de factura, cliente, etc.)
@@ -3232,5 +3233,37 @@ class CotizacionController extends Controller
                 'message' => 'Error obteniendo stock: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Obtener lista de clientes únicos para el select
+     */
+    private function obtenerClientesUnicos($cotizaciones)
+    {
+        $clientes = [];
+        $clientesMap = [];
+        
+        foreach ($cotizaciones as $cotizacion) {
+            // Manejar tanto objetos Eloquent como arrays
+            $cotizacionArray = is_object($cotizacion) ? $cotizacion->toArray() : $cotizacion;
+            
+            $codigo = $cotizacionArray['cliente_codigo'] ?? $cotizacionArray['COD_CLI'] ?? '';
+            $nombre = $cotizacionArray['cliente_nombre'] ?? $cotizacionArray['CLIE'] ?? '';
+            
+            if (!empty($codigo) && !isset($clientesMap[$codigo])) {
+                $clientesMap[$codigo] = true;
+                $clientes[] = [
+                    'codigo' => $codigo,
+                    'nombre' => $nombre
+                ];
+            }
+        }
+        
+        // Ordenar por nombre
+        usort($clientes, function($a, $b) {
+            return strcmp($a['nombre'], $b['nombre']);
+        });
+        
+        return $clientes;
     }
 } 
