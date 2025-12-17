@@ -40,3 +40,16 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+
+# Laravel cache and logs
+/storage/framework/cache/*
+!/storage/framework/cache/.gitignore
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitignore
+/storage/framework/views/*
+!/storage/framework/views/.gitignore
+/storage/logs/*
+!/storage/logs/.gitignore
+.storage/framework/cache/data/
+storage/framework/cache/data/
+*.log
