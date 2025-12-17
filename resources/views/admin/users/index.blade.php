@@ -66,8 +66,26 @@
                                         <a href="{{ route('admin.users.edit', $user) }}" class="btn btn-sm btn-primary">
                                             <i class="material-icons">edit</i>
                                         </a>
-                                        @if($user->email !== 'herbert.zapata19@gmail.com')
+                                        @php
+                                            $currentUser = auth()->user();
+                                            $puedeEliminar = true;
+                                            
+                                            // No permitir eliminar el super admin específico
+                                            if ($user->email === 'herbert.zapata19@gmail.com') {
+                                                $puedeEliminar = false;
+                                            }
+                                            
+                                            // Si el usuario tiene rol Super Admin y el actual NO es Super Admin, no puede eliminar
+                                            if ($user->hasRole('Super Admin') && !$currentUser->hasRole('Super Admin')) {
+                                                $puedeEliminar = false;
+                                            }
+                                        @endphp
+                                        @if($puedeEliminar)
                                         <button class="btn btn-sm btn-danger" onclick="eliminarUsuario({{ $user->id }})">
+                                            <i class="material-icons">delete</i>
+                                        </button>
+                                        @else
+                                        <button class="btn btn-sm btn-danger" disabled title="No tienes permisos para eliminar usuarios con rol Super Admin">
                                             <i class="material-icons">delete</i>
                                         </button>
                                         @endif

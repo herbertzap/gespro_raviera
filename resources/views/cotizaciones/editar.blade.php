@@ -108,9 +108,9 @@
                         <div class="col-md-8">
                             <h4 class="card-title">
                                 <i class="material-icons">edit</i>
-                                Editar Cotización #{{ $cotizacion->id }}
+                                {{ $cotizacion->tipo_documento === 'nota_venta' ? 'Editar Nota de Venta' : 'Editar Cotización' }} #{{ $cotizacion->id }}
                             </h4>
-                            <p class="card-category">Modificar cotización existente</p>
+                            <p class="card-category">{{ $cotizacion->tipo_documento === 'nota_venta' ? 'Modificar nota de venta existente' : 'Modificar cotización existente' }}</p>
                         </div>
                         <div class="col-md-4 text-right">
                             <a href="{{ route('cotizaciones.index') }}" class="btn btn-secondary">
@@ -180,7 +180,7 @@
                                         <i class="material-icons">shopping_cart</i>
                                         {{ $cotizacion->tipo_documento === 'nota_venta' ? 'Detalle de la Nota de Venta' : 'Detalle de la Cotización' }}
                                     </h4>
-                                    <p class="card-category">Agregar productos a la cotización</p>
+                                    <p class="card-category">{{ $cotizacion->tipo_documento === 'nota_venta' ? 'Agregar productos a la nota de venta' : 'Agregar productos a la cotización' }}</p>
                                 </div>
                                 <div class="card-body">
                                     <!-- Buscador de Productos Mejorado -->
@@ -317,7 +317,7 @@
                                                 </button>
                                             @else
                                                 <button type="button" id="btnGuardarNotaVenta" class="btn btn-success btn-lg" onclick="guardarNotaVenta()" {{ !$puedeGenerarNotaVenta ? 'disabled' : '' }}>
-                                                    <i class="material-icons">save</i> Actualizar NVV
+                                                    <i class="material-icons">send</i> Enviar Nota de Venta
                                                 </button>
                                             @endif
                                             <a href="{{ route('cotizaciones.index') }}" class="btn btn-secondary btn-lg ml-2">
@@ -447,13 +447,11 @@ function mostrarResultadosProductosAjax(productos) {
     contenido += '</button>';
     contenido += '</div>';
     contenido += '<table class="table table-striped table-hover">';
-    contenido += '<thead class="thead"><tr><th><input type="checkbox" id="selectAllProductos" onchange="toggleAllProductos()"></th><th>Código</th><th>Producto</th><th>Stock</th><th>Precio</th><th>Acción</th></tr></thead><tbody>';
+    contenido += '<thead class="thead"><tr><th><input type="checkbox" id="selectAllProductos" onchange="toggleAllProductos()"></th><th>Código</th><th>Producto</th><th>Precio</th><th>Acción</th></tr></thead><tbody>';
     
     productos.forEach(producto => {
-        // Usar información de stock mejorada
+        // Usar información de stock mejorada (se usará al agregar, pero no se muestra en la búsqueda)
         const stockReal = producto.STOCK_DISPONIBLE_REAL !== undefined ? producto.STOCK_DISPONIBLE_REAL : producto.STOCK_DISPONIBLE;
-        const stockClass = producto.CLASE_STOCK || (stockReal > 0 ? 'text-success' : 'text-danger');
-        const stockText = producto.ESTADO_STOCK || (stockReal > 0 ? 'Disponible' : 'Sin stock');
         
         // Verificar si el producto se puede agregar (precio válido)
         const precioValido = producto.PRECIO_VALIDO !== undefined ? producto.PRECIO_VALIDO : (producto.PRECIO_UD1 > 0);
@@ -478,12 +476,6 @@ function mostrarResultadosProductosAjax(productos) {
                     onchange="actualizarContadorSeleccionados()" ${checkboxDisabled}></td>
                 <td><strong>${producto.CODIGO_PRODUCTO || ''}</strong></td>
                 <td>${producto.NOMBRE_PRODUCTO || ''}${multiploInfo}</td>
-                <td class="${stockClass}">
-                    <i class="material-icons">${stockReal > 0 ? 'check_circle' : 'warning'}</i>
-                    ${stockReal || 0} ${producto.UNIDAD_MEDIDA || 'UN'}
-                    ${producto.STOCK_COMPROMETIDO > 0 ? `<br><small class="text-muted">Comprometido: ${producto.STOCK_COMPROMETIDO}</small>` : ''}
-                    ${stockReal <= 0 ? '<br><small class="text-warning"><i class="material-icons">info</i> Sin stock - Nota pendiente</small>' : ''}
-                </td>
                 <td>
                     <strong class="${!precioValido ? 'text-muted' : ''}" data-precio="${producto.PRECIO_UD1 || 0}">$${Math.round(producto.PRECIO_UD1 || 0).toLocaleString()}</strong>
                     ${!precioValido ? '<br><small class="text-danger"><i class="material-icons">warning</i> Precio no disponible</small>' : ''}
@@ -635,7 +627,10 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
             stock: parseFloat(stock),
             unidad: unidad,
             multiplo: multiplo // Guardar múltiplo para validaciones posteriores
-        });
+        };
+        
+        // Agregar al principio (productos nuevos arriba) para todos los tipos
+        productosCotizacion.unshift(nuevoProducto);
     }
     
     actualizarTablaProductos();
@@ -648,7 +643,8 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
     const cantidadAgregada = multiplo > 0 ? multiplo : 1;
     const stockInfo = parseFloat(stock) <= 0 ? '\n⚠️ Sin stock - Se generará nota pendiente' : '';
     const multiploInfo = multiplo > 1 ? `\n📦 Se vende en múltiplos de ${multiplo} unidades` : '';
-    const productosInfo = productosCotizacion.length > 1 ? `\n\n📋 Productos en cotización: ${productosCotizacion.length}/24` : '';
+    const esNVV = {{ $cotizacion->tipo_documento === 'nota_venta' ? 'true' : 'false' }};
+    const productosInfo = productosCotizacion.length > 1 ? `\n\n📋 Productos en ${esNVV ? 'nota de venta' : 'cotización'}: ${productosCotizacion.length}/24` : '';
     alert('✅ Producto agregado\n\n' + nombre + '\nCantidad: ' + cantidadAgregada + ' ' + unidad + multiploInfo + stockInfo + productosInfo);
 }
 
@@ -672,7 +668,7 @@ function actualizarTablaProductos() {
     const contador = document.getElementById('contadorProductos');
     if (contador) {
         const cantidad = productosCotizacion.length;
-        const maximo = 24;
+        const maximo = 20;
         contador.textContent = `${cantidad}/${maximo} productos`;
         
         // Cambiar color según el límite
@@ -901,20 +897,24 @@ function agregarProductosSeleccionados() {
     const productosNuevos = productosSeleccionados.filter(p => !productosCotizacion.find(existente => existente.codigo === p.codigo));
     const totalProductos = productosCotizacion.length + productosNuevos.length;
     
-    if (totalProductos > 24) {
+    const esNVV = {{ $cotizacion->tipo_documento === 'nota_venta' ? 'true' : 'false' }};
+    const maximo = 20;
+    const tipoDoc = esNVV ? 'nota de venta' : 'cotización';
+    
+    if (totalProductos > maximo) {
         const productosActuales = productosCotizacion.length;
-        const productosDisponibles = 24 - productosActuales;
-        alert(`No se pueden agregar todos los productos seleccionados.\n\nProductos actuales: ${productosActuales}/24\nProductos seleccionados: ${productosNuevos.length}\nProductos disponibles: ${productosDisponibles}\n\nSolo se agregarán los primeros ${productosDisponibles} productos.`);
+        const productosDisponibles = maximo - productosActuales;
+        alert(`No se pueden agregar todos los productos seleccionados.\n\nProductos actuales: ${productosActuales}/${maximo}\nProductos seleccionados: ${productosNuevos.length}\nProductos disponibles: ${productosDisponibles}\n\nSolo se agregarán los primeros ${productosDisponibles} productos.`);
         
         // Limitar a los productos disponibles
         productosSeleccionados.splice(productosDisponibles);
     }
     
-    // Agregar cada producto válido a la cotización
+    // Agregar cada producto válido
     let productosAgregados = 0;
     productosSeleccionados.forEach(producto => {
         const productoExistente = productosCotizacion.find(p => p.codigo === producto.codigo);
-        if (!productoExistente && productosCotizacion.length < 24) {
+        if (!productoExistente && productosCotizacion.length < maximo) {
             agregarProductoDesdePHP(producto.codigo, producto.nombre, producto.precio, producto.stock, producto.unidad, producto.descuentoMaximo, producto.multiplo);
             productosAgregados++;
         }
@@ -928,12 +928,12 @@ function agregarProductosSeleccionados() {
     actualizarContadorSeleccionados();
     
     // Mostrar resumen
-    let mensaje = `${productosAgregados} productos agregados a la cotización`;
+    let mensaje = `${productosAgregados} productos agregados a la ${tipoDoc}`;
     if (productosSinPrecio.length > 0) {
         mensaje += `\n\n${productosSinPrecio.length} productos omitidos (sin precio)`;
     }
-    if (totalProductos > 24) {
-        mensaje += `\n\nAlgunos productos no se agregaron (límite de 24 productos)`;
+    if (totalProductos > maximo) {
+        mensaje += `\n\nAlgunos productos no se agregaron (límite de ${maximo} productos)`;
     }
     alert(mensaje);
 }
@@ -1000,7 +1000,7 @@ function guardarNotaVenta() {
     const btn = document.getElementById('btnGuardarNotaVenta');
     const originalText = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<i class="material-icons">hourglass_empty</i> Guardando...';
+    btn.innerHTML = '<i class="material-icons">hourglass_empty</i> {{ $cotizacion->tipo_documento === "nota_venta" ? "Enviando..." : "Guardando..." }}';
 
     const observaciones = document.getElementById('observaciones').value;
     const fechaDespacho = document.getElementById('fecha_despacho').value;

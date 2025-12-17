@@ -100,8 +100,25 @@ class RoleSeeder extends Seeder
                 'gestionar_facturacion',
                 'ver_dashboard_finanzas'
             ],
+            'Administrativo' => [
+                'ver_dashboard',
+                'ver_perfil',
+                'editar_perfil',
+                'crear_usuarios',
+                'gestionar_usuarios',
+                'gestionar_roles'
+            ],
             'Super Admin' => [
                 // El Super Admin tiene todos los permisos
+            ],
+            'Barrido' => [
+                'ver_perfil',
+                'editar_perfil',
+            ],
+            'Manejo Stock' => [
+                'ver_dashboard',
+                'ver_perfil',
+                'editar_perfil',
             ]
         ];
 
@@ -109,7 +126,7 @@ class RoleSeeder extends Seeder
             $role = Role::firstOrCreate(['name' => $roleName]);
             
             if ($roleName === 'Super Admin') {
-                // El administrativo tiene todos los permisos
+                // El Super Admin tiene todos los permisos
                 $role->syncPermissions(Permission::all());
             } else {
                 $role->syncPermissions($rolePermissions);

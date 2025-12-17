@@ -7,6 +7,7 @@ use App\Models\Cotizacion;
 use App\Models\Cliente;
 use App\Services\CobranzaService;
 use App\Services\StockService;
+use App\Services\StockConsultaService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -103,10 +104,14 @@ class AprobacionController extends Controller
         };
 
         if ($user->hasRole('Supervisor')) {
-            // Supervisor ve todas las notas pendientes de aprobación
-            // Incluye: pendiente (nuevas), pendiente_picking (aprobadas por supervisor pero pendientes de picking)
-            $query = Cotizacion::whereIn('estado_aprobacion', ['pendiente', 'pendiente_picking'])
-                ->where('tipo_documento', 'nota_venta'); // Solo notas de venta
+            // Supervisor solo ve notas pendientes de su aprobación
+            // Solo estado 'pendiente' con problemas de crédito (que requieren aprobación del supervisor)
+            // NO debe ver: pendiente_picking, pendiente_compras, aprobada_supervisor, aprobada_compras, etc.
+            // NO debe ver: NVV que solo tienen problemas de stock (esas van a Compras)
+            $query = Cotizacion::where('estado_aprobacion', 'pendiente')
+                ->where('tipo_documento', 'nota_venta')
+                ->where('tiene_problemas_credito', true) // SOLO las que tienen problemas de crédito
+                ->whereNull('aprobado_por_supervisor'); // Que aún no haya sido aprobada por supervisor
             
             $aplicarFiltros($query);
             
@@ -319,7 +324,12 @@ class AprobacionController extends Controller
         $request->validate([
             'observaciones_picking' => 'required|string|max:1000',
             'productos_pendientes' => 'array',
-            'productos_pendientes.*' => 'integer'
+            'productos_pendientes.*' => 'integer',
+            'guia_picking_bodega' => 'nullable|string|max:100',
+            'guia_picking_separado_por' => 'nullable|string|max:150',
+            'guia_picking_revisado_por' => 'nullable|string|max:150',
+            'guia_picking_numero_bultos' => 'nullable|string|max:50',
+            'guia_picking_firma' => 'nullable|string|max:150'
         ]);
 
         $cotizacion = Cotizacion::findOrFail($id);
@@ -336,8 +346,16 @@ class AprobacionController extends Controller
         }
 
         try {
-            // Actualizar observación y estado general de la NVV a pendiente de entrega
-            $cotizacion->guardarPendienteEntrega($user->id, $request->observaciones_picking);
+            // Actualizar observación, estado y campos de guía picking
+            $cotizacion->guardarPendienteEntrega(
+                $user->id, 
+                $request->observaciones_picking,
+                $request->guia_picking_bodega,
+                $request->guia_picking_separado_por,
+                $request->guia_picking_revisado_por,
+                $request->guia_picking_numero_bultos,
+                $request->guia_picking_firma
+            );
 
             // Marcar productos pendientes vs embalados
             $idsPendientes = collect($request->input('productos_pendientes', []))->map(fn($v) => (int)$v)->all();
@@ -473,7 +491,12 @@ class AprobacionController extends Controller
         Log::info("📝 PASO 1: Validando request...");
         $request->validate([
             'comentarios' => 'nullable|string|max:500',
-            'validar_stock_real' => 'nullable|boolean'
+            'validar_stock_real' => 'nullable|boolean',
+            'guia_picking_bodega' => 'nullable|string|max:100',
+            'guia_picking_separado_por' => 'nullable|string|max:150',
+            'guia_picking_revisado_por' => 'nullable|string|max:150',
+            'guia_picking_numero_bultos' => 'nullable|string|max:50',
+            'guia_picking_firma' => 'nullable|string|max:150'
         ]);
         Log::info("✅ PASO 1: Validación OK");
 
@@ -551,7 +574,15 @@ class AprobacionController extends Controller
             // Solo si el insert fue exitoso, aprobamos en MySQL
             if ($resultado['success']) {
                 Log::info("✅ Insert en SQL Server exitoso, aprobando en MySQL...");
-            $cotizacion->aprobarPorPicking($user->id, $request->comentarios);
+                $cotizacion->aprobarPorPicking(
+                    $user->id, 
+                    $request->comentarios,
+                    $request->guia_picking_bodega,
+                    $request->guia_picking_separado_por,
+                    $request->guia_picking_revisado_por,
+                    $request->guia_picking_numero_bultos,
+                    $request->guia_picking_firma
+                );
                 Log::info("✅ Cotización aprobada en MySQL");
             } else {
                 // Si falló el insert, lanzar excepción para que se capture en el catch
@@ -2793,6 +2824,42 @@ class AprobacionController extends Controller
     }
 
     /**
+     * Descargar guía de picking en PDF
+     */
+    public function descargarGuiaPicking($id)
+    {
+        try {
+            $cotizacion = Cotizacion::with(['productos', 'cliente', 'user'])->findOrFail($id);
+            
+            // Verificar que sea una nota de venta
+            if ($cotizacion->tipo_documento !== 'nota_venta') {
+                return redirect()->back()->with('error', 'Solo se puede descargar la guía de picking para notas de venta');
+            }
+            
+            // Generar PDF usando DomPDF
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('aprobaciones.imprimir', compact('cotizacion'));
+            
+            // Configurar el PDF
+            $pdf->setPaper('A4', 'portrait');
+            $pdf->setOptions([
+                'isHtml5ParserEnabled' => true,
+                'isRemoteEnabled' => true,
+                'defaultFont' => 'Arial'
+            ]);
+            
+            // Generar nombre del archivo
+            $filename = 'Guia_Picking_NVV_' . $cotizacion->id . '_' . now()->format('Y-m-d') . '.pdf';
+            
+            // Descargar el PDF
+            return $pdf->download($filename);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error generando guía de picking: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Error al generar la guía de picking: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Guardar cantidad a separar
      */
     public function guardarSeparar($id)
@@ -3046,35 +3113,136 @@ class AprobacionController extends Controller
     }
     
     /**
-     * Sincronizar stock desde SQL Server
+     * Sincronizar stock de los productos de una NVV específica desde SQL Server
      */
-    public function sincronizarStock(Request $request, $id = null)
+    public function sincronizarStock(Request $request, $id)
     {
         try {
-            $stockService = new StockService();
-            $productosSincronizados = $stockService->sincronizarStockDesdeSQLServer();
+            // Obtener la cotización/NVV
+            $cotizacion = Cotizacion::findOrFail($id);
+            
+            // Obtener los productos de esta NVV
+            $productos = $cotizacion->productos;
+            
+            if ($productos->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No hay productos en esta nota de venta'
+                ], 400);
+            }
+            
+            Log::info("🔄 Sincronizando stock para NVV #{$id} con " . $productos->count() . " productos");
+            
+            $stockConsultaService = new StockConsultaService();
+            $productosSincronizados = 0;
+            $productosConError = 0;
+            
+            // Consultar y actualizar cada producto individualmente (usando el mismo método que funciona bien)
+            foreach ($productos as $productoCotizacion) {
+                $codigo = $productoCotizacion->codigo_producto;
+                
+                try {
+                    // Usar el mismo método que usa obtenerStockProducto (tsql directo con un solo producto)
+                    $host = env('SQLSRV_EXTERNAL_HOST');
+                    $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+                    $database = env('SQLSRV_EXTERNAL_DATABASE');
+                    $username = env('SQLSRV_EXTERNAL_USERNAME');
+                    $password = env('SQLSRV_EXTERNAL_PASSWORD');
+                    
+                    $codigoEscapado = "'" . addslashes(trim($codigo)) . "'";
+                    $query = "
+                        SELECT 
+                            CAST(SUM(ISNULL(STFI1, 0)) AS FLOAT) AS STOCK_FISICO,
+                            CAST(SUM(ISNULL(STOCNV1, 0)) AS FLOAT) AS STOCK_COMPROMETIDO
+                        FROM MAEST
+                        WHERE KOPR = {$codigoEscapado}
+                        AND KOBO = 'LIB'
+                    ";
+                    
+                    $tempFile = tempnam(sys_get_temp_dir(), 'sql_stock_');
+                    file_put_contents($tempFile, $query . "\ngo\nquit");
+                    
+                    $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+                    $output = shell_exec($command);
+                    unlink($tempFile);
+                    
+                    // Parsear resultado (mismo método que obtenerStockProducto)
+                    $stockFisico = 0;
+                    $stockComprometido = 0;
+                    
+                    $lines = explode("\n", $output);
+                    $headerFound = false;
+                    
+                    foreach ($lines as $line) {
+                        $line = trim($line);
+                        
+                        if (empty($line) || strpos($line, 'locale') !== false || 
+                            strpos($line, 'Setting') !== false || strpos($line, 'rows affected') !== false ||
+                            strpos($line, 'Msg ') !== false || strpos($line, 'Warning:') !== false ||
+                            preg_match('/^\d+>$/', $line) || preg_match('/^\d+>\s+\d+>\s+\d+>/', $line)) {
+                            continue;
+                        }
+                        
+                        if (stripos($line, 'STOCK_FISICO') !== false || stripos($line, 'STOCK_COMPROMETIDO') !== false) {
+                            $headerFound = true;
+                            continue;
+                        }
+                        
+                        if (preg_match('/^\s*([0-9.]+)\s+([0-9.]+)\s*$/', $line, $matches)) {
+                            $stockFisico = (float)$matches[1];
+                            $stockComprometido = (float)$matches[2];
+                            break;
+                        }
+                        
+                        if ($headerFound) {
+                            $parts = preg_split('/\s+/', $line);
+                            if (count($parts) >= 2 && is_numeric($parts[0]) && is_numeric($parts[1])) {
+                                $stockFisico = (float)$parts[0];
+                                $stockComprometido = (float)$parts[1];
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Actualizar MySQL con los valores obtenidos
+                    if ($stockFisico >= 0 && $stockComprometido >= 0) {
+                        $stockConsultaService->actualizarStockSiEsDiferente($codigo, $stockFisico, $stockComprometido);
+                        $productosSincronizados++;
+                        Log::info("✅ Stock sincronizado para {$codigo}: Físico={$stockFisico}, Comprometido={$stockComprometido}");
+                    } else {
+                        $productosConError++;
+                        Log::warning("⚠️ No se pudo parsear stock para {$codigo}");
+                    }
+                } catch (\Exception $e) {
+                    $productosConError++;
+                    Log::error("❌ Error sincronizando stock para {$codigo}: " . $e->getMessage());
+                }
+            }
             
             $mensaje = "Stock sincronizado exitosamente. {$productosSincronizados} productos actualizados.";
+            if ($productosConError > 0) {
+                $mensaje .= " {$productosConError} productos con errores.";
+            }
+            
+            Log::info("✅ Sincronización completada para NVV #{$id}: {$productosSincronizados} productos actualizados, {$productosConError} con errores");
             
             // Si es una petición AJAX, devolver JSON
             if ($request->ajax() || $request->wantsJson()) {
                 return response()->json([
                     'success' => true,
                     'message' => $mensaje,
-                    'productos_sincronizados' => $productosSincronizados
+                    'productos_sincronizados' => $productosSincronizados,
+                    'productos_con_error' => $productosConError,
+                    'total_productos' => $productos->count()
                 ]);
             }
             
-            if ($id) {
-                // Si viene desde una aprobación específica, redirigir de vuelta
-                return redirect()->back()->with('success', $mensaje);
-            }
-            
-            // Si no viene desde una vista específica, redirigir al index de aprobaciones
-            return redirect()->route('aprobaciones.index')->with('success', $mensaje);
+            // Si no es AJAX, redirigir de vuelta
+            return redirect()->back()->with('success', $mensaje);
             
         } catch (\Exception $e) {
-            Log::error('Error sincronizando stock: ' . $e->getMessage());
+            Log::error('Error sincronizando stock para NVV #' . $id . ': ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
             $mensajeError = 'Error al sincronizar stock: ' . $e->getMessage();
             
             // Si es una petición AJAX, devolver JSON
@@ -3085,11 +3253,7 @@ class AprobacionController extends Controller
                 ], 500);
             }
             
-            if ($id) {
-                return redirect()->back()->with('error', $mensajeError);
-            }
-            
-            return redirect()->route('aprobaciones.index')->with('error', $mensajeError);
+            return redirect()->back()->with('error', $mensajeError);
         }
     }
 

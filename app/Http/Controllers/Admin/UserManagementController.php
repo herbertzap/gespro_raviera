@@ -19,7 +19,7 @@ class UserManagementController extends Controller
     {
         $this->middleware('auth');
         $this->middleware(function ($request, $next) {
-            if (!auth()->user()->hasRole('Super Admin')) {
+            if (!auth()->user()->hasRole('Super Admin') && !auth()->user()->hasRole('Administrativo')) {
                 abort(403, 'No tienes permisos para acceder a esta sección');
             }
             return $next($request);
@@ -179,8 +179,8 @@ class UserManagementController extends Controller
         $request->validate([
             'vendedor_id' => 'required|string',
             'codigo_vendedor' => 'required|string|max:10',
-            'email' => 'required|email|unique:users,email',
-            'email_alternativo' => 'nullable|email|unique:users,email_alternativo',
+            'email' => ['required', new \App\Rules\ValidEmailWithDomain(), 'unique:users,email'],
+            'email_alternativo' => ['nullable', new \App\Rules\ValidEmailWithDomain(), 'unique:users,email_alternativo'],
             'rut' => ['nullable', new \App\Rules\ValidRut(), 'unique:users,rut'],
             'password' => 'required|min:8',
             'roles' => 'required|array',
@@ -318,11 +318,12 @@ class UserManagementController extends Controller
             }
 
             // Crear usuario
+            // Nota: No usar Hash::make() aquí porque el modelo User tiene un cast 'hashed' que hashea automáticamente
             $user = User::create([
                 'name' => $vendedorData->NOKOFU,
-                'email' => $request->email,
-                'email_alternativo' => $request->email_alternativo,
-                'password' => Hash::make($request->password),
+                'email' => trim($request->email),
+                'email_alternativo' => $request->email_alternativo ? trim($request->email_alternativo) : null,
+                'password' => $request->password, // El cast 'hashed' del modelo se encargará del hashing
                 'codigo_vendedor' => $request->codigo_vendedor ?: $vendedorData->KOFU, // Usar código del formulario o del empleado
                 'rut' => $request->rut ?: $vendedorData->RTFU, // Usar RUT del formulario o del empleado
                 'es_vendedor' => $esVendedor,
@@ -494,8 +495,8 @@ class UserManagementController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => ['required', 'email', Rule::unique('users')->ignore($user->id)],
-            'email_alternativo' => ['nullable', 'email', Rule::unique('users')->ignore($user->id)],
+            'email' => ['required', new \App\Rules\ValidEmailWithDomain(), Rule::unique('users')->ignore($user->id)],
+            'email_alternativo' => ['nullable', new \App\Rules\ValidEmailWithDomain(), Rule::unique('users')->ignore($user->id)],
             'rut' => 'nullable|string|max:20',
             'codigo_vendedor' => 'required|string|max:10',
             'es_vendedor' => 'boolean',
@@ -544,17 +545,50 @@ class UserManagementController extends Controller
      */
     public function changePassword(Request $request, User $user)
     {
-        $request->validate([
-            'password' => 'required|min:8|confirmed'
-        ]);
+        try {
+            $request->validate([
+                'password' => 'required|min:8|confirmed'
+            ], [
+                'password.required' => 'La contraseña es obligatoria.',
+                'password.min' => 'La contraseña debe tener al menos 8 caracteres.',
+                'password.confirmed' => 'Las contraseñas no coinciden.'
+            ]);
 
-        $user->update([
-            'password' => Hash::make($request->password),
-            'primer_login' => true,
-            'fecha_ultimo_cambio_password' => now()
-        ]);
+            \Log::info('Cambiando contraseña para usuario', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'password_length' => strlen($request->password)
+            ]);
 
-        return back()->with('success', 'Contraseña actualizada exitosamente');
+            // Guardar el password directamente - el cast 'hashed' lo hasheará automáticamente
+            $user->password = $request->password;
+            $user->primer_login = true;
+            $user->fecha_ultimo_cambio_password = now();
+            $user->save();
+
+            // Verificar que se guardó correctamente
+            $user->refresh();
+            $hashGuardado = $user->getAttributes()['password'];
+            $verificacion = Hash::check($request->password, $hashGuardado);
+            
+            \Log::info('Contraseña actualizada', [
+                'user_id' => $user->id,
+                'hash_length' => strlen($hashGuardado),
+                'verificacion_exitosa' => $verificacion
+            ]);
+
+            if (!$verificacion) {
+                \Log::error('ERROR: La contraseña guardada no verifica correctamente después de guardar');
+            }
+
+            return back()->with('success', 'Contraseña actualizada exitosamente.');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
+        } catch (\Exception $e) {
+            \Log::error('Error al cambiar contraseña: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            return back()->with('error', 'Error al actualizar la contraseña: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -562,10 +596,24 @@ class UserManagementController extends Controller
      */
     public function destroy(User $user)
     {
-        // No permitir eliminar el super admin
+        $currentUser = auth()->user();
+        
+        // No permitir eliminar el super admin específico
         if ($user->hasRole('Super Admin') && $user->email === 'herbert.zapata19@gmail.com') {
             return back()->withErrors(['error' => 'No se puede eliminar el super administrador']);
         }
+        
+        // Validar permisos de eliminación según el rol del usuario actual
+        if ($user->hasRole('Super Admin')) {
+            // Si el usuario a eliminar tiene rol Super Admin
+            if (!$currentUser->hasRole('Super Admin')) {
+                // Solo Super Admin puede eliminar a otro Super Admin
+                return back()->withErrors(['error' => 'No tienes permisos para eliminar un usuario con rol Super Admin. Solo un Super Admin puede eliminar a otro Super Admin.']);
+            }
+        }
+        
+        // Super Admin puede eliminar a cualquiera (excepto el protegido arriba)
+        // Administrativo puede eliminar a cualquiera excepto Super Admin (ya validado arriba)
 
         try {
             DB::beginTransaction();

@@ -9,36 +9,22 @@ use Illuminate\Support\Facades\DB;
 class StockConsultaService
 {
     /**
-     * Consultar stock desde SQL Server para un conjunto de productos (con cache)
+     * Consultar stock desde SQL Server para un conjunto de productos
+     * SIEMPRE actualiza MySQL con los valores obtenidos
      * 
      * @param array $codigosProductos Array de códigos de productos
+     * @param bool $forzarConsulta Si es true, ignora cache y consulta siempre (por defecto true)
      * @return array Array asociativo ['CODIGO' => ['stock_fisico' => X, 'stock_comprometido' => Y]]
      */
-    public function consultarStockDesdeSQLServer(array $codigosProductos)
+    public function consultarStockDesdeSQLServer(array $codigosProductos, $forzarConsulta = true)
     {
         if (empty($codigosProductos)) {
             return [];
         }
 
-        // Filtrar productos que ya están en cache (últimos 5 minutos)
+        // SIEMPRE consultar SQL Server (sin cache) para obtener datos frescos
         $stocks = [];
-        $codigosAConsultar = [];
-        
-        foreach ($codigosProductos as $codigo) {
-            $cacheKey = "stock_sql_{$codigo}";
-            $cached = Cache::get($cacheKey);
-            
-            if ($cached !== null) {
-                $stocks[$codigo] = $cached;
-            } else {
-                $codigosAConsultar[] = $codigo;
-            }
-        }
-
-        // Si todos estaban en cache, retornar
-        if (empty($codigosAConsultar)) {
-            return $stocks;
-        }
+        $codigosAConsultar = $codigosProductos;
 
         // Consultar SQL Server solo para los que no están en cache
         try {
@@ -65,6 +51,9 @@ class StockConsultaService
                 AND MAEST.KOPR IN ({$codigosList})
             ";
             
+            Log::info("📋 Consultando SQL Server para productos: " . implode(', ', $codigosAConsultar));
+            Log::info("📋 Query SQL: " . $query);
+            
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_stock_');
             file_put_contents($tempFile, $query . "\ngo\nquit");
             
@@ -74,56 +63,96 @@ class StockConsultaService
             unlink($tempFile);
             
             // Parsear resultado - tsql devuelve los datos en formato tabular
+            Log::info("📋 Output completo de consulta múltiple: " . substr($output, 0, 500));
+            
             $lines = explode("\n", $output);
             $headerFound = false;
             
             foreach ($lines as $line) {
                 $line = trim($line);
                 
-                // Saltar líneas de configuración
-                if (empty($line) || strpos($line, 'locale') !== false || 
-                    strpos($line, 'Setting') !== false || strpos($line, 'rows affected') !== false ||
-                    strpos($line, 'Msg ') !== false || strpos($line, 'Warning:') !== false ||
-                    strpos($line, '1>') !== false || strpos($line, '2>') !== false) {
+                // Saltar líneas de configuración y numeración de tsql
+                if (empty($line) || 
+                    strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || 
+                    strpos($line, 'rows affected') !== false ||
+                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'Warning:') !== false ||
+                    preg_match('/^\d+>$/', $line) || 
+                    preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
+                    preg_match('/^[0-9]+\s*>\s*$/', $line)) {  // Líneas como "1> " o "10> "
                     continue;
                 }
                 
-                // Buscar header (KOPR)
-                if (stripos($line, 'KOPR') !== false) {
+                // Buscar header (KOPR o STOCK_FISICO)
+                if (stripos($line, 'KOPR') !== false || (stripos($line, 'STOCK_FISICO') !== false && stripos($line, 'STOCK_COMPROMETIDO') !== false)) {
                     $headerFound = true;
+                    Log::info("📋 Header encontrado: {$line}");
                     continue;
                 }
                 
                 // Si encontramos el header, procesar líneas de datos
                 if ($headerFound) {
-                    // Parsear línea (formato: CODIGO STOCK_FISICO STOCK_COMPROMETIDO)
-                    // Puede haber espacios múltiples, usar preg_split
-                    $parts = preg_split('/\s+/', $line);
-                    if (count($parts) >= 3) {
-                        $codigo = trim($parts[0]);
-                        $stockFisico = (float)$parts[1];
-                        $stockComprometido = (float)$parts[2];
+                    // Intentar parsear línea usando regex (más robusto para tabs y espacios)
+                    // Formato: CODIGO (alfanumérico) seguido de dos números (puede haber tabs o espacios)
+                    if (preg_match('/^([0-9A-Z]{3,})[\s\t]+([0-9.]+)[\s\t]+([0-9.]+)/i', $line, $matches)) {
+                        $codigo = trim($matches[1]);
+                        $stockFisico = (float)trim($matches[2]);
+                        $stockComprometido = (float)trim($matches[3]);
                         
-                        // Validar que el código no esté vacío
-                        if (empty($codigo)) {
-                            continue;
+                        // Validar que tenemos valores válidos
+                        if (!empty($codigo) && strlen($codigo) >= 3 && is_numeric($stockFisico) && is_numeric($stockComprometido)) {
+                            $stockData = [
+                                'stock_fisico' => $stockFisico,
+                                'stock_comprometido' => $stockComprometido,
+                                'consultado_at' => now()->toDateTimeString()
+                            ];
+                            
+                            $stocks[$codigo] = $stockData;
+                            
+                            // ACTUALIZAR MySQL inmediatamente con los valores obtenidos
+                            $this->actualizarStockSiEsDiferente($codigo, $stockFisico, $stockComprometido);
+                            Log::info("✅ Stock parseado con regex y actualizado en MySQL para {$codigo}: Físico={$stockFisico}, Comprometido={$stockComprometido}");
+                        } else {
+                            Log::warning("⚠️ Línea parseada con regex pero con datos inválidos: línea='{$line}', código='{$codigo}', stock_fisico={$stockFisico}, stock_comprometido={$stockComprometido}");
+                        }
+                    } else {
+                        // Si el regex no funciona, intentar método alternativo: dividir por tabs o espacios
+                        // Primero intentar con tabs (formato más común de tsql)
+                        if (strpos($line, "\t") !== false) {
+                            $parts = array_filter(explode("\t", $line), function($p) { return trim($p) !== ''; });
+                            $parts = array_values($parts); // Reindexar
+                        } else {
+                            // Si no hay tabs, usar espacios múltiples
+                            $parts = preg_split('/\s+/', $line);
                         }
                         
-                        $stockData = [
-                            'stock_fisico' => $stockFisico,
-                            'stock_comprometido' => $stockComprometido,
-                            'consultado_at' => now()->toDateTimeString()
-                        ];
-                        
-                        $stocks[$codigo] = $stockData;
-                        
-                        // Guardar en cache por 5 minutos
-                        Cache::put("stock_sql_{$codigo}", $stockData, 300);
+                        // Validar que tengamos al menos 3 partes
+                        if (count($parts) >= 3) {
+                            $codigo = trim($parts[0]);
+                            $stockFisico = (float)trim($parts[1]);
+                            $stockComprometido = (float)trim($parts[2]);
+                            
+                            // Validar que el código no esté vacío y sea válido
+                            if (!empty($codigo) && strlen($codigo) >= 3 && is_numeric($stockFisico) && is_numeric($stockComprometido)) {
+                                $stockData = [
+                                    'stock_fisico' => $stockFisico,
+                                    'stock_comprometido' => $stockComprometido,
+                                    'consultado_at' => now()->toDateTimeString()
+                                ];
+                                
+                                $stocks[$codigo] = $stockData;
+                                $this->actualizarStockSiEsDiferente($codigo, $stockFisico, $stockComprometido);
+                                Log::info("✅ Stock parseado con split y actualizado en MySQL para {$codigo}: Físico={$stockFisico}, Comprometido={$stockComprometido}");
+                            } else {
+                                Log::warning("⚠️ Línea parseada con split pero con datos inválidos: línea='{$line}', código='{$codigo}', parts=" . json_encode($parts));
+                            }
+                        }
                     }
                 }
             }
             
-            // Para productos que no se encontraron en SQL Server, guardar valores por defecto en cache
+            // Para productos que no se encontraron en SQL Server, actualizar MySQL con 0
             foreach ($codigosAConsultar as $codigo) {
                 if (!isset($stocks[$codigo])) {
                     $stockData = [
@@ -132,7 +161,9 @@ class StockConsultaService
                         'consultado_at' => now()->toDateTimeString()
                     ];
                     $stocks[$codigo] = $stockData;
-                    Cache::put("stock_sql_{$codigo}", $stockData, 300);
+                    // Actualizar MySQL con 0 si no se encontró
+                    $this->actualizarStockSiEsDiferente($codigo, 0, 0);
+                    Log::warning("⚠️ Producto {$codigo} no encontrado en SQL Server, actualizado con 0");
                 }
             }
             
@@ -169,31 +200,24 @@ class StockConsultaService
                 return false;
             }
             
-            $stockFisicoActual = (float)($producto->stock_fisico ?? 0);
-            $stockComprometidoActual = (float)($producto->stock_comprometido ?? 0);
+            // SIEMPRE actualizar (no verificar si es diferente)
+            // Calcular stock comprometido local (NVV)
+            $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($codigo);
             
-            // Solo actualizar si es diferente
-            if ($stockFisicoActual != $stockFisico || $stockComprometidoActual != $stockComprometido) {
-                // Calcular stock comprometido local (NVV)
-                $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($codigo);
-                
-                // Stock disponible = stock físico - (stock comprometido SQL + stock comprometido local)
-                $stockDisponible = $stockFisico - ($stockComprometido + $stockComprometidoLocal);
-                
-                DB::table('productos')
-                    ->where('KOPR', $codigo)
-                    ->update([
-                        'stock_fisico' => $stockFisico,
-                        'stock_comprometido' => $stockComprometido,
-                        'stock_disponible' => max(0, $stockDisponible),
-                        'updated_at' => now()
-                    ]);
-                
-                Log::debug("Stock actualizado para {$codigo}: Físico={$stockFisico}, Comprometido={$stockComprometido}, Disponible={$stockDisponible}");
-                return true;
-            }
+            // Stock disponible = stock físico - (stock comprometido SQL + stock comprometido local)
+            $stockDisponible = $stockFisico - ($stockComprometido + $stockComprometidoLocal);
             
-            return false;
+            DB::table('productos')
+                ->where('KOPR', $codigo)
+                ->update([
+                    'stock_fisico' => $stockFisico,
+                    'stock_comprometido' => $stockComprometido,
+                    'stock_disponible' => max(0, $stockDisponible),
+                    'updated_at' => now()
+                ]);
+            
+            Log::info("✅ Stock ACTUALIZADO en MySQL para {$codigo}: Físico={$stockFisico}, Comprometido={$stockComprometido}, Disponible={$stockDisponible}");
+            return true;
             
         } catch (\Exception $e) {
             Log::error("Error actualizando stock para {$codigo}: " . $e->getMessage());

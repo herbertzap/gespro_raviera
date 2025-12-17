@@ -182,6 +182,7 @@
                                     <tr>
                                         <th>Fecha</th>
                                         <th>Código de Barras</th>
+                                        <th>Código Anterior</th>
                                         <th>SKU Asociado</th>
                                         <th>Bodega</th>
                                         <th>Usuario</th>
@@ -192,6 +193,14 @@
                                     <tr>
                                         <td>{{ $log->created_at->format('d/m/Y H:i') }}</td>
                                         <td><strong>{{ $log->barcode }}</strong></td>
+                                        <td>
+                                            @if($log->barcode_anterior)
+                                                <span class="text-muted"><del>{{ $log->barcode_anterior }}</del></span>
+                                                <br><small class="badge badge-warning">Reemplazado</small>
+                                            @else
+                                                <span class="text-muted">-</span>
+                                            @endif
+                                        </td>
                                         <td><strong>{{ $log->sku }}</strong></td>
                                         <td>
                                             {{ $log->bodega->nombre_bodega ?? '-' }}
@@ -203,7 +212,7 @@
                                     </tr>
                                     @empty
                                     <tr>
-                                        <td colspan="5" class="text-center text-muted">
+                                        <td colspan="6" class="text-center text-muted">
                                             No hay modificaciones de códigos de barras registradas
                                         </td>
                                     </tr>

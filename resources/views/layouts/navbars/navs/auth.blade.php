@@ -46,15 +46,15 @@
                             <img src="{{ asset('black') }}/img/anime3.png" alt="{{ __('Profile Photo') }}">
                         </div>
                         <b class="caret d-none d-lg-block d-xl-block"></b>
-                        <p class="d-lg-none">Cerrar Sesión</p>
+                        <p class="d-lg-none" style="color: #000 !important;">Cerrar Sesión</p>
                     </a>
-                    <ul class="dropdown-menu dropdown-navbar">
+                    <ul class="dropdown-menu dropdown-navbar" style="color: #000 !important;">
                         <li class="nav-link">
-                            <a href="{{ route('profile.edit') }}" class="nav-item dropdown-item">Perfil</a>
+                            <a href="{{ route('profile.edit') }}" class="nav-item dropdown-item" style="color: #000 !important;">Perfil</a>
                         </li>
                         <li class="dropdown-divider"></li>
                         <li class="nav-link">
-                            <a href="#" class="nav-item dropdown-item" onclick="event.preventDefault(); 
+                            <a href="#" class="nav-item dropdown-item" style="color: #000 !important;" onclick="event.preventDefault(); 
                                 if (confirm('¿Estás seguro de que quieres cerrar sesión?')) {
                                     try {
                                         document.getElementById('logout-form').submit();

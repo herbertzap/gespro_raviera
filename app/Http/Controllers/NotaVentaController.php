@@ -11,6 +11,7 @@ use App\Models\CotizacionProducto;
 use App\Models\StockComprometido;
 use App\Models\Cliente;
 use App\Services\ClienteValidacionService;
+use App\Services\StockConsultaService;
 
 class NotaVentaController extends Controller
 {
@@ -947,19 +948,108 @@ class NotaVentaController extends Controller
             
             // 4. Verificar stock y crear detalles de cotización
             \Log::info('📦 VERIFICANDO STOCK Y CREANDO PRODUCTOS DE COTIZACIÓN');
+            // 4. ACTUALIZAR STOCKS PRODUCTO POR PRODUCTO (usando el mismo método que funciona en la búsqueda)
+            \Log::info('🔄 ACTUALIZANDO STOCKS DESDE SQL SERVER ANTES DE GUARDAR NVV (producto por producto)');
+            $stockConsultaService = new \App\Services\StockConsultaService();
+            
+            // ACTUALIZAR cada producto individualmente usando el mismo método que funciona bien
+            // (consulta producto por producto para evitar problemas de parsing con múltiples productos)
+            foreach ($request->productos as $producto) {
+                $codigo = $producto['codigo'];
+                
+                // Usar el mismo método que usa obtenerStockProducto (tsql directo con un solo producto)
+                try {
+                    $host = env('SQLSRV_EXTERNAL_HOST');
+                    $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+                    $database = env('SQLSRV_EXTERNAL_DATABASE');
+                    $username = env('SQLSRV_EXTERNAL_USERNAME');
+                    $password = env('SQLSRV_EXTERNAL_PASSWORD');
+                    
+                    $codigoEscapado = "'" . addslashes(trim($codigo)) . "'";
+                    $query = "
+                        SELECT 
+                            CAST(SUM(ISNULL(STFI1, 0)) AS FLOAT) AS STOCK_FISICO,
+                            CAST(SUM(ISNULL(STOCNV1, 0)) AS FLOAT) AS STOCK_COMPROMETIDO
+                        FROM MAEST
+                        WHERE KOPR = {$codigoEscapado}
+                        AND KOBO = 'LIB'
+                    ";
+                    
+                    $tempFile = tempnam(sys_get_temp_dir(), 'sql_stock_');
+                    file_put_contents($tempFile, $query . "\ngo\nquit");
+                    
+                    $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+                    $output = shell_exec($command);
+                    unlink($tempFile);
+                    
+                    // Parsear resultado (mismo método que obtenerStockProducto)
+                    $stockFisico = 0;
+                    $stockComprometido = 0;
+                    
+                    $lines = explode("\n", $output);
+                    $headerFound = false;
+                    
+                    foreach ($lines as $line) {
+                        $line = trim($line);
+                        
+                        if (empty($line) || strpos($line, 'locale') !== false || 
+                            strpos($line, 'Setting') !== false || strpos($line, 'rows affected') !== false ||
+                            strpos($line, 'Msg ') !== false || strpos($line, 'Warning:') !== false ||
+                            preg_match('/^\d+>$/', $line) || preg_match('/^\d+>\s+\d+>\s+\d+>/', $line)) {
+                            continue;
+                        }
+                        
+                        if (stripos($line, 'STOCK_FISICO') !== false || stripos($line, 'STOCK_COMPROMETIDO') !== false) {
+                            $headerFound = true;
+                            continue;
+                        }
+                        
+                        if (preg_match('/^\s*([0-9.]+)\s+([0-9.]+)\s*$/', $line, $matches)) {
+                            $stockFisico = (float)$matches[1];
+                            $stockComprometido = (float)$matches[2];
+                            break;
+                        }
+                        
+                        if ($headerFound) {
+                            $parts = preg_split('/\s+/', $line);
+                            if (count($parts) >= 2 && is_numeric($parts[0]) && is_numeric($parts[1])) {
+                                $stockFisico = (float)$parts[0];
+                                $stockComprometido = (float)$parts[1];
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Actualizar MySQL con los valores obtenidos
+                    if ($stockFisico >= 0 && $stockComprometido >= 0) {
+                        $stockConsultaService->actualizarStockSiEsDiferente($codigo, $stockFisico, $stockComprometido);
+                        \Log::info("✅ Stock actualizado en MySQL para {$codigo}: Físico={$stockFisico}, Comprometido={$stockComprometido}");
+                    } else {
+                        \Log::warning("⚠️ No se pudo parsear stock para {$codigo}. Output: " . substr($output, 0, 200));
+                    }
+                } catch (\Exception $e) {
+                    \Log::error("❌ Error actualizando stock para {$codigo}: " . $e->getMessage());
+                    // Continuar con los otros productos aunque falle uno
+                }
+            }
+            
             $stockComprometidoService = new \App\Services\StockComprometidoService();
             $productosSinStock = [];
             $productosConStockComprometido = [];
             $productosParaValidar = [];
-            
+
             foreach ($request->productos as $index => $producto) {
                 \Log::info("📦 Procesando producto {$index}: {$producto['codigo']}");
                 
-                // Obtener stock disponible real
+                // Consultar stock actualizado del producto (después de actualizar MySQL)
                 $stockDisponibleReal = $stockComprometidoService->obtenerStockDisponibleReal($producto['codigo']);
                 $stockComprometido = \App\Models\StockComprometido::calcularStockComprometido($producto['codigo']);
                 
-                \Log::info("📦 Stock para producto {$producto['codigo']}: Disponible={$stockDisponibleReal}, Comprometido={$stockComprometido}, Cantidad solicitada={$producto['cantidad']}");
+                // Obtener stock FÍSICO del producto ACTUALIZADO (importante para validación de compras)
+                $productoDB = \App\Models\Producto::where('KOPR', $producto['codigo'])->first();
+                $stockFisico = $productoDB ? ($productoDB->stock_fisico ?? 0) : 0;
+                
+                \Log::info("📦 Stock para producto {$producto['codigo']}: Físico={$stockFisico}, Disponible={$stockDisponibleReal}, Comprometido={$stockComprometido}, Cantidad solicitada={$producto['cantidad']}");
                 
                 // Calcular valores del producto
                 $precioBase = $producto['cantidad'] * $producto['precio'];
@@ -968,6 +1058,9 @@ class NotaVentaController extends Controller
                 $subtotalConDescuento = $precioBase - $descuentoValor;
                 $ivaProducto = $subtotalConDescuento * 0.19;
                 $totalProducto = $subtotalConDescuento + $ivaProducto;
+                
+                // Validar stock FÍSICO (no disponible) para determinar si requiere compras
+                $stockSuficiente = $stockFisico >= $producto['cantidad'];
                 
                 $productoData = [
                     'cotizacion_id' => $cotizacion->id,
@@ -982,16 +1075,27 @@ class NotaVentaController extends Controller
                     'iva_porcentaje' => 19.00,
                     'iva_valor' => $ivaProducto,
                     'total_producto' => $totalProducto,
-                    'stock_disponible' => $stockDisponibleReal,
-                    'stock_suficiente' => $stockDisponibleReal >= $producto['cantidad']
+                    'stock_disponible' => $stockDisponibleReal, // Se actualizará después con valor real
+                    'stock_suficiente' => $stockSuficiente // Usar stock FÍSICO para validación
                 ];
                 \Log::info("📦 Datos de producto a crear:", $productoData);
                 
                 $cotizacionProducto = CotizacionProducto::create($productoData);
                 \Log::info("✅ Producto de cotización creado - ID: {$cotizacionProducto->id}");
                 
-                // Verificar si hay stock suficiente
-                if ($stockDisponibleReal >= $producto['cantidad']) {
+                // ACTUALIZAR stock_disponible en cotizacion_productos con el valor ACTUALIZADO de productos
+                // Esto asegura que la vista de aprobaciones muestre el stock correcto
+                $productoActualizado = \App\Models\Producto::where('KOPR', $producto['codigo'])->first();
+                if ($productoActualizado) {
+                    $stockDisponibleActualizado = $stockComprometidoService->obtenerStockDisponibleReal($producto['codigo']);
+                    $cotizacionProducto->stock_disponible = $stockDisponibleActualizado;
+                    $cotizacionProducto->stock_suficiente = ($productoActualizado->stock_fisico ?? 0) >= $producto['cantidad'];
+                    $cotizacionProducto->save();
+                    \Log::info("📦 Stock actualizado en cotizacion_productos para {$producto['codigo']}: {$stockDisponibleActualizado}");
+                }
+                
+                // Verificar si hay stock FÍSICO suficiente (para comprometer)
+                if ($stockFisico >= $producto['cantidad']) {
                     // Hay stock suficiente, comprometer el stock
                     \Log::info("📦 Comprometiendo stock para producto {$producto['codigo']}: {$producto['cantidad']} unidades");
                     
@@ -1017,19 +1121,21 @@ class NotaVentaController extends Controller
                     $productosConStockComprometido[] = $producto['codigo'];
                 } else {
                     // No hay stock suficiente
-                    \Log::warning("⚠️ Stock insuficiente para producto {$producto['codigo']}: Disponible={$stockDisponibleReal}, Solicitado={$producto['cantidad']}");
+                    \Log::warning("⚠️ Stock FÍSICO insuficiente para producto {$producto['codigo']}: Físico={$stockFisico}, Solicitado={$producto['cantidad']}");
                     $productosSinStock[] = [
                         'codigo' => $producto['codigo'],
                         'nombre' => $producto['nombre'],
+                        'stock_fisico' => $stockFisico,
                         'stock_disponible' => $stockDisponibleReal,
                         'cantidad_solicitada' => $producto['cantidad']
                     ];
                 }
 
-                // Armar array de validación con el stock real calculado
+                // Armar array de validación con el stock FÍSICO real calculado
                 $productosParaValidar[] = [
                     'codigo' => $producto['codigo'],
                     'nombre' => $producto['nombre'],
+                    'stock_fisico' => $stockFisico, // Usar stock FÍSICO para validación
                     'stock_disponible' => $stockDisponibleReal,
                     'cantidad' => $producto['cantidad']
                 ];
@@ -1054,43 +1160,70 @@ class NotaVentaController extends Controller
             
             $requiereAutorizacion = false;
             $motivosAutorizacion = [];
-            $tieneProblemasCredito = $validacionesAutomaticas['requiere_autorizacion'];
-            $tieneProblemasStock = $validacionStock['requiere_autorizacion'];
+            $tieneProblemasCredito = $validacionesAutomaticas['requiere_autorizacion'] ?? false;
             
-            // Verificar validaciones automáticas
+            // CRÍTICO: Determinar si hay problemas de stock basado SOLO en $productosSinStock 
+            // (que se construyó verificando stock FÍSICO >= cantidad durante el loop)
+            // NO usar $validacionStock['requiere_autorizacion'] porque puede estar desincronizado o usar valores incorrectos
+            $tieneProblemasStock = !empty($productosSinStock);
+            
+            \Log::info("🔍 Resumen de validaciones para determinación de estado:", [
+                'productos_sin_stock_count' => count($productosSinStock),
+                'productos_sin_stock_codigos' => array_column($productosSinStock, 'codigo'),
+                'tiene_problemas_credito' => $tieneProblemasCredito,
+                'tiene_problemas_stock' => $tieneProblemasStock,
+                'validaciones_automaticas_requiere_autorizacion' => $validacionesAutomaticas['requiere_autorizacion'] ?? false,
+                'validacion_stock_requiere_autorizacion' => $validacionStock['requiere_autorizacion'] ?? false,
+                'nota' => 'tieneProblemasStock se determina SOLO por productosSinStock (stock FÍSICO)'
+            ]);
+            
+            // Verificar validaciones automáticas (solo para mensajes, no para determinar estado)
             if ($validacionesAutomaticas['requiere_autorizacion']) {
                 $requiereAutorizacion = true;
                 $motivosAutorizacion[] = 'Cliente requiere autorización';
             }
             
-            if ($validacionStock['requiere_autorizacion']) {
+            if ($tieneProblemasStock) {
                 $requiereAutorizacion = true;
                 $motivosAutorizacion[] = 'Stock requiere autorización';
             }
             
+            // Determinar estado de aprobación basado en los problemas detectados
+            // LÓGICA SIMPLIFICADA Y CLARA:
+            // 1. Si todos tienen stock FÍSICO suficiente Y no hay problemas de crédito → pendiente_picking
+            // 2. Si todos tienen stock FÍSICO suficiente PERO hay problemas de crédito → pendiente (supervisor)
+            // 3. Si hay productos sin stock FÍSICO suficiente → pendiente (compras), y si hay crédito también → pendiente (supervisor primero)
+            $estadoFinal = 'enviada';
+            
+            if (empty($productosSinStock) && !$tieneProblemasCredito) {
+                // Todos tienen stock FÍSICO suficiente Y no hay problemas de crédito → pasa directo a picking
+                $estadoAprobacion = 'pendiente_picking';
+                $tieneProblemasStock = false; // Asegurar que esté en false
+                \Log::info("✅ NVV pasará directo a PICKING - Todos los productos tienen stock FÍSICO suficiente y sin problemas de crédito");
+            } elseif (empty($productosSinStock) && $tieneProblemasCredito) {
+                // Todos tienen stock FÍSICO suficiente PERO hay problemas de crédito → requiere supervisor primero
+                $estadoAprobacion = 'pendiente';
+                $tieneProblemasStock = false; // Asegurar que esté en false
+                \Log::info("⚠️ NVV requiere SUPERVISOR - Stock FÍSICO suficiente pero problemas de crédito");
+            } else {
+                // Hay productos sin stock FÍSICO suficiente → requiere compras
+                $estadoAprobacion = 'pendiente';
+                $tieneProblemasStock = true; // Asegurar que esté en true
+                \Log::info("⚠️ NVV requiere COMPRAS - Stock FÍSICO insuficiente en " . count($productosSinStock) . " productos. Códigos: " . implode(', ', array_column($productosSinStock, 'codigo')));
+            }
+            
+            // Actualizar cotización con el estado determinado
+            $cotizacion->update([
+                'estado' => $estadoFinal,
+                'estado_aprobacion' => $estadoAprobacion,
+                'requiere_aprobacion' => ($estadoAprobacion !== 'pendiente_picking'),
+                'tiene_problemas_credito' => $tieneProblemasCredito,
+                'tiene_problemas_stock' => $tieneProblemasStock
+                // Las observaciones se mantienen como las escribió el usuario, sin agregar información automática
+            ]);
+            
             if (!empty($productosSinStock)) {
-                // Hay productos sin stock suficiente, crear nota de venta pendiente                                                                        
-                $estadoFinal = 'enviada';
-                
-                // Determinar estado de aprobación basado en los problemas detectados
-                if ($tieneProblemasCredito && $tieneProblemasStock) {
-                    $estadoAprobacion = 'pendiente'; // Requiere supervisor primero
-                } elseif ($tieneProblemasCredito) {
-                    $estadoAprobacion = 'pendiente'; // Requiere supervisor
-                } elseif ($tieneProblemasStock) {
-                    $estadoAprobacion = 'pendiente'; // Requiere supervisor (por stock)
-                } else {
-                    $estadoAprobacion = 'pendiente_picking'; // Solo requiere picking
-                }
-                
-                $cotizacion->update([
-                    'estado' => $estadoFinal,
-                    'estado_aprobacion' => $estadoAprobacion,
-                    'requiere_aprobacion' => true,
-                    'tiene_problemas_credito' => $tieneProblemasCredito,
-                    'tiene_problemas_stock' => $tieneProblemasStock
-                    // Las observaciones se mantienen como las escribió el usuario, sin agregar información automática
-                ]);
+                // Hay productos sin stock suficiente, crear nota de venta pendiente
                 
                 // Crear nota de venta pendiente
                 \Log::info('📋 CREANDO NOTA DE VENTA PENDIENTE');
@@ -1186,14 +1319,18 @@ class NotaVentaController extends Controller
                     $motivosTexto = implode(', ', $motivosAutorizacion);
                     
                     // Determinar estado de aprobación basado en los problemas detectados
-                    if ($tieneProblemasCredito && $tieneProblemasStock) {
-                        $estadoAprobacion = 'pendiente'; // Requiere supervisor primero (crédito), luego compras (stock)
-                    } elseif ($tieneProblemasCredito) {
-                        $estadoAprobacion = 'pendiente'; // Requiere supervisor (crédito)
-                    } elseif ($tieneProblemasStock) {
-                        $estadoAprobacion = 'pendiente'; // Requiere supervisor primero, luego compras (stock)
+                    // Misma lógica que arriba: usar $productosSinStock (stock FÍSICO) no $validacionStock
+                    $tieneProblemasStock = !empty($productosSinStock);
+                    
+                    if (empty($productosSinStock) && !$tieneProblemasCredito) {
+                        $estadoAprobacion = 'pendiente_picking'; // Pasa directo a picking
+                        $tieneProblemasStock = false;
+                    } elseif (empty($productosSinStock) && $tieneProblemasCredito) {
+                        $estadoAprobacion = 'pendiente'; // Requiere supervisor primero (crédito), luego picking
+                        $tieneProblemasStock = false;
                     } else {
-                        $estadoAprobacion = 'pendiente_picking'; // Solo requiere picking
+                        $estadoAprobacion = 'pendiente'; // Requiere compras (stock), y si hay crédito también → supervisor primero
+                        $tieneProblemasStock = true;
                     }
                     
                     $cotizacion->update([
@@ -2843,11 +2980,28 @@ class NotaVentaController extends Controller
                 ], 403);
             }
             
-            // Verificar que la cotización no esté validada
-            if (in_array($cotizacion->estado, ['procesada', 'ingresada', 'pendiente'])) {
+            // Verificar que sea una nota de venta
+            if ($cotizacion->tipo_documento !== 'nota_venta') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No se puede eliminar una cotización que ya ha sido validada y procesada'
+                    'message' => 'No se puede eliminar una cotización desde el controlador de notas de venta'
+                ], 400);
+            }
+            
+            // Verificar que la NVV no esté validada (solo se pueden eliminar si están en estado 'borrador', 'enviada' o 'rechazada')
+            // No se pueden eliminar si están en 'procesada', 'ingresada', o si ya fueron aprobadas
+            if (in_array($cotizacion->estado, ['procesada', 'ingresada'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se puede eliminar una nota de venta que ya ha sido validada y procesada'
+                ], 403);
+            }
+            
+            // Verificar que no esté en un estado de aprobación avanzado
+            if (in_array($cotizacion->estado_aprobacion, ['aprobada_supervisor', 'aprobada_compras', 'aprobada_picking', 'procesada'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se puede eliminar una nota de venta que ya ha sido aprobada'
                 ], 403);
             }
             
@@ -2867,30 +3021,37 @@ class NotaVentaController extends Controller
                 if ($validadaPorCompras) $motivos[] = 'compras';
                 if ($validadaPorPicking) $motivos[] = 'picking';
                 
-                \Log::warning('Intento de eliminar cotización ya validada por: ' . implode(', ', $motivos));
+                \Log::warning('Intento de eliminar nota de venta ya validada por: ' . implode(', ', $motivos));
                 
                 return response()->json([
                     'success' => false,
-                    'message' => 'No se puede eliminar una cotización que ya ha sido validada por: ' . implode(', ', $motivos)
+                    'message' => 'No se puede eliminar una nota de venta que ya ha sido validada por: ' . implode(', ', $motivos)
                 ], 403);
             }
             
-            // Eliminar cotización
-            \Log::info('Eliminando cotización...');
+            // Liberar stock comprometido si existe
+            $stockComprometidoService = new \App\Services\StockComprometidoService();
+            $stockComprometidoService->liberarStock($cotizacion->id, 'Eliminada por usuario');
+            
+            // Eliminar productos de la cotización
+            $cotizacion->productos()->delete();
+            
+            // Eliminar cotización/NVV
+            \Log::info('Eliminando nota de venta...');
             $cotizacion->delete();
-            \Log::info('Cotización eliminada exitosamente');
+            \Log::info('Nota de venta eliminada exitosamente');
             
             return response()->json([
                 'success' => true,
-                'message' => 'Cotización eliminada exitosamente'
+                'message' => 'Nota de venta eliminada exitosamente'
             ]);
             
         } catch (\Exception $e) {
-            \Log::error('Error eliminando cotización: ' . $e->getMessage());
+            \Log::error('Error eliminando nota de venta: ' . $e->getMessage());
             
             return response()->json([
                 'success' => false,
-                'message' => 'Error eliminando cotización: ' . $e->getMessage()
+                'message' => 'Error eliminando nota de venta: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -3028,16 +3189,30 @@ class NotaVentaController extends Controller
     
     /**
      * Obtener stock actual de un producto específico
+     * ACTUALIZA el stock físico en MySQL desde SQL Server antes de retornar
      */
     public function obtenerStockProducto($codigo)
     {
         try {
-            $stockService = new \App\Services\StockComprometidoService();
+            // 1. Consultar stock desde SQL Server y actualizar MySQL
+            $stockConsultaService = new \App\Services\StockConsultaService();
+            $stockSQL = $stockConsultaService->consultarStockDesdeSQLServer([$codigo]);
             
-            // Obtener stock disponible real
+            if (isset($stockSQL[$codigo])) {
+                // Actualizar stock en MySQL si es diferente
+                $stockConsultaService->actualizarStockSiEsDiferente(
+                    $codigo,
+                    $stockSQL[$codigo]['stock_fisico'],
+                    $stockSQL[$codigo]['stock_comprometido']
+                );
+                \Log::info("📦 Stock actualizado en MySQL para {$codigo}: Físico={$stockSQL[$codigo]['stock_fisico']}, Comprometido={$stockSQL[$codigo]['stock_comprometido']}");
+            }
+            
+            // 2. Obtener stock disponible real (después de actualizar MySQL)
+            $stockService = new \App\Services\StockComprometidoService();
             $stockDisponibleReal = $stockService->obtenerStockDisponibleReal($codigo);
             
-            // Obtener datos del producto
+            // 3. Obtener datos del producto actualizados
             $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
             
             if (!$producto) {

@@ -332,7 +332,7 @@
                                     <div class="table-responsive">
                                         <div class="d-flex justify-content-between align-items-center mb-2">
                                             <h6 class="mb-0">Productos en Cotización</h6>
-                                            <span class="badge badge-info" id="contadorProductos">0/24 productos</span>
+                                            <span class="badge badge-info" id="contadorProductos">0/20 productos</span>
                                         </div>
                                         <table class="table" id="tablaProductos">
                                             <thead class="text-primary">
@@ -553,13 +553,11 @@ function mostrarResultadosProductosAjax(productos) {
     contenido += '</button>';
     contenido += '</div>';
     contenido += '<table class="table table-striped table-hover">';
-    contenido += '<thead class="thead"><tr><th><input type="checkbox" id="selectAllProductos" onchange="toggleAllProductos()"></th><th>Código</th><th>Producto</th><th>Stock</th><th>Precio</th><th>Acción</th></tr></thead><tbody>';
+    contenido += '<thead class="thead"><tr><th><input type="checkbox" id="selectAllProductos" onchange="toggleAllProductos()"></th><th>Código</th><th>Producto</th><th>Precio</th><th>Acción</th></tr></thead><tbody>';
     
     productos.forEach(producto => {
-        // Usar información de stock mejorada
+        // Usar información de stock mejorada (se usará al agregar, pero no se muestra en la búsqueda)
         const stockReal = producto.STOCK_DISPONIBLE_REAL !== undefined ? producto.STOCK_DISPONIBLE_REAL : producto.STOCK_DISPONIBLE;
-        const stockClass = producto.CLASE_STOCK || (stockReal > 0 ? 'text-success' : 'text-danger');
-        const stockText = producto.ESTADO_STOCK || (stockReal > 0 ? 'Disponible' : 'Sin stock');
         
         // Verificar si el producto se puede agregar (precio válido)
         const precioValido = producto.PRECIO_VALIDO !== undefined ? producto.PRECIO_VALIDO : (producto.PRECIO_UD1 > 0);
@@ -584,12 +582,6 @@ function mostrarResultadosProductosAjax(productos) {
                     onchange="actualizarContadorSeleccionados()" ${checkboxDisabled}></td>
                 <td><strong>${producto.CODIGO_PRODUCTO || ''}</strong></td>
                 <td>${producto.NOMBRE_PRODUCTO || ''}${multiploInfo}</td>
-                <td class="${stockClass}">
-                    <i class="material-icons">${stockReal > 0 ? 'check_circle' : 'warning'}</i>
-                    ${stockReal || 0} ${producto.UNIDAD_MEDIDA || 'UN'}
-                    ${producto.STOCK_COMPROMETIDO > 0 ? `<br><small class="text-muted">Comprometido: ${producto.STOCK_COMPROMETIDO}</small>` : ''}
-                    ${stockReal <= 0 ? '<br><small class="text-warning"><i class="material-icons">info</i> Sin stock - Nota pendiente</small>' : ''}
-                </td>
                 <td>
                     <strong class="${!precioValido ? 'text-muted' : ''}" data-precio="${producto.PRECIO_UD1 || 0}">$${Math.round(producto.PRECIO_UD1 || 0).toLocaleString()}</strong>
                     ${!precioValido ? '<br><small class="text-danger"><i class="material-icons">warning</i> Precio no disponible</small>' : ''}
@@ -1004,7 +996,7 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
     const cantidadAgregada = multiplo > 0 ? multiplo : 1;
     const stockInfo = parseFloat(stock) <= 0 ? '\n⚠️ Sin stock - Se generará nota pendiente' : '';
     const multiploInfo = multiplo > 1 ? `\n📦 Se vende en múltiplos de ${multiplo} unidades` : '';
-    const productosInfo = productosCotizacion.length > 1 ? `\n\n📋 Productos en cotización: ${productosCotizacion.length}/24` : '';
+    const productosInfo = productosCotizacion.length > 1 ? `\n\n📋 Productos en cotización: ${productosCotizacion.length}/20` : '';
     alert('✅ Producto agregado\n\n' + nombre + '\nCantidad: ' + cantidadAgregada + ' ' + unidad + multiploInfo + stockInfo + productosInfo);
 }
 
@@ -1028,7 +1020,7 @@ function actualizarTablaProductos() {
     const contador = document.getElementById('contadorProductos');
     if (contador) {
         const cantidad = productosCotizacion.length;
-        const maximo = 24;
+        const maximo = 20;
         contador.textContent = `${cantidad}/${maximo} productos`;
         
         // Cambiar color según el límite
@@ -1291,8 +1283,8 @@ function agregarProductosSeleccionados() {
     if (productosSinPrecio.length > 0) {
         mensaje += `\n\n${productosSinPrecio.length} productos omitidos (sin precio)`;
     }
-    if (totalProductos > 24) {
-        mensaje += `\n\nAlgunos productos no se agregaron (límite de 24 productos)`;
+    if (totalProductos > 20) {
+        mensaje += `\n\nAlgunos productos no se agregaron (límite de 20 productos)`;
     }
     alert(mensaje);
 }

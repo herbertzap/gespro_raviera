@@ -41,7 +41,7 @@
                         </div>
                     @endif
 
-                    <form action="{{ route('admin.users.store-from-vendedor') }}" method="POST">
+                    <form action="{{ route('admin.users.store-from-vendedor') }}" method="POST" id="createUserForm">
                         @csrf
                         
                         <div class="row">
@@ -499,6 +499,119 @@ document.addEventListener('DOMContentLoaded', function() {
             icon.textContent = 'visibility_off';
         }
     };
+
+    // Función para validar email con dominio completo
+    function validarEmailConDominio(email) {
+        if (!email || email.trim() === '') {
+            return true; // Permitir vacío si es nullable
+        }
+        
+        // Validar formato básico de email
+        if (!filter_var(email, FILTER_VALIDATE_EMAIL)) {
+            return false;
+        }
+        
+        // Validar que tenga dominio completo
+        const parts = email.split('@');
+        if (parts.length !== 2) {
+            return false;
+        }
+        
+        const domain = parts[1];
+        // El dominio debe tener al menos un punto
+        if (domain.indexOf('.') === -1) {
+            return false;
+        }
+        
+        // Verificar que el TLD tenga al menos 2 caracteres
+        const domainParts = domain.split('.');
+        const tld = domainParts[domainParts.length - 1];
+        if (tld.length < 2) {
+            return false;
+        }
+        
+        return true;
+    }
+
+    // Validación en tiempo real de los campos de email
+    if (emailField) {
+        emailField.addEventListener('blur', function() {
+            const email = this.value.trim();
+            if (email && !validarEmailConDominio(email)) {
+                this.classList.add('is-invalid');
+                if (!this.nextElementSibling || !this.nextElementSibling.classList.contains('invalid-feedback')) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'invalid-feedback';
+                    errorDiv.textContent = 'El email debe tener un dominio completo válido (ejemplo: usuario@dominio.com o usuario@dominio.cl)';
+                    this.parentElement.appendChild(errorDiv);
+                }
+            } else {
+                this.classList.remove('is-invalid');
+                const errorDiv = this.parentElement.querySelector('.invalid-feedback');
+                if (errorDiv) {
+                    errorDiv.remove();
+                }
+            }
+        });
+    }
+
+    const emailAlternativoField = document.getElementById('email_alternativo');
+    if (emailAlternativoField) {
+        emailAlternativoField.addEventListener('blur', function() {
+            const email = this.value.trim();
+            if (email && !validarEmailConDominio(email)) {
+                this.classList.add('is-invalid');
+                if (!this.nextElementSibling || !this.nextElementSibling.classList.contains('invalid-feedback')) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'invalid-feedback';
+                    errorDiv.textContent = 'El email alternativo debe tener un dominio completo válido (ejemplo: usuario@dominio.com o usuario@dominio.cl)';
+                    this.parentElement.appendChild(errorDiv);
+                }
+            } else {
+                this.classList.remove('is-invalid');
+                const errorDiv = this.parentElement.querySelector('.invalid-feedback');
+                if (errorDiv) {
+                    errorDiv.remove();
+                }
+            }
+        });
+    }
+
+    // Validación antes de enviar el formulario
+    const form = document.getElementById('createUserForm');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            let isValid = true;
+            
+            // Validar email principal
+            const email = emailField ? emailField.value.trim() : '';
+            if (email && !validarEmailConDominio(email)) {
+                isValid = false;
+                if (emailField) {
+                    emailField.classList.add('is-invalid');
+                    emailField.focus();
+                }
+            }
+            
+            // Validar email alternativo
+            const emailAlt = emailAlternativoField ? emailAlternativoField.value.trim() : '';
+            if (emailAlt && !validarEmailConDominio(emailAlt)) {
+                isValid = false;
+                if (emailAlternativoField) {
+                    emailAlternativoField.classList.add('is-invalid');
+                    if (isValid) {
+                        emailAlternativoField.focus();
+                    }
+                }
+            }
+            
+            if (!isValid) {
+                e.preventDefault();
+                alert('Por favor, corrija los campos de email. Deben tener un dominio completo válido (ejemplo: usuario@dominio.com o usuario@dominio.cl)');
+                return false;
+            }
+        });
+    }
 });
 </script>
 @endpush

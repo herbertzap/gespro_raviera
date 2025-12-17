@@ -30,6 +30,22 @@
                 display: none !important;
             }
 
+            /* Estilos para el menú dropdown del perfil - texto negro */
+            .dropdown-menu.dropdown-navbar .nav-item.dropdown-item,
+            .dropdown-menu.dropdown-navbar .nav-link .nav-item.dropdown-item {
+                color: #000 !important;
+            }
+            
+            .dropdown-menu.dropdown-navbar .nav-item.dropdown-item:hover,
+            .dropdown-menu.dropdown-navbar .nav-link .nav-item.dropdown-item:hover {
+                color: #000 !important;
+                background-color: #f5f5f5 !important;
+            }
+            
+            .dropdown-menu.dropdown-navbar {
+                color: #000 !important;
+            }
+
             /* Estilos para selects con tema oscuro - fondo oscuro y texto visible */
             select.form-control,
             select.form-control:focus {

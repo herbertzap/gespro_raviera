@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\Cotizacion;
 use App\Models\CotizacionProducto;
 use App\Models\StockTemporal;
+use App\Models\NotaVentaPendienteProducto;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Artisan;
@@ -357,6 +358,118 @@ class ProductoController extends Controller
         } catch (\Exception $e) {
             Log::error("Error en ProductoController@ver: " . $e->getMessage());
             abort(500, 'Error al cargar detalles del producto');
+        }
+    }
+    
+    /**
+     * Descargar informe de compras con productos de NVV que tienen problemas de stock
+     */
+    public function descargarInformeCompras()
+    {
+        try {
+            // Obtener productos de NVV pendientes que tienen problemas de stock
+            $productosConProblemas = NotaVentaPendienteProducto::where(function($query) {
+                    $query->where('stock_suficiente', false)
+                          ->orWhereNotNull('problemas_stock');
+                })
+                ->select(
+                    'codigo_producto',
+                    'nombre_producto',
+                    DB::raw('SUM(cantidad) as cantidad_total'),
+                    DB::raw('SUM(CASE WHEN stock_disponible < cantidad THEN cantidad - stock_disponible ELSE 0 END) as cantidad_faltante'),
+                    DB::raw('COUNT(DISTINCT nota_venta_pendiente_id) as numero_nvv')
+                )
+                ->groupBy('codigo_producto', 'nombre_producto')
+                ->havingRaw('SUM(CASE WHEN stock_disponible < cantidad THEN cantidad - stock_disponible ELSE 0 END) > 0')
+                ->orderBy('cantidad_faltante', 'desc')
+                ->get();
+            
+            // Crear archivo Excel usando PhpSpreadsheet
+            $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            
+            // Título del reporte
+            $sheet->setCellValue('A1', 'INFORME DE COMPRAS - PRODUCTOS CON PROBLEMAS DE STOCK');
+            $sheet->setCellValue('A2', 'Generado el: ' . date('d/m/Y H:i:s'));
+            $sheet->setCellValue('A3', 'Total de productos: ' . count($productosConProblemas));
+            
+            // Estilo para el título
+            $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
+            $sheet->getStyle('A2:A3')->getFont()->setSize(10);
+            
+            // Encabezados de la tabla
+            $row = 5;
+            $headers = [
+                'A' . $row => 'Código de Producto',
+                'B' . $row => 'Nombre del Producto',
+                'C' . $row => 'Cantidad Faltante',
+                'D' . $row => 'Número de NVV'
+            ];
+            
+            foreach ($headers as $cell => $value) {
+                $sheet->setCellValue($cell, $value);
+            }
+            
+            // Estilo para los encabezados
+            $sheet->getStyle('A5:D5')->getFont()->setBold(true);
+            $sheet->getStyle('A5:D5')->getFill()
+                ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                ->getStartColor()->setRGB('E0E0E0');
+            
+            // Datos de los productos
+            $row = 6;
+            $totalCantidadFaltante = 0;
+            
+            foreach ($productosConProblemas as $producto) {
+                $cantidadFaltante = (float) $producto->cantidad_faltante;
+                $totalCantidadFaltante += $cantidadFaltante;
+                
+                $sheet->setCellValue('A' . $row, $producto->codigo_producto);
+                $sheet->setCellValue('B' . $row, $producto->nombre_producto);
+                $sheet->setCellValue('C' . $row, $cantidadFaltante);
+                $sheet->setCellValue('D' . $row, $producto->numero_nvv);
+                
+                $row++;
+            }
+            
+            // Fila de totales
+            if (count($productosConProblemas) > 0) {
+                $sheet->setCellValue('B' . $row, 'TOTAL');
+                $sheet->setCellValue('C' . $row, $totalCantidadFaltante);
+                
+                // Estilo para totales
+                $sheet->getStyle('B' . $row . ':C' . $row)->getFont()->setBold(true);
+                $sheet->getStyle('C' . $row)->getNumberFormat()->setFormatCode('#,##0.00');
+            }
+            
+            // Formato numérico para cantidad faltante
+            $sheet->getStyle('C6:C' . ($row - 1))->getNumberFormat()->setFormatCode('#,##0.00');
+            
+            // Formato numérico para número de NVV
+            $sheet->getStyle('D6:D' . ($row - 1))->getNumberFormat()->setFormatCode('#,##0');
+            
+            // Autoajustar columnas
+            foreach (range('A', 'D') as $column) {
+                $sheet->getColumnDimension($column)->setAutoSize(true);
+            }
+            
+            // Bordes para la tabla principal
+            $lastDataRow = 5 + count($productosConProblemas) + 1; // +1 para la fila de totales
+            $sheet->getStyle('A5:D' . $lastDataRow)->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
+            
+            // Generar archivo
+            $filename = 'informe_compras_' . date('Y-m-d_H-i-s') . '.xlsx';
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'informe_compras_');
+            $writer->save($tempFile);
+            
+            return response()->download($tempFile, $filename)->deleteFileAfterSend(true);
+            
+        } catch (\Exception $e) {
+            Log::error("Error generando informe de compras: " . $e->getMessage());
+            return redirect()->route('productos.index')
+                ->with('error', 'Error al generar el informe: ' . $e->getMessage());
         }
     }
 }

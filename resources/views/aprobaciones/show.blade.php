@@ -28,7 +28,7 @@
                                     </button>
                                 @else
                                     <button onclick="mostrarModalImpresion()" class="btn btn-success ml-2">
-                                        <i class="material-icons">print</i> Imprimir Nota de Venta
+                                        <i class="material-icons">print</i> Imprimir Guía de Picking
                                     </button>
                                 @endif
                                 <a href="{{ route('aprobaciones.historial', $cotizacion->id) }}" class="btn btn-info ml-2">
@@ -196,7 +196,13 @@
                                     @else
                                         @switch($estadoMostrar)
                                             @case('pendiente')
-                                                <span class="badge badge-warning">Pendiente Supervisor</span>
+                                                @if($cotizacion->tiene_problemas_credito)
+                                                    <span class="badge badge-warning">Pendiente Supervisor</span>
+                                                @elseif($cotizacion->tiene_problemas_stock)
+                                                    <span class="badge badge-warning">Pendiente Compras</span>
+                                                @else
+                                                    <span class="badge badge-warning">Pendiente</span>
+                                                @endif
                                                 @break
                                             @case('pendiente_picking')
                                                 <span class="badge badge-info">Pendiente Picking</span>
@@ -503,11 +509,19 @@
                                                     {{ $producto->nombre_producto }}
                                                 </td>
                                                 <td>
-                                                    @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock && $producto->stock_disponible < $producto->cantidad && !$cotizacion->aprobado_por_compras)
+                                                    @php
+                                                        // Obtener stock REAL desde tabla productos (actualizado)
+                                                        $productoStockTemp = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
+                                                        $stockFisicoRealTemp = $productoStockTemp ? ($productoStockTemp->stock_fisico ?? 0) : 0;
+                                                        $stockComprometidoSQLTemp = $productoStockTemp ? ($productoStockTemp->stock_comprometido ?? 0) : 0;
+                                                        $stockComprometidoLocalTemp = \App\Models\StockComprometido::calcularStockComprometido($producto->codigo_producto);
+                                                        $stockDisponibleRealTemp = max(0, $stockFisicoRealTemp - $stockComprometidoSQLTemp - $stockComprometidoLocalTemp);
+                                                    @endphp
+                                                    @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock && $stockDisponibleRealTemp < $producto->cantidad && !$cotizacion->aprobado_por_compras)
                                                         <div class="input-group input-group-sm">
                                                             <input type="number" class="form-control cantidad-input" 
                                                                    value="{{ $producto->cantidad }}" 
-                                                                   min="0" max="{{ $producto->stock_disponible }}"
+                                                                   min="0" max="{{ $stockDisponibleRealTemp }}"
                                                                    data-producto-id="{{ $producto->id }}"
                                                                    data-precio="{{ $producto->precio_unitario }}"
                                                                    onchange="actualizarMaximoSeparar({{ $producto->id }})">
@@ -588,15 +602,23 @@
                                                     </strong>
                                                 </td>
                                                 <td>
-                                                    @if($producto->stock_disponible >= $producto->cantidad)
-                                                        <span class="badge badge-success">{{ $producto->stock_disponible }}</span>
+                                                    @php
+                                                        // Obtener stock REAL desde tabla productos (actualizado)
+                                                        $productoStock = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
+                                                        $stockFisicoReal = $productoStock ? ($productoStock->stock_fisico ?? 0) : 0;
+                                                        $stockComprometidoSQL = $productoStock ? ($productoStock->stock_comprometido ?? 0) : 0;
+                                                        $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($producto->codigo_producto);
+                                                        $stockDisponibleReal = max(0, $stockFisicoReal - $stockComprometidoSQL - $stockComprometidoLocal);
+                                                    @endphp
+                                                    @if($stockDisponibleReal >= $producto->cantidad)
+                                                        <span class="badge badge-success">{{ $stockDisponibleReal }}</span>
                                                     @else
-                                                        <span class="badge badge-danger">{{ $producto->stock_disponible }}</span>
-                                                        <br><small class="text-danger">Faltan: {{ $producto->cantidad - $producto->stock_disponible }}</small>
+                                                        <span class="badge badge-danger">{{ $stockDisponibleReal }}</span>
+                                                        <br><small class="text-danger">Faltan: {{ $producto->cantidad - $stockDisponibleReal }}</small>
                                                     @endif
                                                 </td>
                                                 <td>
-                                                    @if($producto->stock_disponible >= $producto->cantidad)
+                                                    @if($stockDisponibleReal >= $producto->cantidad)
                                                         <span class="badge badge-success">Disponible</span>
                                                     @else
                                                         <span class="badge badge-warning">Stock Insuficiente</span>
@@ -604,7 +626,7 @@
                                                 </td>
                                                 @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock && !$cotizacion->aprobado_por_compras)
                                                     <td>
-                                                        @if($producto->stock_disponible < $producto->cantidad)
+                                                        @if($stockDisponibleReal < $producto->cantidad)
                                                             <button class="btn btn-warning btn-sm" 
                                                                     onclick="separarProductoIndividual({{ $producto->id }})">
                                                                 <i class="material-icons">call_split</i> Separar
@@ -779,14 +801,9 @@
                                         <p><strong>⚠️ IMPORTANTE:</strong> Al aprobar se insertará la NVV en la base de datos de producción.</p>
                                     </div>
                                 @endif
-                                <form id="formAprobarPicking" action="{{ route('aprobaciones.picking', $cotizacion->id) }}" method="POST" style="display: inline;">
-                                    @csrf
-                                    <input type="hidden" name="validar_stock_real" value="0">
-                                    <input type="hidden" name="comentarios" value="">
-                                    <button type="submit" id="btnAprobarPicking" class="btn btn-success btn-lg" onclick="return confirmarAprobacionPicking(event)">
-                                        <i class="material-icons">check</i> <span id="textoBotonAprobar">Aprobar</span>
-                                    </button>
-                                </form>
+                                <button type="button" id="btnAprobarPicking" class="btn btn-success btn-lg" onclick="mostrarModalAprobarPicking()">
+                                    <i class="material-icons">check</i> <span id="textoBotonAprobar">Aprobar</span>
+                                </button>
                                 @if($cotizacion->estado_aprobacion !== 'pendiente_entrega')
                                     <button type="button" class="btn btn-warning btn-lg ml-2" onclick="mostrarModalGuardarPendiente()">
                                         <i class="material-icons">save</i> Guardar Pendiente
@@ -1009,6 +1026,92 @@ document.head.appendChild(style);
                 
                 <form id="formGuardarPendiente" action="{{ route('aprobaciones.guardar-pendiente-entrega', $cotizacion->id) }}" method="POST">
                     @csrf
+                    
+                    <!-- Campos de Guía de Picking -->
+                    <div class="card mb-3">
+                        <div class="card-header bg-primary text-white">
+                            <h6 class="mb-0"><i class="material-icons">local_shipping</i> Datos de Guía de Picking</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="guia_picking_bodega" class="bmd-label-floating">
+                                            <i class="material-icons">warehouse</i>
+                                            Bodega
+                                        </label>
+                                        <input type="text" 
+                                            class="form-control" 
+                                            id="guia_picking_bodega" 
+                                            name="guia_picking_bodega" 
+                                            value="{{ old('guia_picking_bodega', $cotizacion->guia_picking_bodega) }}"
+                                            placeholder="Ej: Bodega Principal">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="guia_picking_numero_bultos" class="bmd-label-floating">
+                                            <i class="material-icons">inventory_2</i>
+                                            N° de Bultos
+                                        </label>
+                                        <input type="text" 
+                                            class="form-control" 
+                                            id="guia_picking_numero_bultos" 
+                                            name="guia_picking_numero_bultos" 
+                                            value="{{ old('guia_picking_numero_bultos', $cotizacion->guia_picking_numero_bultos) }}"
+                                            placeholder="Ej: 5">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="guia_picking_separado_por" class="bmd-label-floating">
+                                            <i class="material-icons">person</i>
+                                            Separado Por
+                                        </label>
+                                        <input type="text" 
+                                            class="form-control" 
+                                            id="guia_picking_separado_por" 
+                                            name="guia_picking_separado_por" 
+                                            value="{{ old('guia_picking_separado_por', $cotizacion->guia_picking_separado_por) }}"
+                                            placeholder="Nombre de quien separa">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="guia_picking_revisado_por" class="bmd-label-floating">
+                                            <i class="material-icons">verified_user</i>
+                                            Revisado Por
+                                        </label>
+                                        <input type="text" 
+                                            class="form-control" 
+                                            id="guia_picking_revisado_por" 
+                                            name="guia_picking_revisado_por" 
+                                            value="{{ old('guia_picking_revisado_por', $cotizacion->guia_picking_revisado_por) }}"
+                                            placeholder="Nombre de quien revisa">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <div class="form-group">
+                                        <label for="guia_picking_firma" class="bmd-label-floating">
+                                            <i class="material-icons">edit</i>
+                                            Firma Picking
+                                        </label>
+                                        <input type="text" 
+                                            class="form-control" 
+                                            id="guia_picking_firma" 
+                                            name="guia_picking_firma" 
+                                            value="{{ old('guia_picking_firma', $cotizacion->guia_picking_firma) }}"
+                                            placeholder="Nombre o firma de picking">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="form-group">
                         <label for="observaciones_picking" class="bmd-label-floating">
                             <i class="material-icons">comment</i>
@@ -1045,9 +1148,17 @@ document.head.appendChild(style);
                                     <td>
                                         <input type="checkbox" name="productos_pendientes[]" value="{{ $producto->id }}" @if($producto->pendiente_entrega ?? false) checked @endif>
                                     </td>
+                                    @php
+                                        // Obtener stock REAL desde tabla productos (actualizado)
+                                        $productoStockHist = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
+                                        $stockFisicoRealHist = $productoStockHist ? ($productoStockHist->stock_fisico ?? 0) : 0;
+                                        $stockComprometidoSQLHist = $productoStockHist ? ($productoStockHist->stock_comprometido ?? 0) : 0;
+                                        $stockComprometidoLocalHist = \App\Models\StockComprometido::calcularStockComprometido($producto->codigo_producto);
+                                        $stockDisponibleRealHist = max(0, $stockFisicoRealHist - $stockComprometidoSQLHist - $stockComprometidoLocalHist);
+                                    @endphp
                                     <td>{{ $producto->codigo_producto }} - {{ $producto->nombre_producto }}</td>
                                     <td class="text-right">{{ number_format($producto->cantidad, 0) }}</td>
-                                    <td class="text-right">{{ number_format($producto->stock_disponible ?? 0, 0) }}</td>
+                                    <td class="text-right">{{ number_format($stockDisponibleRealHist, 0) }}</td>
                                     <td>
                                         @if($producto->pendiente_entrega ?? false)
                                             <span class="badge badge-warning">Pendiente</span>
@@ -1074,8 +1185,148 @@ document.head.appendChild(style);
     </div>
 </div>
 
+<!-- Modal para Aprobar Picking -->
+<div class="modal fade" id="modalAprobarPicking" tabindex="-1" role="dialog" aria-labelledby="modalAprobarPickingLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="modalAprobarPickingLabel">
+                    <i class="material-icons">check_circle</i>
+                    Aprobar Nota de Venta
+                </h5>
+                <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="material-icons">warning</i>
+                    <strong>Importante:</strong> Al aprobar, se insertará la NVV en la base de datos de producción.
+                </div>
+                
+                <form id="formAprobarPicking" action="{{ route('aprobaciones.picking', $cotizacion->id) }}" method="POST">
+                    @csrf
+                    <input type="hidden" name="validar_stock_real" value="0">
+                    
+                    <!-- Campos de Guía de Picking -->
+                    <div class="card mb-3">
+                        <div class="card-header bg-primary text-white">
+                            <h6 class="mb-0"><i class="material-icons">local_shipping</i> Datos de Guía de Picking</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="aprobar_guia_picking_bodega" class="bmd-label-floating">
+                                            <i class="material-icons">warehouse</i>
+                                            Bodega
+                                        </label>
+                                        <input type="text" 
+                                            class="form-control" 
+                                            id="aprobar_guia_picking_bodega" 
+                                            name="guia_picking_bodega" 
+                                            value="{{ old('guia_picking_bodega', $cotizacion->guia_picking_bodega) }}"
+                                            placeholder="Ej: Bodega Principal">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="aprobar_guia_picking_numero_bultos" class="bmd-label-floating">
+                                            <i class="material-icons">inventory_2</i>
+                                            N° de Bultos
+                                        </label>
+                                        <input type="text" 
+                                            class="form-control" 
+                                            id="aprobar_guia_picking_numero_bultos" 
+                                            name="guia_picking_numero_bultos" 
+                                            value="{{ old('guia_picking_numero_bultos', $cotizacion->guia_picking_numero_bultos) }}"
+                                            placeholder="Ej: 5">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="aprobar_guia_picking_separado_por" class="bmd-label-floating">
+                                            <i class="material-icons">person</i>
+                                            Separado Por
+                                        </label>
+                                        <input type="text" 
+                                            class="form-control" 
+                                            id="aprobar_guia_picking_separado_por" 
+                                            name="guia_picking_separado_por" 
+                                            value="{{ old('guia_picking_separado_por', $cotizacion->guia_picking_separado_por) }}"
+                                            placeholder="Nombre de quien separa">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="aprobar_guia_picking_revisado_por" class="bmd-label-floating">
+                                            <i class="material-icons">verified_user</i>
+                                            Revisado Por
+                                        </label>
+                                        <input type="text" 
+                                            class="form-control" 
+                                            id="aprobar_guia_picking_revisado_por" 
+                                            name="guia_picking_revisado_por" 
+                                            value="{{ old('guia_picking_revisado_por', $cotizacion->guia_picking_revisado_por) }}"
+                                            placeholder="Nombre de quien revisa">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <div class="form-group">
+                                        <label for="aprobar_guia_picking_firma" class="bmd-label-floating">
+                                            <i class="material-icons">edit</i>
+                                            Firma Picking
+                                        </label>
+                                        <input type="text" 
+                                            class="form-control" 
+                                            id="aprobar_guia_picking_firma" 
+                                            name="guia_picking_firma" 
+                                            value="{{ old('guia_picking_firma', $cotizacion->guia_picking_firma) }}"
+                                            placeholder="Nombre o firma de picking">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="aprobar_comentarios" class="bmd-label-floating">
+                            <i class="material-icons">comment</i>
+                            Comentarios (Opcional)
+                        </label>
+                        <textarea 
+                            class="form-control" 
+                            id="aprobar_comentarios" 
+                            name="comentarios" 
+                            rows="3" 
+                            maxlength="500"
+                            placeholder="Comentarios adicionales sobre la aprobación...">{{ old('comentarios', $cotizacion->comentarios_picking) }}</textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                    <i class="material-icons">close</i> Cancelar
+                </button>
+                <button type="button" class="btn btn-success" onclick="confirmarAprobacionPicking()">
+                    <i class="material-icons">check</i> Confirmar Aprobación
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @push('js')
 <script>
+// Función para mostrar modal de aprobar picking
+function mostrarModalAprobarPicking() {
+    $('#modalAprobarPicking').modal('show');
+}
+
 // Función para mostrar modal de impresión
 function mostrarModalImpresion() {
     $('#modalImpresion').modal('show');
@@ -1204,56 +1455,29 @@ function rechazarNota(notaId) {
     }
 }
 
-// Confirmar y bloquear botón de aprobación Picking
-function confirmarAprobacionPicking(event) {
-    console.log('🔵 INICIO: confirmarAprobacionPicking llamado');
-    console.log('Event:', event);
-    
-    event.preventDefault(); // Prevenir el envío automático primero
-    
+// Confirmar y enviar aprobación Picking desde el modal
+function confirmarAprobacionPicking() {
     if (!confirm('¿Estás seguro de aprobar esta nota de venta? Se insertará en la base de datos de producción.')) {
-        console.log('🔴 Usuario canceló la confirmación');
         return false;
     }
     
-    console.log('✅ Usuario confirmó la aprobación');
-    
     // Bloquear el botón para evitar doble clic
-    const btn = document.getElementById('btnAprobarPicking');
-    const texto = document.getElementById('textoBotonAprobar');
+    const btn = document.querySelector('#modalAprobarPicking .btn-success');
     const form = document.getElementById('formAprobarPicking');
-    
-    console.log('Botón encontrado:', btn);
-    console.log('Texto encontrado:', texto);
-    console.log('Formulario encontrado:', form);
     
     if (btn) {
         btn.disabled = true;
-        btn.classList.remove('btn-success');
-        btn.classList.add('btn-secondary');
-        texto.innerHTML = 'Procesando...';
-        
-        console.log('✅ Botón bloqueado y texto cambiado');
-        
-        // Mostrar mensaje de espera
-        const alert = document.createElement('div');
-        alert.className = 'alert alert-info mt-3';
-        alert.innerHTML = '<i class="material-icons">hourglass_empty</i> Procesando aprobación e insertando en SQL Server. Por favor espera...';
-        btn.parentElement.parentElement.appendChild(alert);
-        
-        console.log('✅ Mensaje de espera mostrado');
+        btn.innerHTML = '<i class="material-icons">hourglass_empty</i> Procesando...';
     }
     
-    // Enviar el formulario manualmente
+    // Enviar el formulario
     if (form) {
-        console.log('🟢 Enviando formulario manualmente...');
         form.submit();
-        console.log('✅ Formulario enviado');
     } else {
-        console.error('❌ ERROR: Formulario no encontrado');
+        alert('Error: No se encontró el formulario');
     }
     
-    return false; // Prevenir el envío automático ya que lo hacemos manualmente
+    return false;
 }
 
 // Función para mostrar modal de guardar pendiente
@@ -1931,8 +2155,16 @@ function sincronizarStock() {
         if (data.success) {
             // Mostrar mensaje de éxito con detalles
             const productosSync = data.productos_sincronizados || 0;
-            const mensaje = `Stock sincronizado exitosamente.\n${productosSync} productos actualizados.\nTiempo: ${elapsedTime} segundos`;
-            showNotification(mensaje, 'success');
+            const productosError = data.productos_con_error || 0;
+            const totalProductos = data.total_productos || 0;
+            
+            let mensaje = `✅ Stock sincronizado exitosamente.\n${productosSync} de ${totalProductos} productos actualizados.`;
+            if (productosError > 0) {
+                mensaje += `\n⚠️ ${productosError} productos con errores.`;
+            }
+            mensaje += `\n⏱️ Tiempo: ${elapsedTime} segundos`;
+            
+            showNotification(mensaje, productosError > 0 ? 'warning' : 'success');
             
             // Recargar la página para ver los cambios de stock
             setTimeout(() => {
@@ -2163,5 +2395,318 @@ function sincronizarStock() {
 </script>
 @endpush
 @endif
+
+@push('css')
+<style>
+/* Estilos responsivos para tablets */
+@media (min-width: 768px) and (max-width: 1024px) {
+    /* Botones del header - Prevenir superposición */
+    .card-header .row {
+        flex-wrap: wrap;
+        margin-left: -5px;
+        margin-right: -5px;
+    }
+    
+    .card-header .col-md-6 {
+        padding-left: 5px;
+        padding-right: 5px;
+    }
+    
+    .card-header .col-md-6.text-right {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        justify-content: flex-end !important;
+        align-items: center !important;
+        gap: 6px !important;
+        margin-top: 10px;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    
+    .card-header .col-md-6.text-right .btn {
+        flex-shrink: 1 !important;
+        flex-grow: 0 !important;
+        font-size: 11px !important;
+        padding: 6px 8px !important;
+        white-space: nowrap !important;
+        margin-left: 0 !important;
+        min-width: auto !important;
+        max-width: 100% !important;
+    }
+    
+    .card-header .col-md-6.text-right .btn .material-icons {
+        font-size: 16px !important;
+        vertical-align: middle;
+        margin-right: 2px;
+    }
+    
+    /* Botón "Sincronizar Productos" más compacto */
+    .card-header .col-md-6.text-right .btn#btnSincronizarStock {
+        font-size: 10px !important;
+        padding: 6px 6px !important;
+    }
+    
+    /* Ajustar el título y categoría para dar más espacio */
+    .card-header .col-md-6:first-child {
+        margin-bottom: 10px;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    
+    .card-header .card-title {
+        font-size: 16px;
+        margin-bottom: 5px;
+    }
+    
+    .card-header .card-category {
+        font-size: 12px;
+        word-break: break-word;
+    }
+    
+    /* En tablets pequeñas, hacer botones aún más compactos */
+    @media (min-width: 768px) and (max-width: 900px) {
+        .card-header .col-md-6.text-right {
+            gap: 4px !important;
+        }
+        
+        .card-header .col-md-6.text-right .btn {
+            font-size: 10px !important;
+            padding: 5px 6px !important;
+        }
+        
+        .card-header .col-md-6.text-right .btn .material-icons {
+            font-size: 14px !important;
+            margin-right: 1px;
+        }
+        
+        /* Hacer botones de texto largo más pequeños */
+        .card-header .col-md-6.text-right .btn#btnSincronizarStock {
+            font-size: 9px !important;
+            padding: 5px 4px !important;
+        }
+    }
+    
+    /* Si aún hay problemas, forzar que los botones se apilen */
+    @media (min-width: 768px) and (max-width: 1024px) {
+        .card-header .col-md-6.text-right {
+            flex-direction: row !important;
+        }
+        
+        /* Asegurar que los botones no se salgan del contenedor */
+        .card-header .col-md-6.text-right .btn {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        /* Si el contenedor es muy pequeño, hacer que los botones se apilen en dos filas */
+        @media (max-width: 850px) {
+            .card-header .col-md-6.text-right {
+                flex-direction: column !important;
+                align-items: flex-end !important;
+            }
+            
+            .card-header .col-md-6.text-right .btn {
+                width: auto;
+                margin-bottom: 4px;
+            }
+        }
+    }
+    
+    /* Tabla de productos - Scroll horizontal */
+    .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        display: block;
+        width: 100%;
+        position: relative;
+    }
+    
+    .table-responsive table {
+        width: 100%;
+        min-width: 1200px; /* Ancho mínimo para mantener todas las columnas */
+        margin-bottom: 0;
+    }
+    
+    /* Ajustar tamaño de columnas en tablets */
+    .table-responsive th,
+    .table-responsive td {
+        white-space: nowrap;
+        padding: 8px 6px;
+        font-size: 13px;
+    }
+    
+    /* Columnas específicas más compactas */
+    .table-responsive th:nth-child(1),
+    .table-responsive td:nth-child(1) {
+        min-width: 40px;
+        max-width: 50px;
+    }
+    
+    .table-responsive th:nth-child(2),
+    .table-responsive td:nth-child(2) {
+        min-width: 120px;
+        max-width: 150px;
+    }
+    
+    .table-responsive th:nth-child(3),
+    .table-responsive td:nth-child(3) {
+        min-width: 200px;
+        max-width: 250px;
+    }
+    
+    .table-responsive th:nth-child(4),
+    .table-responsive td:nth-child(4) {
+        min-width: 70px;
+        max-width: 90px;
+    }
+    
+    .table-responsive th:nth-child(5),
+    .table-responsive td:nth-child(5) {
+        min-width: 80px;
+        max-width: 100px;
+    }
+    
+    .table-responsive th:nth-child(6),
+    .table-responsive td:nth-child(6) {
+        min-width: 90px;
+        max-width: 110px;
+    }
+    
+    .table-responsive th:nth-child(7),
+    .table-responsive td:nth-child(7) {
+        min-width: 80px;
+        max-width: 100px;
+    }
+    
+    .table-responsive th:nth-child(8),
+    .table-responsive td:nth-child(8) {
+        min-width: 80px;
+        max-width: 100px;
+    }
+    
+    .table-responsive th:nth-child(9),
+    .table-responsive td:nth-child(9) {
+        min-width: 90px;
+        max-width: 110px;
+    }
+    
+    .table-responsive th:nth-child(10),
+    .table-responsive td:nth-child(10) {
+        min-width: 90px;
+        max-width: 110px;
+    }
+    
+    .table-responsive th:nth-child(11),
+    .table-responsive td:nth-child(11) {
+        min-width: 90px;
+        max-width: 110px;
+    }
+    
+    .table-responsive th:nth-child(12),
+    .table-responsive td:nth-child(12) {
+        min-width: 80px;
+        max-width: 100px;
+    }
+    
+    .table-responsive th:nth-child(13),
+    .table-responsive td:nth-child(13) {
+        min-width: 100px;
+        max-width: 120px;
+    }
+    
+    /* Ajustar inputs dentro de la tabla */
+    .table-responsive .form-control-sm {
+        font-size: 12px;
+        padding: 4px 6px;
+    }
+    
+    .table-responsive .input-group-sm > .form-control {
+        font-size: 12px;
+        padding: 4px 6px;
+    }
+    
+    .table-responsive .btn-sm {
+        font-size: 11px;
+        padding: 4px 8px;
+    }
+    
+    /* Badges más compactos */
+    .table-responsive .badge {
+        font-size: 11px;
+        padding: 4px 6px;
+    }
+    
+    /* Evitar que las tablas se superpongan */
+    .card {
+        margin-bottom: 20px;
+        overflow: visible;
+    }
+    
+    .card-body {
+        overflow: visible;
+    }
+    
+    /* Asegurar que los contenedores no se superpongan */
+    .row {
+        margin-left: -10px;
+        margin-right: -10px;
+    }
+    
+    .row > [class*="col-"] {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+    
+    /* Header de la tabla fijo al hacer scroll horizontal */
+    .table-responsive thead {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background-color: #fff;
+    }
+    
+    .table-responsive thead th {
+        background-color: #f8f9fa;
+        border-bottom: 2px solid #dee2e6;
+    }
+}
+
+/* Estilos adicionales para tablets en modo landscape */
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: landscape) {
+    .table-responsive table {
+        min-width: 1400px;
+    }
+    
+    .table-responsive th,
+    .table-responsive td {
+        padding: 6px 4px;
+        font-size: 12px;
+    }
+}
+
+/* Estilos para prevenir superposición en contenedores */
+@media (min-width: 768px) and (max-width: 1024px) {
+    .container-fluid {
+        padding-left: 15px;
+        padding-right: 15px;
+    }
+    
+    /* Asegurar que las cards no se superpongan */
+    .card + .card {
+        margin-top: 20px;
+    }
+    
+    /* Tabla en modal también responsiva */
+    .modal-body .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .modal-body .table-responsive table {
+        min-width: 800px;
+    }
+}
+</style>
+@endpush
 
 @endsection

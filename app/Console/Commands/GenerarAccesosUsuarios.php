@@ -38,7 +38,8 @@ class GenerarAccesosUsuarios extends Command
             
             // Si se solicita resetear contraseñas, hacerlo
             if ($resetPasswords) {
-                $user->password = Hash::make($genericPassword);
+                // Nota: No usar Hash::make() aquí porque el modelo User tiene un cast 'hashed' que hashea automáticamente
+                $user->password = $genericPassword; // El cast 'hashed' del modelo se encargará del hashing
                 $user->primer_login = true;
                 $user->save();
                 $password = $genericPassword;

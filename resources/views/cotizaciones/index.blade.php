@@ -286,7 +286,7 @@
                                                         @endif
                                                         
                                                         <button type="button" class="btn btn-sm btn-danger" 
-                                                                onclick="eliminarCotizacion({{ $cotizacion['id'] }})" title="Eliminar">
+                                                                onclick="eliminarCotizacion({{ $cotizacion['id'] }}, '{{ $cotizacion['tipo_documento'] ?? 'cotizacion' }}')" title="Eliminar">
                                                             <i class="material-icons">delete</i>
                                                         </button>
                                                     </div>
@@ -421,15 +421,26 @@
 <script>
 let cotizacionIdActualCotizaciones = null;
 let cotizacionIdEliminar = null;
+let tipoDocumentoEliminar = 'cotizacion'; // Variable para almacenar el tipo de documento
 
 function generarNotaVenta(cotizacionId) {
     cotizacionIdActualCotizaciones = cotizacionId;
     $('#modalConfirmacion').modal('show');
 }
 
-function eliminarCotizacion(cotizacionId) {
+function eliminarCotizacion(cotizacionId, tipoDocumento = 'cotizacion') {
     cotizacionIdEliminar = cotizacionId;
+    tipoDocumentoEliminar = tipoDocumento || 'cotizacion';
     $('#modalEliminar').modal('show');
+    
+    // Actualizar texto del modal según el tipo de documento
+    if (tipoDocumento === 'nota_venta') {
+        $('#modalEliminar .modal-body p:first').html('<strong>¿Estás seguro de que quieres eliminar esta nota de venta?</strong>');
+        $('#btnConfirmarEliminar').html('<i class="material-icons">delete</i> Eliminar Nota de Venta');
+    } else {
+        $('#modalEliminar .modal-body p:first').html('<strong>¿Estás seguro de que quieres eliminar esta cotización?</strong>');
+        $('#btnConfirmarEliminar').html('<i class="material-icons">delete</i> Eliminar Cotización');
+    }
 }
 
 function convertirANotaVenta(cotizacionId) {
@@ -520,11 +531,17 @@ $('#btnConfirmarEliminar').click(function() {
         Eliminando...
     `);
     
-    console.log('Iniciando eliminación de cotización ID:', cotizacionIdEliminar);
+    console.log('Iniciando eliminación de documento ID:', cotizacionIdEliminar);
+    console.log('Tipo de documento:', tipoDocumentoEliminar);
     console.log('Token CSRF:', $('meta[name="csrf-token"]').attr('content'));
     
+    // Determinar la ruta correcta según el tipo de documento
+    const urlEliminar = tipoDocumentoEliminar === 'nota_venta' 
+        ? `/nota-venta/${cotizacionIdEliminar}` 
+        : `/cotizacion/${cotizacionIdEliminar}`;
+    
     $.ajax({
-        url: `/cotizacion/${cotizacionIdEliminar}`,
+        url: urlEliminar,
         method: 'DELETE',
         headers: {
             'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')

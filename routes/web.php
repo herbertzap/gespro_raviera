@@ -84,6 +84,7 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware(['auth'])->group(function () {
     Route::get('/productos', [App\Http\Controllers\ProductoController::class, 'index'])->name('productos.index');
     Route::get('/productos/ver/{codigo}', [App\Http\Controllers\ProductoController::class, 'ver'])->name('productos.ver');
+    Route::get('/productos/descargar-informe-compras', [App\Http\Controllers\ProductoController::class, 'descargarInformeCompras'])->name('productos.descargar-informe-compras');
     Route::get('/api/productos/buscar', [App\Http\Controllers\ProductoController::class, 'buscar'])->name('productos.buscar');
     Route::post('/api/productos/crear-nvv', [App\Http\Controllers\ProductoController::class, 'crearNVVDesdeProductos'])->name('productos.crear-nvv');
     Route::post('/api/productos/modificar-cantidades', [App\Http\Controllers\ProductoController::class, 'modificarCantidades'])->name('productos.modificar-cantidades');
@@ -107,6 +108,8 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/manejo-stock/maeedo/insertar', [App\Http\Controllers\ManejoStockController::class, 'confirmarInsertMAEEDO'])->name('manejo-stock.maeedo.insertar');
     Route::get('/manejo-stock/asociar', [App\Http\Controllers\BarcodeLinkController::class, 'create'])->name('manejo-stock.asociar');
     Route::post('/manejo-stock/asociar', [App\Http\Controllers\BarcodeLinkController::class, 'store'])->name('manejo-stock.asociar.store');
+    Route::get('/manejo-stock/asociar-barrido', [App\Http\Controllers\BarcodeLinkController::class, 'create'])->name('manejo-stock.asociar-barrido');
+    Route::post('/manejo-stock/asociar-barrido', [App\Http\Controllers\BarcodeLinkController::class, 'storeBarrido'])->name('manejo-stock.asociar-barrido.store');
     Route::get('/manejo-stock/api/barcode', [App\Http\Controllers\ManejoStockController::class, 'buscarCodigoBarras'])->name('manejo-stock.barcode');
     Route::get('/manejo-stock/api/producto', [App\Http\Controllers\ManejoStockController::class, 'producto'])->name('manejo-stock.producto');
     Route::get('/manejo-stock/api/ubicaciones', [App\Http\Controllers\ManejoStockController::class, 'buscarUbicaciones'])->name('manejo-stock.ubicaciones');
@@ -117,6 +120,9 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/manejo-stock/barrido/guardar', [App\Http\Controllers\ManejoStockController::class, 'guardarBarrido'])->name('manejo-stock.barrido.guardar');
     Route::get('/manejo-stock/reporte-inventario', [App\Http\Controllers\ManejoStockController::class, 'reporteInventario'])->name('manejo-stock.reporte-inventario');
     Route::get('/manejo-stock/exportar-inventario', [App\Http\Controllers\ManejoStockController::class, 'exportarInventario'])->name('manejo-stock.exportar-inventario');
+    
+    // Barrido Simplificado (Solo para rol Barrido)
+    Route::get('/manejo-stock/barrido-simplificado', [App\Http\Controllers\ManejoStockController::class, 'barridoSimplificado'])->name('manejo-stock.barrido-simplificado');
 });
 
 // Rutas de Aprobaciones
@@ -125,6 +131,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/aprobaciones/{id}', [App\Http\Controllers\AprobacionController::class, 'show'])->name('aprobaciones.show');
     Route::get('/aprobaciones/{id}/historial', [App\Http\Controllers\AprobacionController::class, 'historial'])->name('aprobaciones.historial');
     Route::get('/aprobaciones/{id}/imprimir', [App\Http\Controllers\AprobacionController::class, 'imprimir'])->name('aprobaciones.imprimir');
+    Route::get('/aprobaciones/{id}/descargar-guia-picking', [App\Http\Controllers\AprobacionController::class, 'descargarGuiaPicking'])->name('aprobaciones.descargar-guia-picking');
     
     // Aprobaciones por rol
     Route::post('/aprobaciones/{id}/supervisor', [App\Http\Controllers\AprobacionController::class, 'aprobarSupervisor'])->name('aprobaciones.supervisor');
@@ -235,8 +242,10 @@ Route::middleware(['auth', 'handle.errors'])->group(function () {
 });
 
 // Ruta para página de cliente
-Route::get('/cliente/{codigo}', [App\Http\Controllers\ClienteController::class, 'show'])->name('cliente.show');
-Route::get('/cliente/{codigo}/imprimir', [App\Http\Controllers\ClienteController::class, 'imprimir'])->name('cliente.imprimir');
+Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
+    Route::get('/cliente/{codigo}', [App\Http\Controllers\ClienteController::class, 'show'])->name('cliente.show');
+    Route::get('/cliente/{codigo}/imprimir', [App\Http\Controllers\ClienteController::class, 'imprimir'])->name('cliente.imprimir');
+});
 
 // Autenticación
 Auth::routes();
@@ -346,7 +355,7 @@ Route::middleware(['auth', 'handle.errors'])->group(function () {
 });
 
 // Rutas de Administración de Usuarios
-Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
+Route::middleware(['auth', 'role:Super Admin|Administrativo'])->prefix('admin')->name('admin.')->group(function () {
     // Gestión de usuarios
     Route::get('/users', [App\Http\Controllers\Admin\UserManagementController::class, 'index'])->name('users.index');
     Route::get('/users/create-from-vendedor', [App\Http\Controllers\Admin\UserManagementController::class, 'vendedoresDisponibles'])->name('users.create-from-vendedor');

@@ -141,7 +141,7 @@
                     <div class="row">
                         <div class="col-md-12">
                             <h5>{{ __('Cambiar Contraseña') }}</h5>
-                            <form action="{{ route('admin.users.change-password', $user) }}" method="POST">
+                            <form action="{{ route('admin.users.change-password', $user) }}" method="POST" id="formChangePassword">
                                 @csrf
                                 <div class="row">
                                     <div class="col-md-4">
@@ -189,11 +189,48 @@
         </div>
     </div>
 </div>
-@endsection
 
-@section('scripts')
+<!-- Modal de Cambio de Contraseña -->
+<div class="modal fade" id="modalPasswordChange" tabindex="-1" role="dialog" aria-labelledby="modalPasswordChangeLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header" id="modalPasswordChangeHeader">
+                <h5 class="modal-title" id="modalPasswordChangeLabel">
+                    <i class="material-icons" id="modalPasswordChangeIcon"></i>
+                    <span id="modalPasswordChangeTitle"></span>
+                </h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body" id="modalPasswordChangeBody">
+                <p id="modalPasswordChangeMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@push('js')
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Mostrar modal de cambio de contraseña si hay mensaje de sesión
+    @if(session('success'))
+        mostrarModalPasswordChange('success', '{{ session('success') }}');
+        // Limpiar campos del formulario
+        document.getElementById('new_password').value = '';
+        document.getElementById('password_confirmation').value = '';
+    @endif
+
+    @if(session('error') || $errors->has('password'))
+        mostrarModalPasswordChange('error', '{{ session('error', $errors->first('password')) }}');
+    @endif
+
+    @if($errors->has('password_confirmation'))
+        mostrarModalPasswordChange('error', '{{ $errors->first('password_confirmation') }}');
+    @endif
     // Formatear RUT (mismo formato que profile)
     const rutInput = document.getElementById('rut');
     if (rutInput) {
@@ -302,8 +339,21 @@ document.addEventListener('DOMContentLoaded', function() {
 // Función para mostrar/ocultar contraseña (material icons)
 function togglePasswordVisibility(inputId, iconId) {
     const input = document.getElementById(inputId);
-    const icon = document.getElementById(iconId);
-    if (!input || !icon) return;
+    if (!input) return;
+
+    // Obtener el icono correcto según el inputId
+    let icon;
+    if (inputId === 'new_password') {
+        icon = document.getElementById('iconPassword');
+    } else if (inputId === 'password_confirmation') {
+        icon = document.getElementById('iconPasswordConfirmation');
+    } else {
+        icon = document.getElementById(iconId);
+    }
+    
+    if (!icon) return;
+
+    // Cambiar el tipo de input y el icono
     if (input.type === 'password') {
         input.type = 'text';
         icon.textContent = 'visibility';
@@ -311,6 +361,32 @@ function togglePasswordVisibility(inputId, iconId) {
         input.type = 'password';
         icon.textContent = 'visibility_off';
     }
+}
+
+// Función para mostrar el modal de cambio de contraseña
+function mostrarModalPasswordChange(tipo, mensaje) {
+    const modal = document.getElementById('modalPasswordChange');
+    const header = document.getElementById('modalPasswordChangeHeader');
+    const icon = document.getElementById('modalPasswordChangeIcon');
+    const title = document.getElementById('modalPasswordChangeTitle');
+    const message = document.getElementById('modalPasswordChangeMessage');
+    
+    if (tipo === 'success') {
+        header.className = 'modal-header bg-success text-white';
+        icon.textContent = 'check_circle';
+        icon.className = 'material-icons';
+        title.textContent = 'Contraseña Actualizada';
+        message.textContent = mensaje || 'La contraseña se ha actualizado exitosamente.';
+    } else {
+        header.className = 'modal-header bg-danger text-white';
+        icon.textContent = 'error';
+        icon.className = 'material-icons';
+        title.textContent = 'Error al Cambiar Contraseña';
+        message.textContent = mensaje || 'Hubo un error al actualizar la contraseña. Por favor, intente nuevamente.';
+    }
+    
+    // Mostrar el modal usando jQuery (Bootstrap)
+    $(modal).modal('show');
 }
 </script>
 
@@ -344,4 +420,6 @@ function togglePasswordVisibility(inputId, iconId) {
     box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
 }
 </style>
+@endpush
+
 @endsection

@@ -192,15 +192,15 @@
     </table>
     
     <div class="warehouse-section">
-        <div class="warehouse-title">BODEGA</div>
+        <div class="warehouse-title">BODEGA{{ $cotizacion->guia_picking_bodega ? ': ' . $cotizacion->guia_picking_bodega : '' }}</div>
         <div class="warehouse-content">
             <div class="warehouse-left">
-                <p><strong>SEPARADO POR:</strong> _________________</p>
-                <p><strong>REVISADO POR:</strong> _________________</p>
+                <p><strong>SEPARADO POR:</strong> {{ $cotizacion->guia_picking_separado_por ? $cotizacion->guia_picking_separado_por : '_________________' }}</p>
+                <p><strong>REVISADO POR:</strong> {{ $cotizacion->guia_picking_revisado_por ? $cotizacion->guia_picking_revisado_por : '_________________' }}</p>
             </div>
             <div class="warehouse-right">
-                <p><strong>N° DE BULTOS:</strong> _________________</p>
-                <p><strong>FIRMA PICKING:</strong> _________________</p>
+                <p><strong>N° DE BULTOS:</strong> {{ $cotizacion->guia_picking_numero_bultos ? $cotizacion->guia_picking_numero_bultos : '_________________' }}</p>
+                <p><strong>FIRMA PICKING:</strong> {{ $cotizacion->guia_picking_firma ? $cotizacion->guia_picking_firma : '_________________' }}</p>
             </div>
         </div>
     </div>

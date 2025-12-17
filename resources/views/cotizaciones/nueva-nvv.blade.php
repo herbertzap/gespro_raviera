@@ -239,9 +239,9 @@
                                 <div class="card-header card-header-primary">
                                     <h4 class="card-title">
                                         <i class="material-icons">shopping_cart</i>
-                                        {{ request('tipo_documento') === 'nota_venta' ? 'Detalle de la Nota de Venta' : 'Detalle de la Cotización' }}
+                                        Detalle de la Nota de Venta
                                     </h4>
-                                    <p class="card-category">Agregar productos a la cotización</p>
+                                    <p class="card-category">Agregar productos a la nota de venta</p>
                                 </div>
                                 <div class="card-body">
                                     <!-- Buscador de Productos Mejorado -->
@@ -315,8 +315,8 @@
                                     <!-- Tabla de Productos de la Cotización -->
                                     <div class="table-responsive">
                                         <div class="d-flex justify-content-between align-items-center mb-2">
-                                            <h6 class="mb-0">Productos en Cotización</h6>
-                                            <span class="badge badge-info" id="contadorProductos">0/24 productos</span>
+                                            <h6 class="mb-0">Productos en Nota de Venta</h6>
+                                            <span class="badge badge-info" id="contadorProductos">0/20 productos</span>
                                         </div>
                                         <table class="table" id="tablaProductos">
                                             <thead class="text-primary">
@@ -450,7 +450,7 @@
                                     <div class="row mt-4">
                                         <div class="col-md-12 text-center">
                                             <button type="button" id="btnGuardarNotaVenta" class="btn btn-success btn-lg" onclick="guardarNotaVenta()" {{ !$puedeGenerarNotaVenta ? 'disabled' : '' }}>
-                                                <i class="material-icons">save</i> Guardar Nota de Venta
+                                                <i class="material-icons">send</i> Enviar Nota de Venta
                                             </button>
                                             <a href="{{ route('cotizaciones.index') }}" class="btn btn-secondary btn-lg">
                                                 <i class="material-icons">cancel</i> Cancelar
@@ -1021,15 +1021,16 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
                     productoExistente.multiplo = multiplo; // Actualizar múltiplo
                     actualizarSubtotal(productosCotizacion.indexOf(productoExistente));
                 } else {
-                    // Validar límite máximo de productos diferentes (24)
-                    if (productosCotizacion.length >= 24) {
-                        alert('No se pueden agregar más de 24 productos diferentes a la cotización.\n\nProductos actuales: ' + productosCotizacion.length + '/24');
+                    // Validar límite máximo de productos diferentes (20)
+                    if (productosCotizacion.length >= 20) {
+                        alert('No se pueden agregar más de 20 productos diferentes a la nota de venta.\n\nProductos actuales: ' + productosCotizacion.length + '/20');
                         return;
                     }
                     
                     // Agregar nuevo producto con cantidad inicial = múltiplo y stock actualizado
+                    // Usar unshift() para agregar al principio (productos nuevos arriba)
                     const cantidadInicial = multiplo > 0 ? multiplo : 1;
-                    productosCotizacion.push({
+                    productosCotizacion.unshift({
                         codigo: codigo,
                         nombre: nombre,
                         cantidad: cantidadInicial,
@@ -1056,7 +1057,7 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
                 const cantidadAgregada = multiplo > 0 ? multiplo : 1;
                 const stockInfo = stockActualizado <= 0 ? '\n⚠️ Sin stock - Se generará nota pendiente' : `\n📦 Stock disponible: ${stockActualizado} ${unidad}`;
                 const multiploInfo = multiplo > 1 ? `\n📦 Se vende en múltiplos de ${multiplo} unidades` : '';
-                const productosInfo = productosCotizacion.length > 1 ? `\n\n📋 Productos en cotización: ${productosCotizacion.length}/24` : '';
+                const productosInfo = productosCotizacion.length > 1 ? `\n\n📋 Productos en nota de venta: ${productosCotizacion.length}/20` : '';
                 alert('✅ Producto agregado\n\n' + nombre + '\nCantidad: ' + cantidadAgregada + ' ' + unidad + multiploInfo + stockInfo + productosInfo);
             } else {
                 console.error('Error obteniendo stock actualizado:', data.message);
@@ -1089,9 +1090,9 @@ function agregarProductoConStock(codigo, nombre, precio, stock, unidad, descuent
         productoExistente.multiplo = multiplo;
         actualizarSubtotal(productosCotizacion.indexOf(productoExistente));
     } else {
-        // Validar límite máximo de productos diferentes (24)
-        if (productosCotizacion.length >= 24) {
-            alert('No se pueden agregar más de 24 productos diferentes a la cotización.\n\nProductos actuales: ' + productosCotizacion.length + '/24');
+        // Validar límite máximo de productos diferentes (20)
+        if (productosCotizacion.length >= 20) {
+            alert('No se pueden agregar más de 20 productos diferentes a la nota de venta.\n\nProductos actuales: ' + productosCotizacion.length + '/20');
             return;
         }
         
@@ -1119,8 +1120,8 @@ function agregarProductoConStock(codigo, nombre, precio, stock, unidad, descuent
     const cantidadAgregada = multiplo > 0 ? multiplo : 1;
     const stockInfo = parseFloat(stock) <= 0 ? '\n⚠️ Sin stock - Se generará nota pendiente' : '';
     const multiploInfo = multiplo > 1 ? `\n📦 Se vende en múltiplos de ${multiplo} unidades` : '';
-    const productosInfo = productosCotizacion.length > 1 ? `\n\n📋 Productos en cotización: ${productosCotizacion.length}/24` : '';
-    alert('✅ Producto agregado\n\n' + nombre + '\nCantidad: ' + cantidadAgregada + ' ' + unidad + multiploInfo + stockInfo + productosInfo);
+                const productosInfo = productosCotizacion.length > 1 ? `\n\n📋 Productos en nota de venta: ${productosCotizacion.length}/20` : '';
+                alert('✅ Producto agregado\n\n' + nombre + '\nCantidad: ' + cantidadAgregada + ' ' + unidad + multiploInfo + stockInfo + productosInfo);
 }
 
 // Función para obtener el incremento de cantidad según la unidad
@@ -1143,7 +1144,7 @@ function actualizarTablaProductos() {
     const contador = document.getElementById('contadorProductos');
     if (contador) {
         const cantidad = productosCotizacion.length;
-        const maximo = 24;
+        const maximo = 20;
         contador.textContent = `${cantidad}/${maximo} productos`;
         
         // Cambiar color según el límite
@@ -1157,6 +1158,9 @@ function actualizarTablaProductos() {
         }
     }
     
+    // Renderizar productos en orden inverso (más recientes arriba)
+    // Como ahora usamos unshift(), el array ya tiene los nuevos al principio
+    // Pero para mantener consistencia, renderizamos en orden normal ya que unshift() los pone al principio
     productosCotizacion.forEach((producto, index) => {
         let stockClass, stockText;
         
@@ -1389,20 +1393,20 @@ function agregarProductosSeleccionados() {
     const productosNuevos = productosSeleccionados.filter(p => !productosCotizacion.find(existente => existente.codigo === p.codigo));
     const totalProductos = productosCotizacion.length + productosNuevos.length;
     
-    if (totalProductos > 24) {
+    if (totalProductos > 20) {
         const productosActuales = productosCotizacion.length;
-        const productosDisponibles = 24 - productosActuales;
-        alert(`No se pueden agregar todos los productos seleccionados.\n\nProductos actuales: ${productosActuales}/24\nProductos seleccionados: ${productosNuevos.length}\nProductos disponibles: ${productosDisponibles}\n\nSolo se agregarán los primeros ${productosDisponibles} productos.`);
+        const productosDisponibles = 20 - productosActuales;
+        alert(`No se pueden agregar todos los productos seleccionados.\n\nProductos actuales: ${productosActuales}/20\nProductos seleccionados: ${productosNuevos.length}\nProductos disponibles: ${productosDisponibles}\n\nSolo se agregarán los primeros ${productosDisponibles} productos.`);
         
         // Limitar a los productos disponibles
         productosSeleccionados.splice(productosDisponibles);
     }
     
-    // Agregar cada producto válido a la cotización
+    // Agregar cada producto válido a la nota de venta
     let productosAgregados = 0;
     productosSeleccionados.forEach(producto => {
         const productoExistente = productosCotizacion.find(p => p.codigo === producto.codigo);
-        if (!productoExistente && productosCotizacion.length < 24) {
+        if (!productoExistente && productosCotizacion.length < 20) {
             agregarProductoDesdePHP(producto.codigo, producto.nombre, producto.precio, producto.stock, producto.unidad, producto.descuentoMaximo, producto.multiplo);
             productosAgregados++;
         }
@@ -1416,12 +1420,12 @@ function agregarProductosSeleccionados() {
     actualizarContadorSeleccionados();
     
     // Mostrar resumen
-    let mensaje = `${productosAgregados} productos agregados a la cotización`;
+    let mensaje = `${productosAgregados} productos agregados a la nota de venta`;
     if (productosSinPrecio.length > 0) {
         mensaje += `\n\n${productosSinPrecio.length} productos omitidos (sin precio)`;
     }
-    if (totalProductos > 24) {
-        mensaje += `\n\nAlgunos productos no se agregaron (límite de 24 productos)`;
+    if (totalProductos > 20) {
+        mensaje += `\n\nAlgunos productos no se agregaron (límite de 20 productos)`;
     }
     alert(mensaje);
 }
@@ -1511,7 +1515,7 @@ function guardarNotaVenta() {
     const btn = document.getElementById('btnGuardarNotaVenta');
     const originalText = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<i class="material-icons">hourglass_empty</i> Guardando...';
+    btn.innerHTML = '<i class="material-icons">hourglass_empty</i> Enviando...';
 
     const observaciones = document.getElementById('observaciones').value;
     const fechaDespacho = document.getElementById('fecha_despacho').value || '{{ date('Y-m-d') }}';

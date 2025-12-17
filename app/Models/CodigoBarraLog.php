@@ -11,6 +11,7 @@ class CodigoBarraLog extends Model
 
     protected $fillable = [
         'barcode',
+        'barcode_anterior',
         'sku',
         'user_id',
         'bodega_id',

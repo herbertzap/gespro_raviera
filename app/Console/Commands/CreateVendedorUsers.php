@@ -86,10 +86,11 @@ class CreateVendedorUsers extends Command
                 $this->info("Usuario {$vendedor['codigo']} actualizado exitosamente.");
             } else {
                 // Crear nuevo usuario
+                // Nota: No usar Hash::make() aquí porque el modelo User tiene un cast 'hashed' que hashea automáticamente
                 $user = User::create([
                     'name' => $vendedor['nombre'],
-                    'email' => $vendedor['email'],
-                    'password' => Hash::make($vendedor['password']),
+                    'email' => trim($vendedor['email']),
+                    'password' => $vendedor['password'], // El cast 'hashed' del modelo se encargará del hashing
                     'codigo_vendedor' => $vendedor['codigo_vendedor'],
                     'email_verified_at' => now(),
                     'created_at' => now(),

@@ -12,6 +12,7 @@ use App\Models\StockComprometido;
 use App\Models\Cliente;
 use App\Services\ClienteValidacionService;
 use App\Services\StockService;
+use App\Services\StockConsultaService;
 
 class CotizacionController extends Controller
 {
@@ -3096,6 +3097,8 @@ class CotizacionController extends Controller
 
     /**
      * Obtener stock actual de un producto específico
+     * MANTIENE la lógica original que funcionaba
+     * ADICIONALMENTE actualiza MySQL con los valores obtenidos
      */
     public function obtenerStockProducto($codigo)
     {
@@ -3106,9 +3109,9 @@ class CotizacionController extends Controller
             $database = env('SQLSRV_EXTERNAL_DATABASE');
             $username = env('SQLSRV_EXTERNAL_USERNAME');
             $password = env('SQLSRV_EXTERNAL_PASSWORD');
-            
+
             $codigoEscapado = "'" . addslashes(trim($codigo)) . "'";
-            
+
             $query = "
                 SELECT 
                     CAST(SUM(ISNULL(STFI1, 0)) AS FLOAT) AS STOCK_FISICO,
@@ -3117,32 +3120,32 @@ class CotizacionController extends Controller
                 WHERE KOPR = {$codigoEscapado}
                 AND KOBO = 'LIB'
             ";
-            
+
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_stock_');
             file_put_contents($tempFile, $query . "\ngo\nquit");
-            
+
             $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
             $output = shell_exec($command);
-            
+
             unlink($tempFile);
-            
+
             // Log para debugging - mostrar output completo si no se encuentra stock
             if (empty($output)) {
                 \Log::error("Output vacío de tsql para producto {$codigo}");
             } else {
                 \Log::info("Output tsql completo para producto {$codigo}: " . $output);
             }
-            
+
             // Parsear resultado de tsql
             $stockFisico = 0;
             $stockComprometido = 0;
-            
+
             $lines = explode("\n", $output);
             $headerFound = false;
-            
+
             foreach ($lines as $line) {
                 $line = trim($line);
-                
+
                 // Saltar líneas de configuración
                 if (empty($line) || strpos($line, 'locale') !== false || 
                     strpos($line, 'Setting') !== false || strpos($line, 'rows affected') !== false ||
@@ -3150,14 +3153,14 @@ class CotizacionController extends Controller
                     preg_match('/^\d+>$/', $line) || preg_match('/^\d+>\s+\d+>\s+\d+>/', $line)) {
                     continue;
                 }
-                
+
                 // Buscar header
                 if (stripos($line, 'STOCK_FISICO') !== false || stripos($line, 'STOCK_COMPROMETIDO') !== false) {
                     $headerFound = true;
                     \Log::info("Header encontrado: {$line}");
                     continue;
                 }
-                
+
                 // Si no hay header pero hay una línea con números, intentar parsear directamente
                 // Esto puede pasar cuando SUM devuelve solo números
                 if (preg_match('/^\s*([0-9.]+)\s+([0-9.]+)\s*$/', $line, $matches)) {
@@ -3166,7 +3169,7 @@ class CotizacionController extends Controller
                     \Log::info("Stock parseado sin header: Físico={$stockFisico}, Comprometido={$stockComprometido}");
                     break;
                 }
-                
+
                 // Parsear línea de datos - puede haber espacios múltiples
                 if ($headerFound) {
                     // Intentar parsear con espacios múltiples
@@ -3180,7 +3183,7 @@ class CotizacionController extends Controller
                     }
                 }
             }
-            
+
             // Si no se encontraron datos, intentar parsear cualquier línea con números
             if ($stockFisico == 0 && $stockComprometido == 0) {
                 foreach ($lines as $line) {
@@ -3195,27 +3198,46 @@ class CotizacionController extends Controller
                 }
             }
             
+            // SIEMPRE ACTUALIZAR MySQL con los valores obtenidos de SQL Server
+            // Esto asegura que la tabla productos tenga los datos actualizados
+            try {
+                $stockConsultaService = new \App\Services\StockConsultaService();
+                $stockConsultaService->actualizarStockSiEsDiferente(
+                    $codigo,
+                    $stockFisico,
+                    $stockComprometido
+                );
+                \Log::info("✅ Stock ACTUALIZADO en MySQL para {$codigo}: Físico={$stockFisico}, Comprometido={$stockComprometido}");
+            } catch (\Exception $e) {
+                \Log::error("❌ Error actualizando MySQL para {$codigo}: " . $e->getMessage());
+                // Continuar aunque falle la actualización, pero loguear el error
+            }
+
             // Obtener stock comprometido local adicional (por cotizaciones/NVV pendientes)
             $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($codigo);
-            
-            // Stock disponible = Stock físico - Stock comprometido SQL - Stock comprometido local
-            $stockDisponible = max(0, $stockFisico - $stockComprometido - $stockComprometidoLocal);
-            
-            // Obtener datos del producto desde tabla local para nombre y unidad
+
+            // Obtener datos del producto ACTUALIZADO desde tabla local
             $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
             
-            \Log::info("Stock consultado desde MAEST (tsql) para {$codigo}: Físico={$stockFisico}, Comprometido SQL={$stockComprometido}, Comprometido Local={$stockComprometidoLocal}, Disponible={$stockDisponible}");
+            // Usar los valores ACTUALIZADOS de MySQL (pueden haber cambiado si se actualizó)
+            $stockFisicoMySQL = $producto ? ($producto->stock_fisico ?? $stockFisico) : $stockFisico;
+            $stockComprometidoMySQL = $producto ? ($producto->stock_comprometido ?? $stockComprometido) : $stockComprometido;
             
+            // Stock disponible = Stock físico MySQL - Stock comprometido SQL - Stock comprometido local
+            $stockDisponible = max(0, $stockFisicoMySQL - $stockComprometidoMySQL - $stockComprometidoLocal);
+
+            \Log::info("📦 Stock final para {$codigo}: Físico MySQL={$stockFisicoMySQL}, Comprometido SQL={$stockComprometidoMySQL}, Comprometido Local={$stockComprometidoLocal}, Disponible={$stockDisponible}");
+
             // Si no se encontró stock, log adicional
-            if ($stockFisico == 0 && $stockComprometido == 0) {
+            if ($stockFisico == 0 && $stockComprometido == 0 && (!$producto || ($producto->stock_fisico ?? 0) == 0)) {
                 \Log::warning("⚠️ No se encontró stock para producto {$codigo}. Output completo de tsql: " . substr($output, 0, 1000));
             }
-            
+
             return response()->json([
                 'success' => true,
                 'stock_disponible' => $stockDisponible,
-                'stock_fisico' => $stockFisico,
-                'stock_comprometido' => $stockComprometido,
+                'stock_fisico' => $stockFisicoMySQL, // Retornar el valor actualizado de MySQL
+                'stock_comprometido' => $stockComprometidoMySQL, // Retornar el valor actualizado de MySQL
                 'stock_comprometido_local' => $stockComprometidoLocal,
                 'producto' => [
                     'codigo' => $codigo,
@@ -3223,11 +3245,11 @@ class CotizacionController extends Controller
                     'unidad' => $producto->UD01PR ?? 'UN'
                 ]
             ]);
-            
+
         } catch (\Exception $e) {
             \Log::error('Error en obtenerStockProducto: ' . $e->getMessage());
             \Log::error('Stack trace: ' . $e->getTraceAsString());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error obteniendo stock: ' . $e->getMessage()

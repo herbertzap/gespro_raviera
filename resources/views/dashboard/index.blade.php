@@ -260,7 +260,6 @@
 
                     @if($tipoUsuario == 'Super Admin')
                     <!-- 5. Compras del Mes (si es Super Admin) -->
-                    @if($tipoUsuario == 'Super Admin')
                     <div class="col-lg-3 col-md-6 col-sm-6">
                         <div class="card card-stats">
                             <div class="card-header card-header-info card-header-icon">

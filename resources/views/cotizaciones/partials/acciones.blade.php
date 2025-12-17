@@ -52,6 +52,15 @@
                             Descargar PDF
                         </button>
 
+                        <!-- Descargar Guía Picking (solo para NVV aprobadas por picking) -->
+                        @if($cotizacion->tipo_documento === 'nota_venta' && ($cotizacion->aprobado_por_picking || $cotizacion->estado_aprobacion === 'aprobada_picking' || $cotizacion->estado_aprobacion === 'pendiente_entrega'))
+                        <a href="{{ route('aprobaciones.descargar-guia-picking', $cotizacion->id) }}" 
+                           class="btn btn-primary btn-block" target="_blank">
+                            <i class="tim-icons icon-delivery-fast"></i>
+                            Descargar Guía Picking
+                        </a>
+                        @endif
+
                         <!-- Sincronizar Stock -->
                         <form action="{{ route('cotizacion.sincronizar-stock', $cotizacion->id) }}" method="POST" style="display: inline-block; width: 100%;">
                             @csrf

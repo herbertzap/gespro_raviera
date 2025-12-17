@@ -21,6 +21,11 @@ class ClienteController extends Controller
     {
         $user = auth()->user();
         
+        // Verificar que el usuario esté autenticado
+        if (!$user) {
+            return redirect()->route('login')->with('error', 'Debe iniciar sesión para acceder a esta página');
+        }
+        
         if (!$user->hasRole('Vendedor') && !$user->hasRole('Supervisor') && !$user->hasRole('Super Admin')) {
             return redirect()->route('dashboard')->with('error', 'Acceso no autorizado');
         }
@@ -174,6 +179,14 @@ class ClienteController extends Controller
     {
         $user = auth()->user();
         
+        // Verificar que el usuario esté autenticado
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Debe iniciar sesión para acceder a esta página'
+            ], 401);
+        }
+        
         if (!$user->hasRole('Vendedor') && !$user->hasRole('Supervisor') && !$user->hasRole('Super Admin')) {
             return response()->json([
                 'success' => false,
@@ -292,6 +305,11 @@ class ClienteController extends Controller
     {
         $user = auth()->user();
         
+        // Verificar que el usuario esté autenticado
+        if (!$user) {
+            return redirect()->route('login')->with('error', 'Debe iniciar sesión para acceder a esta página');
+        }
+        
         if (!$user->hasRole('Vendedor') && !$user->hasRole('Supervisor') && !$user->hasRole('Super Admin')) {
             return redirect()->route('dashboard')->with('error', 'Acceso no autorizado');
         }
@@ -402,6 +420,11 @@ class ClienteController extends Controller
     {
         $user = auth()->user();
         
+        // Verificar que el usuario esté autenticado
+        if (!$user) {
+            return redirect()->route('login')->with('error', 'Debe iniciar sesión para acceder a esta página');
+        }
+
         if (!$user->hasRole('Vendedor') && !$user->hasRole('Supervisor') && !$user->hasRole('Super Admin')) {
             return redirect()->route('dashboard')->with('error', 'Acceso no autorizado');
         }

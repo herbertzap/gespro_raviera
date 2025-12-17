@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 
 class Cotizacion extends Model
 {
@@ -49,6 +50,11 @@ class Cotizacion extends Model
         'comentarios_compras',
         'comentarios_picking',
         'observaciones_picking',
+        'guia_picking_bodega',
+        'guia_picking_separado_por',
+        'guia_picking_revisado_por',
+        'guia_picking_numero_bultos',
+        'guia_picking_firma',
         'tiene_problemas_stock',
         'detalle_problemas_stock',
         'tiene_problemas_credito',
@@ -230,6 +236,7 @@ class Cotizacion extends Model
     /**
      * Convierte una cotización en nota de venta
      * Inicia el flujo de aprobaciones
+     * ACTUALIZA los stocks de todos los productos desde SQL Server antes de determinar el estado
      */
     public function convertirANotaVenta($userId = null)
     {
@@ -237,10 +244,160 @@ class Cotizacion extends Model
             throw new \Exception('Solo se pueden convertir cotizaciones a notas de venta');
         }
         
+        \Log::info("🔄 CONVIRTIENDO COTIZACIÓN {$this->id} A NOTA DE VENTA - ACTUALIZANDO STOCKS");
+
+        // 1. ACTUALIZAR STOCKS PRODUCTO POR PRODUCTO (usando el mismo método que funciona en la búsqueda)
+        $stockConsultaService = new \App\Services\StockConsultaService();
+
+        // ACTUALIZAR cada producto individualmente usando el mismo método que funciona bien
+        foreach ($this->productos as $productoCotizacion) {
+            $codigo = $productoCotizacion->codigo_producto;
+            
+            // Usar el mismo método que usa obtenerStockProducto (tsql directo con un solo producto)
+            try {
+                $host = env('SQLSRV_EXTERNAL_HOST');
+                $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+                $database = env('SQLSRV_EXTERNAL_DATABASE');
+                $username = env('SQLSRV_EXTERNAL_USERNAME');
+                $password = env('SQLSRV_EXTERNAL_PASSWORD');
+                
+                $codigoEscapado = "'" . addslashes(trim($codigo)) . "'";
+                $query = "
+                    SELECT 
+                        CAST(SUM(ISNULL(STFI1, 0)) AS FLOAT) AS STOCK_FISICO,
+                        CAST(SUM(ISNULL(STOCNV1, 0)) AS FLOAT) AS STOCK_COMPROMETIDO
+                    FROM MAEST
+                    WHERE KOPR = {$codigoEscapado}
+                    AND KOBO = 'LIB'
+                ";
+                
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_stock_');
+                file_put_contents($tempFile, $query . "\ngo\nquit");
+                
+                $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+                $output = shell_exec($command);
+                unlink($tempFile);
+                
+                // Parsear resultado (mismo método que obtenerStockProducto)
+                $stockFisico = 0;
+                $stockComprometido = 0;
+                
+                $lines = explode("\n", $output);
+                $headerFound = false;
+                
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    
+                    if (empty($line) || strpos($line, 'locale') !== false || 
+                        strpos($line, 'Setting') !== false || strpos($line, 'rows affected') !== false ||
+                        strpos($line, 'Msg ') !== false || strpos($line, 'Warning:') !== false ||
+                        preg_match('/^\d+>$/', $line) || preg_match('/^\d+>\s+\d+>\s+\d+>/', $line)) {
+                        continue;
+                    }
+                    
+                    if (stripos($line, 'STOCK_FISICO') !== false || stripos($line, 'STOCK_COMPROMETIDO') !== false) {
+                        $headerFound = true;
+                        continue;
+                    }
+                    
+                    if (preg_match('/^\s*([0-9.]+)\s+([0-9.]+)\s*$/', $line, $matches)) {
+                        $stockFisico = (float)$matches[1];
+                        $stockComprometido = (float)$matches[2];
+                        break;
+                    }
+                    
+                    if ($headerFound) {
+                        $parts = preg_split('/\s+/', $line);
+                        if (count($parts) >= 2 && is_numeric($parts[0]) && is_numeric($parts[1])) {
+                            $stockFisico = (float)$parts[0];
+                            $stockComprometido = (float)$parts[1];
+                            break;
+                        }
+                    }
+                }
+                
+                // Actualizar MySQL con los valores obtenidos
+                if ($stockFisico >= 0 && $stockComprometido >= 0) {
+                    $stockConsultaService->actualizarStockSiEsDiferente($codigo, $stockFisico, $stockComprometido);
+                    \Log::info("✅ Stock actualizado en MySQL para {$codigo}: Físico={$stockFisico}, Comprometido={$stockComprometido}");
+                } else {
+                    \Log::warning("⚠️ No se pudo parsear stock para {$codigo}. Output: " . substr($output, 0, 200));
+                }
+            } catch (\Exception $e) {
+                \Log::error("❌ Error actualizando stock para {$codigo}: " . $e->getMessage());
+                // Continuar con los otros productos aunque falle uno
+            }
+        }
+        
+        // 2. Ahora obtener los stocks actualizados desde MySQL
+        $stockService = new \App\Services\StockComprometidoService();
+        $productosSinStockSuficiente = [];
+        $productosConStockSuficiente = [];
+        
+        foreach ($this->productos as $productoCotizacion) {
+            // Consultar stock REAL desde MySQL (ya actualizado)
+            $stockDisponibleReal = $stockService->obtenerStockDisponibleReal($productoCotizacion->codigo_producto);
+            $stockFisico = \App\Models\Producto::where('KOPR', $productoCotizacion->codigo_producto)
+                ->value('stock_fisico') ?? 0;
+            
+            \Log::info("📦 Producto {$productoCotizacion->codigo_producto}: Stock físico={$stockFisico}, Disponible={$stockDisponibleReal}, Cantidad pedida={$productoCotizacion->cantidad}");
+            
+            // Actualizar el stock en la tabla cotizacion_productos con el valor REAL
+            // Guardamos tanto stock_fisico como stock_disponible para referencia
+            $updateData = [
+                'stock_disponible' => $stockDisponibleReal,
+                'stock_suficiente' => $stockFisico >= $productoCotizacion->cantidad
+            ];
+            
+            // También actualizar el stock_fisico si existe la columna
+            if (Schema::hasColumn('cotizacion_productos', 'stock_fisico')) {
+                $updateData['stock_fisico'] = $stockFisico;
+            }
+            
+            $productoCotizacion->update($updateData);
+            
+            // Verificar si tiene stock FÍSICO suficiente (no stock disponible)
+            // Si stock físico >= cantidad pedida → tiene stock suficiente
+            if ($stockFisico >= $productoCotizacion->cantidad) {
+                $productosConStockSuficiente[] = $productoCotizacion->codigo_producto;
+                \Log::info("   ✓ Stock FÍSICO suficiente: {$stockFisico} >= {$productoCotizacion->cantidad}");
+            } else {
+                $productosSinStockSuficiente[] = [
+                    'codigo' => $productoCotizacion->codigo_producto,
+                    'nombre' => $productoCotizacion->nombre_producto,
+                    'stock_fisico' => $stockFisico,
+                    'cantidad_pedida' => $productoCotizacion->cantidad
+                ];
+                \Log::warning("   ⚠️ Stock FÍSICO insuficiente: {$stockFisico} < {$productoCotizacion->cantidad}");
+            }
+        }
+        
+        // 3. Determinar estado de aprobación basado en stock REAL y problemas de crédito
+        $tieneStockSuficiente = empty($productosSinStockSuficiente);
+        $tieneProblemasCredito = $this->tiene_problemas_credito ?? false;
+        
+        // Si stock físico >= cantidad pedida Y no hay problemas de crédito → pendiente_picking
+        // Si stock físico >= cantidad pedida PERO hay problemas de crédito → pendiente (supervisor)
+        // Si stock físico < cantidad pedida → pendiente (compras), o si hay crédito también → pendiente (supervisor primero)
+        if ($tieneStockSuficiente && !$tieneProblemasCredito) {
+            $estadoAprobacion = 'pendiente_picking'; // Pasa directo a picking
+            $tieneProblemasStock = false;
+        } elseif ($tieneStockSuficiente && $tieneProblemasCredito) {
+            $estadoAprobacion = 'pendiente'; // Requiere supervisor primero (crédito), luego picking
+            $tieneProblemasStock = false;
+        } else {
+            $estadoAprobacion = 'pendiente'; // Requiere compras (stock), y si hay crédito también → supervisor primero
+            $tieneProblemasStock = true;
+        }
+        
+        \Log::info("📋 Estado determinado: {$estadoAprobacion} | Stock suficiente: " . ($tieneStockSuficiente ? 'SÍ' : 'NO') . " | Problemas crédito: " . ($tieneProblemasCredito ? 'SÍ' : 'NO'));
+        
+        // 4. Actualizar cotización a nota de venta con el estado correcto
         $this->tipo_documento = 'nota_venta';
         $this->estado = 'enviada';
-        $this->estado_aprobacion = 'pendiente';
+        $this->estado_aprobacion = $estadoAprobacion;
         $this->requiere_aprobacion = true;
+        $this->tiene_problemas_stock = $tieneProblemasStock;
         
         // Resetear aprobaciones previas si existían
         $this->aprobado_por_supervisor = null;
@@ -253,13 +410,26 @@ class Cotizacion extends Model
         $this->save();
         
         // Registrar en historial
+        $mensajeHistorial = "Cotización convertida a Nota de Venta - Stock actualizado desde SQL Server";
+        if (!empty($productosSinStockSuficiente)) {
+            $mensajeHistorial .= " - Requiere aprobación de Compras por stock insuficiente";
+        } elseif ($tieneProblemasCredito) {
+            $mensajeHistorial .= " - Requiere aprobación de Supervisor por problemas de crédito";
+        } else {
+            $mensajeHistorial .= " - Estado: {$estadoAprobacion}";
+        }
+        
         \App\Models\CotizacionHistorial::crearRegistro(
             $this->id,
-            'pendiente',
-            'creacion',
-            'pendiente',
-            'Cotización convertida a Nota de Venta - Iniciando flujo de aprobaciones',
-            ['convertido_por' => $userId ?? auth()->id()]
+            $estadoAprobacion,
+            'conversion',
+            $estadoAprobacion,
+            $mensajeHistorial,
+            [
+                'convertido_por' => $userId ?? auth()->id(),
+                'productos_sin_stock' => $productosSinStockSuficiente,
+                'tiene_problemas_credito' => $tieneProblemasCredito
+            ]
         );
         
         return $this;
@@ -319,26 +489,36 @@ class Cotizacion extends Model
         ]);
     }
 
-    public function aprobarPorPicking($pickingId, $comentarios = null)
+    public function aprobarPorPicking($pickingId, $comentarios = null, $bodega = null, $separadoPor = null, $revisadoPor = null, $numeroBultos = null, $firma = null)
     {
         $this->update([
             'estado_aprobacion' => 'aprobada_picking',
             'aprobado_por_picking' => $pickingId,
             'fecha_aprobacion_picking' => now(),
-            'comentarios_picking' => $comentarios
+            'comentarios_picking' => $comentarios,
+            'guia_picking_bodega' => $bodega,
+            'guia_picking_separado_por' => $separadoPor,
+            'guia_picking_revisado_por' => $revisadoPor,
+            'guia_picking_numero_bultos' => $numeroBultos,
+            'guia_picking_firma' => $firma
         ]);
     }
 
     /**
      * Guardar como pendiente de entrega (nuevo estado)
      */
-    public function guardarPendienteEntrega($pickingId, $observaciones = null)
+    public function guardarPendienteEntrega($pickingId, $observaciones = null, $bodega = null, $separadoPor = null, $revisadoPor = null, $numeroBultos = null, $firma = null)
     {
         $this->update([
             'estado_aprobacion' => 'pendiente_entrega',
             'aprobado_por_picking' => $pickingId,
             'fecha_aprobacion_picking' => now(),
-            'observaciones_picking' => $observaciones
+            'observaciones_picking' => $observaciones,
+            'guia_picking_bodega' => $bodega,
+            'guia_picking_separado_por' => $separadoPor,
+            'guia_picking_revisado_por' => $revisadoPor,
+            'guia_picking_numero_bultos' => $numeroBultos,
+            'guia_picking_firma' => $firma
         ]);
     }
 

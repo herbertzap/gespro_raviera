@@ -207,6 +207,7 @@ class ClienteValidacionService
 
     /**
      * Validar stock de productos
+     * Usa stock FÍSICO para determinar si requiere aprobación de compras
      */
     public static function validarStockProductos($productos)
     {
@@ -214,23 +215,29 @@ class ClienteValidacionService
         $productosConStockInsuficiente = [];
 
         foreach ($productos as $producto) {
-            $stockDisponible = $producto['stock_disponible'] ?? 0;
+            // Usar stock_fisico si está disponible, sino usar stock_disponible como fallback
+            $stockFisico = $producto['stock_fisico'] ?? ($producto['stock_disponible'] ?? 0);
             $cantidadSolicitada = $producto['cantidad'] ?? 0;
 
-            if ($stockDisponible == 0) {
+            // Validar usando stock FÍSICO (no disponible)
+            // Si stock físico >= cantidad pedida → NO requiere compras
+            // Si stock físico < cantidad pedida → SÍ requiere compras
+            if ($stockFisico == 0) {
                 $productosSinStock[] = [
                     'codigo' => $producto['codigo'],
                     'nombre' => $producto['nombre'],
-                    'stock_disponible' => $stockDisponible,
+                    'stock_fisico' => $stockFisico,
+                    'stock_disponible' => $producto['stock_disponible'] ?? 0,
                     'cantidad_solicitada' => $cantidadSolicitada
                 ];
-            } elseif ($stockDisponible < $cantidadSolicitada) {
+            } elseif ($stockFisico < $cantidadSolicitada) {
                 $productosConStockInsuficiente[] = [
                     'codigo' => $producto['codigo'],
                     'nombre' => $producto['nombre'],
-                    'stock_disponible' => $stockDisponible,
+                    'stock_fisico' => $stockFisico,
+                    'stock_disponible' => $producto['stock_disponible'] ?? 0,
                     'cantidad_solicitada' => $cantidadSolicitada,
-                    'faltante' => $cantidadSolicitada - $stockDisponible
+                    'faltante' => $cantidadSolicitada - $stockFisico
                 ];
             }
         }
@@ -244,8 +251,8 @@ class ClienteValidacionService
             'productos_stock_insuficiente' => $productosConStockInsuficiente,
             'estado' => $requiereAutorizacion ? 'warning' : 'success',
             'motivo' => $requiereAutorizacion ? 
-                'Productos sin stock o con stock insuficiente' : 
-                'Stock disponible para todos los productos'
+                'Productos sin stock físico o con stock físico insuficiente' : 
+                'Stock físico suficiente para todos los productos'
         ];
     }
 

@@ -51,10 +51,11 @@ public function store(Request $request)
         'password' => 'required|string|min:8',
     ]);
 
+    // Nota: No usar Hash::make() aquí porque el modelo User tiene un cast 'hashed' que hashea automáticamente
     User::create([
         'name' => $request->name,
-        'email' => $request->email,
-        'password' => Hash::make($request->password),
+        'email' => trim($request->email),
+        'password' => $request->password, // El cast 'hashed' del modelo se encargará del hashing
     ]);
 
     return redirect()->route('user.index')->with('success', 'Usuario creado con éxito.');

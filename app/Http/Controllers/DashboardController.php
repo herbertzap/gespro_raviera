@@ -57,6 +57,9 @@ class DashboardController extends Controller
             $data = $this->getManejoStockDashboard($user);
             $data['pageSlug'] = 'dashboard';
             return view('dashboard.manejo-stock', $data);
+        } elseif ($user->hasRole('Barrido') && !$user->hasRole('Super Admin')) {
+            // Para rol Barrido, redirigir directamente a barrido simplificado
+            return redirect()->route('manejo-stock.barrido-simplificado');
         } else {
             // Rol por defecto
             $data = $this->getVendedorDashboard($user);

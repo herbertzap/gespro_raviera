@@ -14,7 +14,7 @@ class ManejoStockController extends Controller
 {
     public function __construct()
     {
-        $this->middleware(['auth', 'role:Manejo Stock|Super Admin']);
+        $this->middleware(['auth', 'role:Manejo Stock|Super Admin|Barrido']);
     }
 
     public function seleccionar()
@@ -2164,9 +2164,20 @@ class ManejoStockController extends Controller
             $capturasQuery->where('funcionario', $usuario);
         } else {
             // Si el usuario es Super Admin o Manejo Stock, mostrar todos los registros
+            // Si es Barrido, mostrar solo los del usuario actual
             // Si no, mostrar solo los del usuario actual o los que no tienen funcionario asignado
             if ($user->hasRole('Super Admin') || $user->hasRole('Manejo Stock')) {
                 // Mostrar todos los registros
+            } elseif ($user->hasRole('Barrido')) {
+                // Para rol Barrido, mostrar solo los registros del usuario actual
+                $codigoVendedor = $user->codigo_vendedor ?? $user->email ?? '';
+                if ($codigoVendedor) {
+                    $capturasQuery->where('funcionario', $codigoVendedor);
+                } else {
+                    // Si no tiene código vendedor, filtrar por user_id si existe en temporales
+                    // Por ahora, usar el email o name como funcionario
+                    $capturasQuery->where('funcionario', $user->email ?? $user->name ?? '');
+                }
             } else {
                 $codigoVendedor = $user->codigo_vendedor ?? 'PZZ';
                 // Mostrar registros del usuario o registros sin funcionario (null o vacío)
@@ -2209,11 +2220,13 @@ class ManejoStockController extends Controller
         
         $capturas = $capturasQuery->orderBy('created_at', 'desc')->paginate(20)->appends($request->query());
         
-        // Obtener modificaciones de códigos de barras del usuario (sin filtros por ahora)
-        $codigosBarras = CodigoBarraLog::with(['bodega', 'user'])
-            ->where('user_id', $user->id)
-            ->orderBy('created_at', 'desc')
-            ->paginate(20);
+        // Obtener modificaciones de códigos de barras
+        // Si es rol Barrido, solo mostrar los del usuario actual
+        $codigosBarrasQuery = CodigoBarraLog::with(['bodega', 'user']);
+        if ($user->hasRole('Barrido') && !$user->hasRole('Super Admin')) {
+            $codigosBarrasQuery->where('user_id', $user->id);
+        }
+        $codigosBarras = $codigosBarrasQuery->orderBy('created_at', 'desc')->paginate(20);
         
         // Obtener listas para los filtros
         $bodegas = Bodega::orderBy('nombre_bodega')->get();
@@ -2989,5 +3002,33 @@ class ManejoStockController extends Controller
         } catch (\Throwable $e) {
             return redirect()->back()->with('error', 'Error al exportar: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Vista simplificada de barrido para rol Barrido
+     * Entra directo sin seleccionar bodega/ubicación
+     * Solo permite escanear códigos de barras y asociarlos
+     */
+    public function barridoSimplificado()
+    {
+        $user = auth()->user();
+        
+        // Obtener la primera bodega disponible (o se puede configurar por usuario)
+        $bodega = Bodega::with(['ubicaciones' => function ($query) {
+            $query->orderBy('codigo');
+        }])->orderBy('nombre_bodega')->first();
+
+        if (!$bodega) {
+            return redirect()->route('dashboard')
+                ->with('error', 'No hay bodegas configuradas en el sistema.');
+        }
+
+        // Obtener la primera ubicación de la bodega
+        $ubicacion = $bodega->ubicaciones->first();
+
+        return view('manejo-stock.barrido-simplificado', [
+            'bodega' => $bodega,
+            'ubicacion' => $ubicacion,
+        ]);
     }
 }

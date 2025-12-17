@@ -25,6 +25,11 @@
                                 <a href="{{ route('aprobaciones.index') }}" class="btn btn-info ml-2">
                                     <i class="material-icons">list</i> Lista Aprobaciones
                                 </a>
+                                @if($cotizacion->tipo_documento === 'nota_venta' && ($cotizacion->aprobado_por_picking || $cotizacion->estado_aprobacion === 'aprobada_picking' || $cotizacion->estado_aprobacion === 'pendiente_entrega'))
+                                <a href="{{ route('aprobaciones.descargar-guia-picking', $cotizacion->id) }}" class="btn btn-success ml-2" target="_blank">
+                                    <i class="material-icons">local_shipping</i> Imprimir Guía Picking
+                                </a>
+                                @endif
                             </div>
                         </div>
                     </div>

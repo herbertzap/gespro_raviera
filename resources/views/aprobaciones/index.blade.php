@@ -222,7 +222,13 @@
                                                     @else
                                                         @switch($estadoMostrar)
                                                             @case('pendiente')
-                                                                <span class="badge badge-warning">Pendiente Supervisor</span>
+                                                                @if($cotizacion->tiene_problemas_credito)
+                                                                    <span class="badge badge-warning">Pendiente Supervisor</span>
+                                                                @elseif($cotizacion->tiene_problemas_stock)
+                                                                    <span class="badge badge-warning">Pendiente Compras</span>
+                                                                @else
+                                                                    <span class="badge badge-warning">Pendiente</span>
+                                                                @endif
                                                                 @break
                                                             @case('pendiente_picking')
                                                                 <span class="badge badge-info">Pendiente Picking</span>

@@ -101,12 +101,39 @@
             @endif
 
             <!-- Picking - Gestión de Stock -->
-            @if(auth()->user()->hasRole('Picking') || auth()->user()->hasRole('Super Admin'))
+            @if(auth()->user()->hasRole('Picking') || auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Super Admin'))
             <li @if ($pageSlug == 'stock') class="active " @endif>
                 <a href="{{ route('productos.index') }}">
                     <i class="tim-icons icon-delivery-fast"></i>
                     <p>{{ __('Gestión Stock') }}</p>
                 </a>
+            </li>
+            @endif
+
+            <!-- Barrido Simplificado - Solo para rol Barrido -->
+            @if(auth()->user()->hasRole('Barrido') && !auth()->user()->hasRole('Super Admin'))
+            <li>
+                <a data-toggle="collapse" href="#BarridoMenu" aria-expanded="false">
+                    <i class="tim-icons icon-tablet-2"></i>
+                    <span class="nav-link-text">{{ __('Barrido') }}</span>
+                    <b class="caret mt-1"></b>
+                </a>
+                <div class="collapse" id="BarridoMenu">
+                    <ul class="nav pl-4">
+                        <li @if ($pageSlug == 'manejo-stock-barrido-simplificado') class="active " @endif>
+                            <a href="{{ route('manejo-stock.barrido-simplificado') }}">
+                                <i class="tim-icons icon-barcode"></i>
+                                <p>{{ __('Asociar Códigos') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'manejo-stock-historial') class="active " @endif>
+                            <a href="{{ route('manejo-stock.historial') }}">
+                                <i class="tim-icons icon-bullet-list-67"></i>
+                                <p>{{ __('Historial') }}</p>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
             </li>
             @endif
 
@@ -130,6 +157,12 @@
                             <a href="{{ route('manejo-stock.barrido.select') }}">
                                 <i class="tim-icons icon-tablet-2"></i>
                                 <p>{{ __('Toma de Inventario Barrido') }}</p>
+                            </a>
+                        </li>
+                        <li @if ($pageSlug == 'manejo-stock-barrido-simplificado') class="active " @endif>
+                            <a href="{{ route('manejo-stock.barrido-simplificado') }}">
+                                <i class="tim-icons icon-barcode"></i>
+                                <p>{{ __('Barrido Simplificado') }}</p>
                             </a>
                         </li>
                         <li @if ($pageSlug == 'manejo-stock-historial') class="active " @endif>
@@ -222,8 +255,8 @@
             </li>
             @endif
 
-            <!-- Gestión de Usuarios - Solo Super Admin -->
-            @if(auth()->user()->hasRole('Super Admin'))
+            <!-- Gestión de Usuarios - Super Admin o Administrativo -->
+            @if(auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Administrativo'))
             <li>
                 <a data-toggle="collapse" href="#GestionUsuarios" aria-expanded="false">
                     <i class="tim-icons icon-single-02"></i>
