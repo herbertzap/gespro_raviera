@@ -182,6 +182,13 @@
                                 <p><strong>ID:</strong> #{{ $cotizacion->id }}</p>
                                 <p><strong>Fecha:</strong> {{ $cotizacion->fecha->format('d/m/Y H:i') }}</p>
                                 <p><strong>Vendedor:</strong> {{ $cotizacion->user->name ?? 'N/A' }}</p>
+                                @if($cotizacion->nota_original_id)
+                                    <p><strong>Separado de:</strong> 
+                                        <a href="{{ route('aprobaciones.show', $cotizacion->nota_original_id) }}" class="text-primary" target="_blank">
+                                            <i class="material-icons" style="font-size: 16px; vertical-align: middle;">link</i> NVV #{{ $cotizacion->nota_original_id }}
+                                        </a>
+                                    </p>
+                                @endif
                                 <p><strong>Estado:</strong> 
                                     @php
                                         // Verificar primero si es una NVV separada
@@ -471,7 +478,7 @@
                                 <table class="table table-hover">
                                     <thead>
                                         <tr>
-                                            @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock)
+                                            @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking')))
                                                 <th>
                                                     <input type="checkbox" id="selectAll" onchange="toggleAllProducts()">
                                                 </th>
@@ -488,7 +495,7 @@
                                             <th>Total</th>
                                             <th>Stock</th>
                                             <th>Estado</th>
-                                            @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock)
+                                            @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking')))
                                                 <th>Acciones</th>
                                             @endif
                                         </tr>
@@ -496,7 +503,7 @@
                                     <tbody>
                                         @foreach($cotizacion->productos as $producto)
                                             <tr data-producto-id="{{ $producto->id }}" data-cantidad="{{ $producto->cantidad }}" data-precio="{{ $producto->precio_unitario }}">
-                                                @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock)
+                                                @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking')))
                                                     <td>
                                                         <input type="checkbox" class="product-checkbox" value="{{ $producto->id }}" 
                                                                onchange="updateSelectedProducts()">
@@ -624,7 +631,7 @@
                                                         <span class="badge badge-warning">Stock Insuficiente</span>
                                                     @endif
                                                 </td>
-                                                @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock && !$cotizacion->aprobado_por_compras)
+                                                @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking')))
                                                     <td>
                                                         @if($stockDisponibleReal < $producto->cantidad)
                                                             <button class="btn btn-warning btn-sm" 
@@ -645,15 +652,19 @@
                             </div>
                         @endif
                         
-                        <!-- Botones de Acción para Compras -->
-                        @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock && !$cotizacion->aprobado_por_compras)
+                        <!-- Botones de Acción para Compras y Picking -->
+                        @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking')))
                             <div class="row mt-3">
                                 <div class="col-md-12">
                                     <div class="card">
                                         <div class="card-header card-header-warning">
                                             <h4 class="card-title">
                                                 <i class="material-icons">build</i>
-                                                Herramientas de Compras
+                                                @if(Auth::user()->hasRole('Picking'))
+                                                    Herramientas de Picking
+                                                @else
+                                                    Herramientas de Compras
+                                                @endif
                                             </h4>
                                         </div>
                                         <div class="card-body">
@@ -665,6 +676,7 @@
                                                         <i class="material-icons">call_split</i> Separar Seleccionados
                                                     </button>
                                                 </div>
+                                                @if(Auth::user()->hasRole('Compras'))
                                                 <div class="col-md-6">
                                                     <h6>Modificar Cantidades</h6>
                                                     <p class="text-muted">Ajusta las cantidades según el stock disponible</p>
@@ -672,6 +684,7 @@
                                                         <i class="material-icons">save</i> Guardar Todas las Cantidades
                                                     </button>
                                                 </div>
+                                                @endif
                                             </div>
                                         </div>
                                     </div>
@@ -1777,7 +1790,7 @@ function separarProductoIndividual(productoId) {
     });
 }
 
-// Separar productos seleccionados con lógica de cantidades
+// Separar productos seleccionados con lógica de cantidades - TODOS EN UNA SOLA NVV
 function separarProductosSeleccionados() {
     const checkboxes = document.querySelectorAll('.product-checkbox:checked');
     const productos = Array.from(checkboxes).map(cb => cb.value);
@@ -1797,7 +1810,7 @@ function separarProductosSeleccionados() {
         
         if (cantidadSeparar > 0) {
             productosConSeparar.push({
-                id: productoId,
+                id: parseInt(productoId),
                 cantidad: cantidadSeparar
             });
         } else {
@@ -1818,8 +1831,8 @@ function separarProductosSeleccionados() {
     const totalProductos = productosConSeparar.length;
     const totalCantidades = productosConSeparar.reduce((sum, p) => sum + p.cantidad, 0);
     
-    if (confirm(`¿Estás seguro de que quieres separar ${totalProductos} productos (${totalCantidades} unidades totales) en una nueva NVV?`)) {
-        console.log('Iniciando separación de productos...', productosConSeparar);
+    if (confirm(`¿Estás seguro de que quieres separar ${totalProductos} productos (${totalCantidades} unidades totales) en UNA nueva NVV?`)) {
+        console.log('Iniciando separación de productos en una sola NVV...', productosConSeparar);
         
         // Primero guardar todas las cantidades a separar
         const promesasGuardar = productosConSeparar.map(producto => {
@@ -1859,60 +1872,38 @@ function separarProductosSeleccionados() {
                     return;
                 }
                 
-                console.log('Todas las cantidades guardadas, iniciando separación...');
+                console.log('Todas las cantidades guardadas, iniciando separación en una sola NVV...');
                 
-                // Ahora separar todos los productos
-                const promesasSeparar = resultadosGuardar.map(resultado => {
-                    return fetch('{{ route("aprobaciones.separar-producto-individual", $cotizacion->id) }}', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                        },
-                        body: JSON.stringify({
-                            producto_id: resultado.producto_id,
-                            motivo: 'Separación múltiple de productos por Compras'
-                        })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            console.log(`Producto ${resultado.producto_id} separado exitosamente`);
-                            return { success: true };
-                        } else {
-                            console.error('Error separando producto:', data.error);
-                            return { success: false, error: data.error };
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error separando producto:', error);
-                        return { success: false, error: error.message };
-                    });
-                });
+                // Separar TODOS los productos en UNA sola NVV usando el endpoint separar-productos
+                const productosIds = resultadosGuardar.map(r => r.producto_id);
                 
-                // Esperar a que todas las separaciones terminen
-                Promise.all(promesasSeparar)
-                    .then(resultadosSeparar => {
-                        const exitosas = resultadosSeparar.filter(r => r.success).length;
-                        const fallidas = resultadosSeparar.filter(r => !r.success).length;
-                        
-                        if (exitosas === totalProductos) {
-                            showNotification(`Todos los productos separados correctamente (${exitosas} productos)`, 'success');
-                        } else if (exitosas > 0) {
-                            showNotification(`Separación parcial: ${exitosas} exitosas, ${fallidas} fallidas`, 'warning');
-                        } else {
-                            showNotification('Error al separar todos los productos', 'error');
-                        }
-                        
+                fetch('{{ route("aprobaciones.separar-productos", $cotizacion->id) }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                    },
+                    body: JSON.stringify({
+                        productos_ids: productosIds,
+                        motivo: 'Separación múltiple de productos por Compras - Productos agrupados en una sola NVV'
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showNotification(`✅ ${data.message}. Nueva NVV #${data.nota_separada_id} creada.`, 'success');
                         // Recargar la página después de un momento
                         setTimeout(() => {
                             window.location.reload();
                         }, 2000);
-                    })
-                    .catch(error => {
-                        console.error('Error en separación:', error);
-                        showNotification('Error al separar productos: ' + error.message, 'error');
-                    });
+                    } else {
+                        showNotification('Error al separar productos: ' + (data.error || 'Error desconocido'), 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error separando productos:', error);
+                    showNotification('Error al separar productos: ' + error.message, 'error');
+                });
             })
             .catch(error => {
                 console.error('Error guardando cantidades:', error);

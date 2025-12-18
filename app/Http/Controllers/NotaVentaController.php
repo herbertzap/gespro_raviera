@@ -421,6 +421,11 @@ class NotaVentaController extends Controller
                         'MOTIVO_BLOQUEO' => $precioValido ? null : 'Precio no disponible'
                     ];
                 })
+                ->filter(function($producto) {
+                    // Filtrar productos con precio 0 o menor
+                    return ($producto['PRECIO_UD1'] ?? 0) > 0;
+                })
+                ->values()
                 ->toArray();
             
             if (empty($productos)) {

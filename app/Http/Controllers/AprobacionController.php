@@ -1020,6 +1020,11 @@ class AprobacionController extends Controller
             $observacionTruncada = substr($observacionVendedor, 0, 250);
             $ordenCompraTruncada = substr($numeroOrdenCompra, 0, 40);
             
+            // Obtener datos de picking para previsualización
+            $separadorPor = $cotizacion->guia_picking_separado_por ?? '';
+            $revisadoPor = $cotizacion->guia_picking_revisado_por ?? '';
+            $numeroBultos = $cotizacion->guia_picking_numero_bultos ?? '';
+            
             $previewMAEEDOOB = "\n\n";
             $previewMAEEDOOB .= "╔══════════════════════════════════════════════════════════════════════════╗\n";
             $previewMAEEDOOB .= "║                  📊 PREVISUALIZACIÓN TABLA MAEEDOOB                      ║\n";
@@ -1028,6 +1033,9 @@ class AprobacionController extends Controller
             $previewMAEEDOOB .= sprintf("║ %-30s = %-39s ║\n", "OBDO (observación vendedor)", substr($observacionTruncada, 0, 39));
             $previewMAEEDOOB .= sprintf("║ %-30s = %-39s ║\n", "CPDO (condición pago)", $condicionPago);
             $previewMAEEDOOB .= sprintf("║ %-30s = %-39s ║\n", "OCDO (orden compra)", substr($ordenCompraTruncada, 0, 39));
+            $previewMAEEDOOB .= sprintf("║ %-30s = %-39s ║\n", "TEXTO1 (separador)", substr($separadorPor, 0, 39));
+            $previewMAEEDOOB .= sprintf("║ %-30s = %-39s ║\n", "TEXTO2 (revisor)", substr($revisadoPor, 0, 39));
+            $previewMAEEDOOB .= sprintf("║ %-30s = %-39s ║\n", "TEXTO3 (n° bultos)", substr($numeroBultos, 0, 39));
             $previewMAEEDOOB .= "╚══════════════════════════════════════════════════════════════════════════╝\n\n";
             
             Log::info($previewMAEEDOOB);
@@ -1529,7 +1537,7 @@ class AprobacionController extends Controller
             
             Log::info('Stock comprometido MySQL actualizado correctamente');
             
-            // INSERT MAEEDOOB - Observaciones y orden de compra
+            // INSERT MAEEDOOB - Observaciones, orden de compra y datos de picking
             $observacionVendedor = $cotizacion->observacion_vendedor ?? '';
             $numeroOrdenCompra = $cotizacion->numero_orden_compra ?? '';
             
@@ -1542,11 +1550,31 @@ class AprobacionController extends Controller
             // Obtener condición de pago del cliente
             $condicionPago = $this->obtenerCondicionPagoCliente($cotizacion->cliente_codigo);
             
+            // Obtener datos de picking (separador, revisor, número de bultos)
+            $separadorPor = $cotizacion->guia_picking_separado_por ?? '';
+            $revisadoPor = $cotizacion->guia_picking_revisado_por ?? '';
+            $numeroBultos = $cotizacion->guia_picking_numero_bultos ?? '';
+            
+            // Truncar campos de picking si es necesario (ajustar según estructura de TEXTO1, TEXTO2, TEXTO3 en MAEEDOOB)
+            $separadorPorTruncado = substr($separadorPor, 0, 100); // Ajustar según longitud del campo TEXTO1
+            $revisadoPorTruncado = substr($revisadoPor, 0, 100); // Ajustar según longitud del campo TEXTO2
+            $numeroBultosTruncado = substr($numeroBultos, 0, 50); // Ajustar según longitud del campo TEXTO3
+            
+            // Escapar comillas simples para SQL
+            $observacionEscapada = str_replace("'", "''", $observacionTruncada);
+            $condicionPagoEscapada = str_replace("'", "''", $condicionPago);
+            $ordenCompraEscapada = str_replace("'", "''", $ordenCompraTruncada);
+            $separadorPorEscapado = str_replace("'", "''", $separadorPorTruncado);
+            $revisadoPorEscapado = str_replace("'", "''", $revisadoPorTruncado);
+            $numeroBultosEscapado = str_replace("'", "''", $numeroBultosTruncado);
+            
+            // INSERT MAEEDOOB con todos los campos requeridos incluyendo EMPRESA
             $insertMAEEDOOB = "
                 INSERT INTO MAEEDOOB (
-                    IDMAEEDO, OBDO, CPDO, OCDO
+                    IDMAEEDO, IDMAEDOOB, EMPRESA, OBDO, CPDO, OCDO, TEXTO1, TEXTO2, TEXTO3
                 ) VALUES (
-                    {$siguienteId}, '{$observacionTruncada}', '{$condicionPago}', '{$ordenCompraTruncada}'
+                    {$siguienteId}, 1, '01', '{$observacionEscapada}', '{$condicionPagoEscapada}', '{$ordenCompraEscapada}', 
+                    '{$separadorPorEscapado}', '{$revisadoPorEscapado}', '{$numeroBultosEscapado}'
                 )
             ";
             
@@ -1561,10 +1589,13 @@ class AprobacionController extends Controller
             
             unlink($tempFile);
             
-            if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
-                Log::warning('Error insertando MAEEDOOB: ' . $result);
+            // Mejorar detección de errores
+            if (str_contains($result, 'Msg') || str_contains($result, 'Error') || str_contains($result, 'error') || str_contains($result, 'Cannot insert')) {
+                Log::error('❌ Error insertando MAEEDOOB: ' . $result);
+                Log::error('SQL ejecutado: ' . $insertMAEEDOOB);
+                // No lanzar excepción para no detener el proceso completo, pero loguear el error claramente
             } else {
-                Log::info("✅ MAEEDOOB insertado correctamente");
+                Log::info("✅ MAEEDOOB insertado correctamente - IDMAEEDO: {$siguienteId}");
             }
             
             // INSERT MAEDTLI - Solo para productos CON descuento
@@ -2527,8 +2558,8 @@ class AprobacionController extends Controller
         $cotizacion = Cotizacion::with(['productos', 'user'])->findOrFail($id);
         $user = Auth::user();
 
-        // Verificar permisos - solo Compras puede separar productos
-        if (!$user->hasRole('Compras')) {
+        // Verificar permisos - Compras y Picking pueden separar productos
+        if (!$user->hasRole('Compras') && !$user->hasRole('Picking')) {
             return response()->json(['error' => 'No tienes permisos para realizar esta acción'], 403);
         }
 
@@ -2540,9 +2571,9 @@ class AprobacionController extends Controller
                 return response()->json(['error' => 'No se encontraron productos válidos'], 400);
             }
 
-            // Para el perfil Compras, permitir separar cualquier producto
-            // (puede modificar cantidades después de la separación)
-            if (!$user->hasRole('Compras')) {
+            // Para los perfiles Compras y Picking, permitir separar cualquier producto
+            // (pueden modificar cantidades después de la separación)
+            if (!$user->hasRole('Compras') && !$user->hasRole('Picking')) {
                 // Solo para otros roles, verificar problemas de stock
                 $productosSinProblemas = $productosSeleccionados->filter(function($producto) {
                     return $producto->stock_disponible >= $producto->cantidad;
@@ -2554,13 +2585,47 @@ class AprobacionController extends Controller
                 }
             }
 
-            // Crear la nueva NVV duplicada con los productos seleccionados
+            // Crear la nueva NVV duplicada con los productos seleccionados (usando cantidad_separar)
             $nuevaCotizacion = $this->crearNvvDuplicadaMultiple($cotizacion, $productosSeleccionados, $request->motivo, $user);
             
-            // Eliminar los productos seleccionados de la NVV original
-            $cotizacion->productos()->whereIn('id', $request->productos_ids)->delete();
+            // Manejar productos en la NVV original según cantidad_separar
+            foreach ($productosSeleccionados as $producto) {
+                $cantidadSeparar = $producto->cantidad_separar ?? $producto->cantidad;
+                
+                if ($cantidadSeparar >= $producto->cantidad) {
+                    // Si se separa toda la cantidad, eliminar el producto de la NVV original
+                    $producto->delete();
+                } else {
+                    // Si se separa parte, reducir la cantidad en la NVV original
+                    $nuevaCantidad = $producto->cantidad - $cantidadSeparar;
+                    $producto->update([
+                        'cantidad' => $nuevaCantidad,
+                        'cantidad_separar' => 0, // Resetear cantidad a separar
+                        'subtotal' => $producto->precio_unitario * $nuevaCantidad
+                    ]);
+                    // Recalcular valores del producto
+                    $subtotalBruto = $producto->precio_unitario * $nuevaCantidad;
+                    $descuentoPorcentaje = $producto->descuento_porcentaje ?? 0;
+                    $descuentoValor = $producto->descuento_valor ?? 0;
+                    if ($descuentoPorcentaje > 0) {
+                        $descuentoValor = $subtotalBruto * ($descuentoPorcentaje / 100);
+                    } else {
+                        // Proporcional al porcentaje de cantidad restante
+                        $porcentajeCantidad = $nuevaCantidad / ($nuevaCantidad + $cantidadSeparar);
+                        $descuentoValor = $descuentoValor * $porcentajeCantidad;
+                    }
+                    $subtotalConDescuento = $subtotalBruto - $descuentoValor;
+                    $ivaValor = $subtotalConDescuento * 0.19;
+                    $producto->update([
+                        'descuento_valor' => $descuentoValor,
+                        'subtotal_con_descuento' => $subtotalConDescuento,
+                        'iva_valor' => $ivaValor,
+                        'total_producto' => $subtotalConDescuento + $ivaValor
+                    ]);
+                }
+            }
             
-            // Actualizar totales de la NVV original (que mantiene los productos no seleccionados)
+            // Actualizar totales de la NVV original (que mantiene los productos no seleccionados o con cantidad reducida)
             $this->actualizarTotalesCotizacion($cotizacion);
             
             // Registrar en el historial
@@ -2679,8 +2744,13 @@ class AprobacionController extends Controller
      */
     private function crearNvvDuplicadaMultiple($cotizacionOriginal, $productos, $motivo, $user)
     {
-        // La separación múltiple solo puede hacerla Compras, así que siempre es "separado_por_compras"
-        $estadoSeparado = 'separado_por_compras';
+        // Determinar estado según el rol del usuario
+        $estadoSeparado = 'separado_por_compras'; // Por defecto para Compras
+        if ($user->hasRole('Picking')) {
+            $estadoSeparado = 'separado_por_picking';
+        } elseif ($user->hasRole('Compras')) {
+            $estadoSeparado = 'separado_por_compras';
+        }
         
         // Las NVVs separadas SIEMPRE deben quedar pendientes de compras
         // porque ellos son los que generan las compras de productos
@@ -2694,8 +2764,8 @@ class AprobacionController extends Controller
         $nuevaCotizacion->tiene_problemas_stock = true;
         $nuevaCotizacion->created_at = now();
         $nuevaCotizacion->updated_at = now();
-        $nuevaCotizacion->observaciones = "NVV creada con productos separados por problemas de stock. Motivo: {$motivo}";
-        $nuevaCotizacion->nota_original_id = $cotizacionOriginal->id; // Referencia a la NVV original
+        $nuevaCotizacion->observaciones = "NVV creada con productos separados. Motivo: {$motivo}";
+        $nuevaCotizacion->nota_original_id = $cotizacionOriginal->id; // Referencia a la NVV original/padre
         
         // Las NVVs separadas siempre empiezan desde cero, sin aprobaciones previas
         // ya que deben ser revisadas nuevamente
@@ -2708,25 +2778,39 @@ class AprobacionController extends Controller
         
         $nuevaCotizacion->save();
 
-        // Duplicar los productos problemáticos
+        // Duplicar los productos problemáticos usando cantidad_separar de cada uno
         foreach ($productos as $producto) {
+            $cantidadSeparar = $producto->cantidad_separar ?? $producto->cantidad;
+            
             $nuevoProducto = $producto->replicate();
             $nuevoProducto->cotizacion_id = $nuevaCotizacion->id;
-            // Asegurar que los valores calculados estén presentes
-            if (!$nuevoProducto->subtotal_con_descuento || $nuevoProducto->subtotal_con_descuento == 0) {
-                $subtotalBruto = $nuevoProducto->precio_unitario * $nuevoProducto->cantidad;
-                $descuentoValor = floatval($nuevoProducto->descuento_valor ?? 0);
-                $nuevoProducto->subtotal_con_descuento = $subtotalBruto - $descuentoValor;
+            $nuevoProducto->cantidad = $cantidadSeparar;
+            $nuevoProducto->cantidad_separar = 0; // Resetear cantidad a separar
+            
+            // Recalcular subtotal y valores del producto con la cantidad separada
+            $subtotalBruto = $producto->precio_unitario * $cantidadSeparar;
+            $descuentoPorcentaje = $producto->descuento_porcentaje ?? 0;
+            $descuentoValor = $producto->descuento_valor ?? 0;
+            
+            // Si hay descuento porcentual, calcularlo proporcionalmente
+            if ($descuentoPorcentaje > 0 && $descuentoValor == 0) {
+                $descuentoValor = $subtotalBruto * ($descuentoPorcentaje / 100);
+            } elseif ($descuentoValor > 0) {
+                // Proporcional al porcentaje de cantidad separada
+                $porcentajeCantidad = $cantidadSeparar / $producto->cantidad;
+                $descuentoValor = $descuentoValor * $porcentajeCantidad;
             }
-            if (!$nuevoProducto->iva_valor || $nuevoProducto->iva_valor == 0) {
-                $subtotalConDescuento = $nuevoProducto->subtotal_con_descuento ?? ($nuevoProducto->precio_unitario * $nuevoProducto->cantidad - floatval($nuevoProducto->descuento_valor ?? 0));
-                $nuevoProducto->iva_valor = $subtotalConDescuento * 0.19;
-            }
-            if (!$nuevoProducto->total_producto || $nuevoProducto->total_producto == 0) {
-                $subtotalConDescuento = $nuevoProducto->subtotal_con_descuento ?? ($nuevoProducto->precio_unitario * $nuevoProducto->cantidad - floatval($nuevoProducto->descuento_valor ?? 0));
-                $ivaValor = $nuevoProducto->iva_valor ?? ($subtotalConDescuento * 0.19);
-                $nuevoProducto->total_producto = $subtotalConDescuento + $ivaValor;
-            }
+            
+            $subtotalConDescuento = $subtotalBruto - $descuentoValor;
+            $ivaValor = $subtotalConDescuento * 0.19;
+            $totalProducto = $subtotalConDescuento + $ivaValor;
+            
+            $nuevoProducto->subtotal = $subtotalBruto;
+            $nuevoProducto->descuento_valor = $descuentoValor;
+            $nuevoProducto->subtotal_con_descuento = $subtotalConDescuento;
+            $nuevoProducto->iva_valor = $ivaValor;
+            $nuevoProducto->total_producto = $totalProducto;
+            
             $nuevoProducto->save();
         }
 
@@ -2996,9 +3080,11 @@ class AprobacionController extends Controller
     private function crearNvvConProductoSeparado($cotizacionOriginal, $producto, $cantidadSeparar, $motivo, $user)
     {
         // Determinar estado según el rol del usuario
-        $estadoSeparado = 'separado_por_compras'; // Por defecto
+        $estadoSeparado = 'separado_por_compras'; // Por defecto para Compras
         if ($user->hasRole('Picking')) {
             $estadoSeparado = 'separado_por_picking';
+        } elseif ($user->hasRole('Compras')) {
+            $estadoSeparado = 'separado_por_compras';
         }
         
         // Las NVVs separadas SIEMPRE deben quedar pendientes de compras

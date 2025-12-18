@@ -146,30 +146,41 @@ class CotizacionBusquedaMejoradaController extends Controller
                 
                 $precioValido = ($precio > 0);
                 
-                $productos[] = [
-                    'CODIGO_PRODUCTO' => $codigo,
-                    'NOMBRE_PRODUCTO' => $producto->NOKOPR,
-                    'UNIDAD_MEDIDA' => $producto->UD01PR,
-                    'PRECIO_UD1' => $precio,
-                    'PRECIO_UD2' => $precioUd2,
-                    'DESCUENTO_MAXIMO' => $descuentoMaximo,
-                    'STOCK_DISPONIBLE' => $stockReal,
-                    'STOCK_DISPONIBLE_REAL' => $stockReal,
-                    'STOCK_FISICO' => $stockFisico,
-                    'STOCK_COMPROMETIDO' => $stockComprometido,
-                    'CANTIDAD_MINIMA' => 1,
-                    'MULTIPLO_VENTA' => $producto->multiplo_venta ?? 1,
-                    'LISTA_PRECIOS' => $listaPrecios,
-                    'PRECIO_VALIDO' => $precioValido,
-                    'MOTIVO_BLOQUEO' => $precioValido ? null : 'Precio no disponible',
-                    'TIENE_STOCK' => $stockReal > 0,
-                    'STOCK_INSUFICIENTE' => $stockReal < 1,
-                    'CLASE_STOCK' => $stockReal <= 0 ? 'text-danger' : ($stockReal < 10 ? 'text-warning' : 'text-success'),
-                    'ESTADO_STOCK' => $stockReal <= 0 ? 'Sin stock' : ($stockReal < 10 ? 'Stock bajo' : 'Stock disponible')
-                ];
+                // Solo agregar productos con precio mayor a 0
+                if ($precio > 0) {
+                    $productos[] = [
+                        'CODIGO_PRODUCTO' => $codigo,
+                        'NOMBRE_PRODUCTO' => $producto->NOKOPR,
+                        'UNIDAD_MEDIDA' => $producto->UD01PR,
+                        'PRECIO_UD1' => $precio,
+                        'PRECIO_UD2' => $precioUd2,
+                        'DESCUENTO_MAXIMO' => $descuentoMaximo,
+                        'STOCK_DISPONIBLE' => $stockReal,
+                        'STOCK_DISPONIBLE_REAL' => $stockReal,
+                        'STOCK_FISICO' => $stockFisico,
+                        'STOCK_COMPROMETIDO' => $stockComprometido,
+                        'CANTIDAD_MINIMA' => 1,
+                        'MULTIPLO_VENTA' => $producto->multiplo_venta ?? 1,
+                        'LISTA_PRECIOS' => $listaPrecios,
+                        'PRECIO_VALIDO' => $precioValido,
+                        'MOTIVO_BLOQUEO' => $precioValido ? null : 'Precio no disponible',
+                        'TIENE_STOCK' => $stockReal > 0,
+                        'STOCK_INSUFICIENTE' => $stockReal < 1,
+                        'CLASE_STOCK' => $stockReal <= 0 ? 'text-danger' : ($stockReal < 10 ? 'text-warning' : 'text-success'),
+                        'ESTADO_STOCK' => $stockReal <= 0 ? 'Sin stock' : ($stockReal < 10 ? 'Stock bajo' : 'Stock disponible')
+                    ];
+                }
             }
             
-            Log::info('Búsqueda mejorada completada: ' . count($productos) . ' productos encontrados');
+            // Si después de filtrar no quedan productos, retornar error
+            if (empty($productos)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se encontraron productos con precio disponible para el término de búsqueda: ' . $busqueda
+                ]);
+            }
+            
+            Log::info('Búsqueda mejorada completada: ' . count($productos) . ' productos encontrados (productos con precio 0 excluidos)');
             
             return response()->json([
                 'success' => true,
