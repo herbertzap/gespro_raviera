@@ -22,7 +22,7 @@
                                 <a href="{{ route('aprobaciones.index') }}" class="btn btn-secondary">
                                     <i class="material-icons">arrow_back</i> Volver
                                 </a>
-                                @if(!auth()->user()->hasRole('Picking'))
+                                @if(!auth()->user()->hasRole('Picking') && !auth()->user()->hasRole('Picking Operativo'))
                                     <button type="button" class="btn btn-primary ml-2" onclick="activarTabCliente()" id="btnVerCliente">
                                         <i class="material-icons">person</i> Ver Cliente
                                     </button>
@@ -148,7 +148,7 @@
                                     <i class="material-icons">description</i> NVV
                                 </a>
                             </li>
-                            @if(!auth()->user()->hasRole('Picking'))
+                            @if(!auth()->user()->hasRole('Picking') && !auth()->user()->hasRole('Picking Operativo'))
                             <li class="nav-item">
                                 <a class="nav-link" id="tab-cliente" data-toggle="tab" href="#content-cliente" role="tab" aria-controls="content-cliente" aria-selected="false">
                                     <i class="material-icons">person</i> Cliente
@@ -279,7 +279,7 @@
                                 <p><strong>Observaciones:</strong></p>
                                 <p class="text-muted">{{ $cotizacion->observaciones ?: 'Sin observaciones' }}</p>
                                 
-                                @if(auth()->user()->hasRole('Picking') && ($cotizacion->puedeAprobarPicking() || $cotizacion->estado_aprobacion === 'pendiente_picking' || $cotizacion->estado_aprobacion === 'aprobada_picking'))
+                                @if((auth()->user()->hasRole('Picking') || auth()->user()->hasRole('Picking Operativo')) && ($cotizacion->puedeAprobarPicking() || $cotizacion->estado_aprobacion === 'pendiente_picking' || $cotizacion->estado_aprobacion === 'aprobada_picking'))
                                 <div class="mt-3">
                                     <p><strong>Observaciones Picking:</strong></p>
                                     <p class="text-muted" id="observaciones-picking-text">{{ $cotizacion->observaciones_picking ?: 'Sin observaciones adicionales' }}</p>
@@ -495,7 +495,7 @@
                                             <th>Total</th>
                                             <th>Stock</th>
                                             <th>Estado</th>
-                                            @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking')))
+                                            @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking') || Auth::user()->hasRole('Picking Operativo')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking') || Auth::user()->hasRole('Picking Operativo')))
                                                 <th>Acciones</th>
                                             @endif
                                         </tr>
@@ -544,21 +544,55 @@
                                                     @endif
                                                 </td>
                                                 <td>
-                                                    @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking')))
+                                                    @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking') || Auth::user()->hasRole('Picking Operativo')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking') || Auth::user()->hasRole('Picking Operativo')))
                                                         @php
-                                                            $multiploVenta = optional(\App\Models\Producto::where('KOPR', $producto->codigo_producto)->first())->multiplo_venta ?? 1;
+                                                            // Obtener stock disponible
+                                                            $productoStockSep = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
+                                                            $stockFisicoRealSep = $productoStockSep ? ($productoStockSep->stock_fisico ?? 0) : 0;
+                                                            $stockComprometidoSQLSep = $productoStockSep ? ($productoStockSep->stock_comprometido ?? 0) : 0;
+                                                            $stockComprometidoLocalSep = \App\Models\StockComprometido::calcularStockComprometido($producto->codigo_producto);
+                                                            $stockDisponibleRealSep = max(0, $stockFisicoRealSep - $stockComprometidoSQLSep - $stockComprometidoLocalSep);
+                                                            
+                                                            // Obtener múltiplo de venta
+                                                            $multiploVenta = optional($productoStockSep)->multiplo_venta ?? 1;
                                                             if ($multiploVenta <= 0) { $multiploVenta = 1; }
+                                                            
+                                                            // Calcular diferencia automáticamente: (pedido - stock) = diferencia
+                                                            $diferencia = max(0, $producto->cantidad - $stockDisponibleRealSep);
+                                                            
+                                                            // Ajustar diferencia a múltiplos si es necesario
+                                                            if ($multiploVenta > 1 && $diferencia > 0) {
+                                                                // Redondear hacia arriba al siguiente múltiplo
+                                                                $diferencia = ceil($diferencia / $multiploVenta) * $multiploVenta;
+                                                                // No exceder la cantidad pedida
+                                                                if ($diferencia > $producto->cantidad) {
+                                                                    // Redondear hacia abajo si excede
+                                                                    $diferencia = floor($producto->cantidad / $multiploVenta) * $multiploVenta;
+                                                                }
+                                                            }
+                                                            
+                                                            // Usar cantidad_separar si ya existe, sino usar la diferencia calculada
+                                                            $cantidadSepararFinal = $producto->cantidad_separar ?? $diferencia;
+                                                            
+                                                            // Asegurar que respete múltiplos si ya existe un valor
+                                                            if ($multiploVenta > 1 && $cantidadSepararFinal > 0) {
+                                                                $cantidadSepararFinal = floor($cantidadSepararFinal / $multiploVenta) * $multiploVenta;
+                                                                if ($cantidadSepararFinal === 0 && $diferencia > 0) {
+                                                                    $cantidadSepararFinal = $multiploVenta;
+                                                                }
+                                                            }
                                                         @endphp
                                                         <div class="input-group input-group-sm">
                                                             <input type="number" class="form-control separar-input" 
-                                                                   value="{{ $producto->cantidad_separar ?? 0 }}" 
+                                                                   value="{{ $cantidadSepararFinal }}" 
                                                                    min="{{ $multiploVenta }}" 
                                                                    step="{{ $multiploVenta }}" 
                                                                    max="{{ $producto->cantidad }}"
                                                                    data-producto-id="{{ $producto->id }}"
                                                                    data-precio="{{ $producto->precio_unitario }}"
                                                                    data-cantidad-original="{{ $producto->cantidad }}"
-                                                                   data-multiplo="{{ $multiploVenta }}">
+                                                                   data-multiplo="{{ $multiploVenta }}"
+                                                                   data-stock-disponible="{{ $stockDisponibleRealSep }}">
                                                             <div class="input-group-append">
                                                                 <button class="btn btn-outline-warning btn-sm" 
                                                                         onclick="guardarSeparar({{ $producto->id }})">
@@ -761,6 +795,7 @@
             ($cotizacion->puedeAprobarCompras() && Auth::user()->hasRole('Compras')) || 
             ($cotizacion->puedeAprobarPicking() && Auth::user()->hasRole('Picking')) ||
             ($cotizacion->estado_aprobacion === 'pendiente_entrega' && Auth::user()->hasRole('Picking'))))
+            {{-- Nota: Picking Operativo NO puede aprobar, solo Picking puede aprobar --}}
             <div class="row">
                 <div class="col-md-12">
                     <div class="card">
@@ -798,6 +833,7 @@
                                     <i class="material-icons">close</i> Rechazar
                                 </button>
                             @elseif(($cotizacion->puedeAprobarPicking() || $cotizacion->estado_aprobacion === 'pendiente_entrega') && Auth::user()->hasRole('Picking'))
+                                {{-- Solo Picking puede aprobar, Picking Operativo NO puede aprobar --}}
                                 @if($cotizacion->estado_aprobacion === 'pendiente_entrega')
                                     <div class="alert alert-info">
                                         <h6><i class="material-icons">local_shipping</i> Nota de Venta Pendiente de Entrega</h6>
@@ -840,7 +876,7 @@
                             <!-- Fin Tab NVV -->
 
                             <!-- Tab Cliente -->
-                            @if(!auth()->user()->hasRole('Picking'))
+                            @if(!auth()->user()->hasRole('Picking') && !auth()->user()->hasRole('Picking Operativo'))
                             <div class="tab-pane fade" id="content-cliente" role="tabpanel" aria-labelledby="tab-cliente">
                                 <div id="cliente-content">
                                     <div class="text-center py-5">
@@ -991,6 +1027,12 @@ $(document).ready(function() {
     }, 1000);
 });
 @endif
+
+// Calcular automáticamente cantidad a separar al cargar la página
+$(document).ready(function() {
+    // Calcular automáticamente cantidad a separar basándose en stock disponible
+    calcularSepararAutomatico();
+});
 
 // Event listener para cuando se cambia de tab
 $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
@@ -1560,10 +1602,66 @@ function actualizarMaximoSeparar(productoId) {
     const separarInput = document.querySelector(`input[data-producto-id="${productoId}"].separar-input`);
     
     if (cantidadInput && separarInput) {
-        const cantidadActual = cantidadInput.value;
+        const cantidadActual = parseFloat(cantidadInput.value) || 0;
+        const stockDisponible = parseFloat(separarInput.getAttribute('data-stock-disponible')) || 0;
+        const multiplo = parseInt(separarInput.getAttribute('data-multiplo')) || 1;
+        
+        // Actualizar máximo
         separarInput.max = cantidadActual;
         separarInput.placeholder = `Máx: ${cantidadActual}`;
+        
+        // Recalcular automáticamente cantidad a separar: (pedido - stock) = diferencia
+        let diferencia = Math.max(0, cantidadActual - stockDisponible);
+        
+        // Ajustar a múltiplos si es necesario
+        if (multiplo > 1 && diferencia > 0) {
+            // Redondear hacia arriba al siguiente múltiplo
+            diferencia = Math.ceil(diferencia / multiplo) * multiplo;
+            // No exceder la cantidad pedida
+            if (diferencia > cantidadActual) {
+                // Redondear hacia abajo si excede
+                diferencia = Math.floor(cantidadActual / multiplo) * multiplo;
+            }
+        }
+        
+        // Actualizar el valor del input solo si la diferencia es diferente y válida
+        const valorActual = parseFloat(separarInput.value) || 0;
+        if (diferencia !== valorActual && diferencia >= 0 && diferencia <= cantidadActual) {
+            separarInput.value = diferencia;
+        }
     }
+}
+
+// Función para calcular automáticamente cantidad a separar basándose en stock disponible
+function calcularSepararAutomatico() {
+    const separarInputs = document.querySelectorAll('.separar-input');
+    
+    separarInputs.forEach(separarInput => {
+        const productoId = separarInput.getAttribute('data-producto-id');
+        const cantidadOriginal = parseFloat(separarInput.getAttribute('data-cantidad-original')) || 0;
+        const stockDisponible = parseFloat(separarInput.getAttribute('data-stock-disponible')) || 0;
+        const multiplo = parseInt(separarInput.getAttribute('data-multiplo')) || 1;
+        
+        // Calcular diferencia: (pedido - stock) = diferencia
+        let diferencia = Math.max(0, cantidadOriginal - stockDisponible);
+        
+        // Ajustar a múltiplos si es necesario
+        if (multiplo > 1 && diferencia > 0) {
+            // Redondear hacia arriba al siguiente múltiplo
+            diferencia = Math.ceil(diferencia / multiplo) * multiplo;
+            // No exceder la cantidad pedida
+            if (diferencia > cantidadOriginal) {
+                // Redondear hacia abajo si excede
+                diferencia = Math.floor(cantidadOriginal / multiplo) * multiplo;
+            }
+        }
+        
+        // Solo actualizar si no hay un valor previo guardado (valor actual es 0 o vacío)
+        const valorActual = parseFloat(separarInput.value) || 0;
+        if (valorActual === 0 && diferencia > 0) {
+            separarInput.value = diferencia;
+        }
+    });
 }
 
 // Guardar cantidad individual

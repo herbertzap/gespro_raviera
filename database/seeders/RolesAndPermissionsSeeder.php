@@ -73,6 +73,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $compras = Role::create(['name' => 'Compras']);
         $bodega = Role::create(['name' => 'Bodega']);
         $picking = Role::create(['name' => 'Picking']);
+        $pickingOperativo = Role::create(['name' => 'Picking Operativo']);
 
         // Asignar permisos a Vendedor
         $vendedor->givePermissionTo([
@@ -150,6 +151,22 @@ class RolesAndPermissionsSeeder extends Seeder
             'view_quotations',
             'view_sale_notes',
             'approve_sale_notes',
+            'view_stock',
+            'manage_stock',
+            'reserve_stock',
+            'view_reports',
+            'export_reports',
+        ]);
+
+        // Asignar permisos a Picking Operativo (igual que Picking pero SIN approve_sale_notes)
+        $pickingOperativo->givePermissionTo([
+            'view_dashboard',
+            'view_clients',
+            'view_products',
+            'search_products',
+            'view_quotations',
+            'view_sale_notes',
+            // NO tiene 'approve_sale_notes'
             'view_stock',
             'manage_stock',
             'reserve_stock',

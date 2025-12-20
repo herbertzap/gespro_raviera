@@ -85,6 +85,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/productos', [App\Http\Controllers\ProductoController::class, 'index'])->name('productos.index');
     Route::get('/productos/ver/{codigo}', [App\Http\Controllers\ProductoController::class, 'ver'])->name('productos.ver');
     Route::get('/productos/descargar-informe-compras', [App\Http\Controllers\ProductoController::class, 'descargarInformeCompras'])->name('productos.descargar-informe-compras');
+    Route::post('/productos/sincronizar-general', [App\Http\Controllers\ProductoController::class, 'sincronizarProductosGeneral'])->name('productos.sincronizar-general');
     Route::get('/api/productos/buscar', [App\Http\Controllers\ProductoController::class, 'buscar'])->name('productos.buscar');
     Route::post('/api/productos/crear-nvv', [App\Http\Controllers\ProductoController::class, 'crearNVVDesdeProductos'])->name('productos.crear-nvv');
     Route::post('/api/productos/modificar-cantidades', [App\Http\Controllers\ProductoController::class, 'modificarCantidades'])->name('productos.modificar-cantidades');
@@ -212,6 +213,7 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/clientes', [App\Http\Controllers\ClienteController::class, 'index'])->name('clientes.index');
     Route::get('/clientes/{codigo}', [App\Http\Controllers\ClienteController::class, 'show'])->name('clientes.show');
     Route::get('/clientes/{codigo}/info-ajax', [App\Http\Controllers\ClienteController::class, 'getInfoAjax'])->name('clientes.info-ajax');
+    Route::get('/clientes/{codigo}/cheques-ajax', [App\Http\Controllers\ClienteController::class, 'getChequesAjax'])->name('clientes.cheques-ajax');
     Route::post('/clientes/buscar', [App\Http\Controllers\ClienteController::class, 'buscar'])->name('clientes.buscar');
     Route::get('/clientes/buscar', [App\Http\Controllers\ClienteController::class, 'buscarAjax'])->name('clientes.buscar.ajax');
     Route::post('/clientes/sincronizar', [App\Http\Controllers\ClienteController::class, 'sincronizar'])->name('clientes.sincronizar');
@@ -375,8 +377,11 @@ Route::middleware(['auth', 'role:Super Admin|Administrativo'])->prefix('admin')-
             return response()->json(['success' => false, 'message' => $e->getMessage()]);
         }
     })->name('vendedores.sincronizar');
+});
 
-    // Gestión de Múltiplos de Productos
+// Rutas de Gestión de Múltiplos de Productos (acceso para Compras y Super Admin)
+// Nota: El controlador tiene su propia verificación de permisos
+Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/productos/multiplos', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'index'])->name('productos.multiplos');
     Route::post('/productos/multiplos/cargar', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'cargarExcel'])->name('productos.multiplos.cargar');
     Route::put('/productos/multiplos/{id}', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'actualizar'])->name('productos.multiplos.actualizar');

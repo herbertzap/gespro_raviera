@@ -30,6 +30,16 @@ class UsersSeeder extends Seeder
         ]);
         $pickingUser->assignRole('Picking');
 
+        // Crear usuario de Picking Operativo (no puede aprobar, solo imprimir y guardar cantidades)
+        $pickingOperativoUser = User::create([
+            'name' => 'Usuario Picking Operativo',
+            'email' => 'picking.operativo@wuayna.com',
+            'password' => Hash::make('password'),
+            'codigo_vendedor' => 'PICKOP001',
+            'email_verified_at' => now(),
+        ]);
+        $pickingOperativoUser->assignRole('Picking Operativo');
+
         // Crear usuario de Bodega
         $bodegaUser = User::create([
             'name' => 'Usuario Bodega',
@@ -53,6 +63,7 @@ class UsersSeeder extends Seeder
         $this->command->info('Usuarios de prueba creados exitosamente:');
         $this->command->info('- compras@wuayna.com (password: password)');
         $this->command->info('- picking@wuayna.com (password: password)');
+        $this->command->info('- picking.operativo@wuayna.com (password: password) - NO puede aprobar, solo imprimir y guardar cantidades');
         $this->command->info('- bodega@wuayna.com (password: password)');
         $this->command->info('- supervisor@wuayna.com (password: password)');
     }

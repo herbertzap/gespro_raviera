@@ -8,6 +8,7 @@ use App\Models\Cliente;
 use App\Services\CobranzaService;
 use App\Services\StockService;
 use App\Services\StockConsultaService;
+use App\Services\ClienteValidacionService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -124,11 +125,20 @@ class AprobacionController extends Controller
             // Compras ve:
             // 1. Notas aprobadas por supervisor (que tienen problemas de stock)
             // 2. Notas pendientes que tienen problemas de stock
+            // 3. NVV separadas por Picking (tienen nota_original_id) - estas requieren compras porque fueron separadas por falta de stock
             $query = Cotizacion::where('tipo_documento', 'nota_venta')
-                ->where('tiene_problemas_stock', true)
                 ->where(function($q) {
-                    $q->where('estado_aprobacion', 'aprobada_supervisor')
-                      ->orWhere('estado_aprobacion', 'pendiente');
+                    // Caso 1 y 2: NVV con problemas de stock (normales)
+                    $q->where('tiene_problemas_stock', true)
+                      ->where(function($subQ) {
+                          $subQ->where('estado_aprobacion', 'aprobada_supervisor')
+                               ->orWhere('estado_aprobacion', 'pendiente');
+                      })
+                      // Caso 3: NVV separadas por Picking (siempre tienen nota_original_id y problemas de stock)
+                      ->orWhere(function($separadasQ) {
+                          $separadasQ->whereNotNull('nota_original_id')
+                                     ->where('tiene_problemas_stock', true);
+                      });
                 });
             
             $aplicarFiltros($query);
@@ -138,8 +148,8 @@ class AprobacionController extends Controller
                 ->paginate(15)
                 ->appends($request->query());
             $tipoAprobacion = 'compras';
-        } elseif ($user->hasRole('Picking')) {
-            // Picking ve tanto notas con problemas de stock como sin problemas
+        } elseif ($this->tieneRolPicking($user)) {
+            // Picking y Picking Operativo ven tanto notas con problemas de stock como sin problemas
             $queryConProblemas = Cotizacion::pendientesPicking();
             $aplicarFiltros($queryConProblemas);
             $cotizacionesConProblemas = $queryConProblemas->with(['user', 'productos', 'cliente'])
@@ -335,7 +345,8 @@ class AprobacionController extends Controller
         $cotizacion = Cotizacion::findOrFail($id);
         $user = Auth::user();
 
-        if (!$user->hasRole('Picking')) {
+        // Tanto Picking como Picking Operativo pueden guardar pendiente de entrega
+        if (!$this->tieneRolPicking($user)) {
             return redirect()->route('aprobaciones.show', $id)
                 ->with('error', 'No tienes permisos para esta acción');
         }
@@ -405,9 +416,9 @@ class AprobacionController extends Controller
         $observaciones = $request->input('observaciones_picking');
         Log::info("Valor de observaciones antes de guardar: " . ($observaciones ?? 'NULL'));
 
-        // Solo usuarios con rol Picking pueden agregar observaciones
-        if (!$user->hasRole('Picking')) {
-            Log::warning("Usuario {$user->id} no tiene rol Picking");
+        // Tanto Picking como Picking Operativo pueden agregar observaciones
+        if (!$this->tieneRolPicking($user)) {
+            Log::warning("Usuario {$user->id} no tiene rol Picking o Picking Operativo");
             if ($request->ajax() || $request->wantsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
                 return response()->json([
                     'success' => false,
@@ -516,8 +527,9 @@ class AprobacionController extends Controller
         Log::info("Usuario ID: {$user->id}");
         Log::info("Usuario roles: " . json_encode($user->getRoleNames()));
 
-        if (!$user->hasRole('Picking')) {
-            Log::error("❌ ERROR: Usuario no tiene rol Picking");
+        // Solo Picking puede aprobar, Picking Operativo NO puede aprobar
+        if (!$this->puedeAprobarPicking($user)) {
+            Log::error("❌ ERROR: Usuario no tiene rol Picking (solo puede aprobar Picking, no Picking Operativo)");
             return redirect()->route('aprobaciones.show', $id)
                 ->with('error', 'No tienes permisos para aprobar como picking');
         }
@@ -890,7 +902,9 @@ class AprobacionController extends Controller
                 }
                 
                 $codigoProducto = substr($producto->codigo_producto, 0, 13);
-                $nombreProducto = substr($producto->nombre_producto, 0, 50);
+                // Limpiar nombre del producto antes de truncarlo
+                $nombreLimpio = $this->limpiarNombreProducto($producto->nombre_producto);
+                $nombreProducto = substr($nombreLimpio, 0, 50);
                 $ud01prTruncado = substr($ud01pr, 0, 2);
                 $ud02prTruncado = substr($ud02pr, 0, 2);
                 
@@ -1173,7 +1187,57 @@ class AprobacionController extends Controller
             $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
             
             Log::info("Último NUDO de NVV: {$ultimoNudoStr}");
-            Log::info("Siguiente NUDO asignado: {$nudoFormateado}");
+            Log::info("NUDO inicial calculado: {$nudoFormateado}");
+            
+            // Validar que el NUDO no exista ya en SQL Server (puede haber sido creado por otro proceso/vendedor)
+            // Si existe, incrementar hasta encontrar uno disponible
+            $intentos = 0;
+            $maxIntentos = 5; // Límite máximo de intentos para evitar timeouts
+            while ($intentos < $maxIntentos) {
+                $queryVerificarNudo = "SELECT COUNT(*) as existe FROM MAEEDO WHERE TIDO = 'NVV' AND NUDO = '{$nudoFormateado}'";
+                
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $queryVerificarNudo . "\ngo\nquit");
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+                
+                unlink($tempFile);
+                
+                // Parsear resultado - buscar el número del COUNT (0 si no existe, 1 o más si existe)
+                $existe = false;
+                // Buscar números en la respuesta (COUNT devuelve un número)
+                if (preg_match('/(\d+)/', $result, $matches)) {
+                    $count = (int)$matches[1];
+                    $existe = $count > 0;
+                    Log::debug("Verificación NUDO {$nudoFormateado}: COUNT = {$count}");
+                } else {
+                    // Si no se puede parsear, asumir que no existe para evitar bloquear el proceso
+                    Log::warning("No se pudo parsear resultado de verificación NUDO, asumiendo disponible: " . substr($result, 0, 200));
+                    $existe = false;
+                }
+                
+                if (!$existe) {
+                    // NUDO disponible, salir del loop
+                    if ($intentos > 0) {
+                        Log::info("✅ NUDO {$nudoFormateado} disponible (verificado después de {$intentos} incremento(s))");
+                    }
+                    break;
+                } else {
+                    // NUDO ya existe, incrementar y volver a verificar
+                    $intentos++;
+                    $siguienteNudo++;
+                    $nudoFormateadoAnterior = $nudoFormateado;
+                    $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
+                    Log::warning("⚠️ NUDO {$nudoFormateadoAnterior} ya existe en SQL Server, incrementando a {$nudoFormateado}");
+                }
+            }
+            
+            if ($intentos >= $maxIntentos) {
+                throw new \Exception("No se pudo encontrar un NUDO disponible después de {$maxIntentos} intentos");
+            }
+            
+            Log::info("✅ NUDO asignado final: {$nudoFormateado}");
             
             // Calcular fecha de vencimiento (30 días desde hoy)
             $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
@@ -1331,7 +1395,9 @@ class AprobacionController extends Controller
                 }
                 
                 $codigoProducto = substr($producto->codigo_producto, 0, 13);
-                $nombreProducto = substr($producto->nombre_producto, 0, 50);
+                // Limpiar nombre del producto antes de truncarlo
+                $nombreLimpio = $this->limpiarNombreProducto($producto->nombre_producto);
+                $nombreProducto = substr($nombreLimpio, 0, 50);
                 $ud01prTruncado = substr($ud01pr, 0, 2);
                 $ud02prTruncado = substr($ud02pr, 0, 2);
                 
@@ -1560,13 +1626,23 @@ class AprobacionController extends Controller
             $revisadoPorTruncado = substr($revisadoPor, 0, 100); // Ajustar según longitud del campo TEXTO2
             $numeroBultosTruncado = substr($numeroBultos, 0, 50); // Ajustar según longitud del campo TEXTO3
             
-            // Escapar comillas simples para SQL
-            $observacionEscapada = str_replace("'", "''", $observacionTruncada);
-            $condicionPagoEscapada = str_replace("'", "''", $condicionPago);
-            $ordenCompraEscapada = str_replace("'", "''", $ordenCompraTruncada);
-            $separadorPorEscapado = str_replace("'", "''", $separadorPorTruncado);
-            $revisadoPorEscapado = str_replace("'", "''", $revisadoPorTruncado);
-            $numeroBultosEscapado = str_replace("'", "''", $numeroBultosTruncado);
+            // Escapar comillas simples para SQL y asegurar que los valores no estén vacíos (usar espacio si están vacíos)
+            $observacionEscapada = str_replace("'", "''", $observacionTruncada ?: ' ');
+            $condicionPagoEscapada = str_replace("'", "''", $condicionPago ?: ' ');
+            $ordenCompraEscapada = str_replace("'", "''", $ordenCompraTruncada ?: ' ');
+            $separadorPorEscapado = str_replace("'", "''", $separadorPorTruncado ?: ' ');
+            $revisadoPorEscapado = str_replace("'", "''", $revisadoPorTruncado ?: ' ');
+            $numeroBultosEscapado = str_replace("'", "''", $numeroBultosTruncado ?: ' ');
+            
+            // Log de valores que se van a insertar para debugging
+            Log::info("📋 Valores MAEEDOOB a insertar - IDMAEEDO: {$siguienteId}", [
+                'OBDO' => substr($observacionEscapada, 0, 50),
+                'CPDO' => $condicionPagoEscapada,
+                'OCDO' => substr($ordenCompraEscapada, 0, 40),
+                'TEXTO1' => substr($separadorPorEscapado, 0, 50),
+                'TEXTO2' => substr($revisadoPorEscapado, 0, 50),
+                'TEXTO3' => substr($numeroBultosEscapado, 0, 50),
+            ]);
             
             // INSERT MAEEDOOB con todos los campos requeridos incluyendo EMPRESA
             $insertMAEEDOOB = "
@@ -1589,13 +1665,69 @@ class AprobacionController extends Controller
             
             unlink($tempFile);
             
-            // Mejorar detección de errores
-            if (str_contains($result, 'Msg') || str_contains($result, 'Error') || str_contains($result, 'error') || str_contains($result, 'Cannot insert')) {
-                Log::error('❌ Error insertando MAEEDOOB: ' . $result);
+            // Mejorar detección de errores - ignorar mensajes informativos normales de tsql
+            $tieneError = false;
+            $mensajeError = '';
+            
+            // Mensajes informativos normales de tsql que NO son errores
+            $mensajesInformativos = [
+                'Setting HIGUERA as default database in login packet',
+                'locale is',
+                'locale charset is',
+                'using default charset',
+                '1>',
+                '2>',
+                '3>',
+            ];
+            
+            // Limpiar el resultado removiendo mensajes informativos para análisis
+            $resultLimpio = $result;
+            foreach ($mensajesInformativos as $msgInfo) {
+                $resultLimpio = str_replace($msgInfo, '', $resultLimpio);
+            }
+            $resultLimpio = preg_replace('/\n\s*\n/', "\n", $resultLimpio); // Limpiar líneas vacías múltiples
+            $resultLimpio = trim($resultLimpio);
+            
+            // Verificar errores REALES de SQL Server (Msg con Level > 10 generalmente es error)
+            if (preg_match('/Msg (\d+), Level (\d+), State \d+/', $result, $matches)) {
+                $msgNumber = (int)$matches[1];
+                $level = (int)$matches[2];
+                // Niveles 11-25 son errores, niveles 0-10 son informativos
+                if ($level >= 11) {
+                    $tieneError = true;
+                    // Extraer el mensaje de error específico
+                    if (preg_match('/Msg \d+, Level \d+, State \d+[:\s]+(.*?)(?:\n|$)/s', $result, $errorMatches)) {
+                        $mensajeError = trim($errorMatches[1] ?? '');
+                    } else {
+                        $mensajeError = "Error SQL Server (Msg {$msgNumber}, Level {$level})";
+                    }
+                }
+            } elseif (str_contains($result, 'Cannot insert') || 
+                     str_contains($result, 'violation') || 
+                     str_contains($result, 'constraint') ||
+                     str_contains($result, 'Permission denied') ||
+                     str_contains($result, 'Invalid object name')) {
+                $tieneError = true;
+                $mensajeError = 'Error de SQL Server detectado';
+            }
+            
+            // Si no hay error, considerar éxito (tsql normalmente no devuelve nada en caso de éxito)
+            if (!$tieneError) {
+                // Si el resultado limpio está vacío o solo tiene números (podría ser "(1 row affected)"), es éxito
+                if (empty($resultLimpio) || 
+                    preg_match('/^\s*(\d+\s+)?(row\s+affected|rows?\s+affected)?\s*$/i', $resultLimpio) ||
+                    preg_match('/^\s*\(?\d+\s+row.*affected.*\)?\s*$/i', $resultLimpio)) {
+                    Log::info("✅ MAEEDOOB insertado correctamente - IDMAEEDO: {$siguienteId}");
+                } else {
+                    // Caso ambiguo - loguear para revisar pero no marcar como error
+                    Log::info("✅ MAEEDOOB insertado (resultado: " . substr($resultLimpio, 0, 100) . ") - IDMAEEDO: {$siguienteId}");
+                    Log::debug("Resultado completo MAEEDOOB: " . substr($result, 0, 500));
+                }
+            } else {
+                Log::error('❌ Error insertando MAEEDOOB: ' . $mensajeError);
+                Log::error('Resultado completo: ' . substr($result, 0, 1000));
                 Log::error('SQL ejecutado: ' . $insertMAEEDOOB);
                 // No lanzar excepción para no detener el proceso completo, pero loguear el error claramente
-            } else {
-                Log::info("✅ MAEEDOOB insertado correctamente - IDMAEEDO: {$siguienteId}");
             }
             
             // INSERT MAEDTLI - Solo para productos CON descuento
@@ -2114,7 +2246,7 @@ class AprobacionController extends Controller
         $cotizacion = Cotizacion::findOrFail($id);
         $user = Auth::user();
 
-        if (!$user->hasRole('Compras') && !$user->hasRole('Picking')) {
+        if (!$user->hasRole('Compras') && !$this->tieneRolPicking($user)) {
             return response()->json(['error' => 'No tienes permisos para separar productos'], 403);
         }
 
@@ -2171,9 +2303,48 @@ class AprobacionController extends Controller
     {
         if ($user->hasRole('Supervisor')) return 'supervisor';
         if ($user->hasRole('Compras')) return 'compras';
-        if ($user->hasRole('Picking')) return 'picking';
+        if ($user->hasRole('Picking') || $user->hasRole('Picking Operativo')) return 'picking';
         
         return null;
+    }
+
+    /**
+     * Verificar si el usuario tiene rol Picking o Picking Operativo
+     */
+    private function tieneRolPicking($user)
+    {
+        return $user->hasRole('Picking') || $user->hasRole('Picking Operativo');
+    }
+
+    /**
+     * Verificar si el usuario puede aprobar (solo Picking, no Picking Operativo)
+     */
+    private function puedeAprobarPicking($user)
+    {
+        return $user->hasRole('Picking');
+    }
+
+    /**
+     * Limpiar nombre del producto removiendo información adicional como "xxxxxxxmultiplo: X" o "adicional"
+     */
+    private function limpiarNombreProducto($nombreProducto)
+    {
+        if (empty($nombreProducto)) {
+            return $nombreProducto;
+        }
+        
+        $nombreLimpio = $nombreProducto;
+        
+        // Remover patrones como "xxxxxxxmultiplo: X" o "xxxxxmultiplo: X" al final
+        $nombreLimpio = preg_replace('/\s*xxxxxxx?multiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        // Remover "multiplo: X" al final
+        $nombreLimpio = preg_replace('/\s*multiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        // Remover la palabra "adicional" si aparece
+        $nombreLimpio = preg_replace('/\s*adicional\s*/i', ' ', $nombreLimpio);
+        // Limpiar espacios múltiples y recortar
+        $nombreLimpio = preg_replace('/\s+/', ' ', trim($nombreLimpio));
+        
+        return $nombreLimpio;
     }
 
     /**
@@ -2194,7 +2365,8 @@ class AprobacionController extends Controller
         } elseif ($user->hasRole('Compras') && $cotizacion->puedeAprobarCompras()) {
             $puedeAprobar = true;
             $tipoAprobacion = 'compras';
-        } elseif ($user->hasRole('Picking') && ($cotizacion->puedeAprobarPicking() || $cotizacion->estado_aprobacion === 'pendiente_picking')) {
+        } elseif ($this->puedeAprobarPicking($user) && ($cotizacion->puedeAprobarPicking() || $cotizacion->estado_aprobacion === 'pendiente_picking')) {
+            // Solo Picking puede aprobar, Picking Operativo NO puede aprobar
             $puedeAprobar = true;
             $tipoAprobacion = 'picking';
         }
@@ -2220,9 +2392,9 @@ class AprobacionController extends Controller
         // Verificar permisos
         $puedeAcceder = false;
         
-        // Super Admin, Supervisor, Compras, Picking siempre pueden acceder
+        // Super Admin, Supervisor, Compras, Picking y Picking Operativo siempre pueden acceder
         if ($user->hasRole('Super Admin') || $user->hasRole('Supervisor') || 
-            $user->hasRole('Compras') || $user->hasRole('Picking')) {
+            $user->hasRole('Compras') || $this->tieneRolPicking($user)) {
             $puedeAcceder = true;
         }
         // Vendedores solo pueden ver sus propias cotizaciones
@@ -2321,13 +2493,65 @@ class AprobacionController extends Controller
      */
     private function crearNvvDuplicada($cotizacionOriginal, $producto, $motivo)
     {
+        // Determinar estado de aprobación según si la NVV original ya fue aprobada
+        $estadoAprobacionOriginal = $cotizacionOriginal->estado_aprobacion;
+        $heredarAprobaciones = in_array($estadoAprobacionOriginal, [
+            'aprobada_supervisor',
+            'aprobada_compras',
+            'aprobada_picking',
+            'pendiente_picking'
+        ]);
+        
         // Crear nueva cotización
         $nuevaCotizacion = $cotizacionOriginal->replicate();
         $nuevaCotizacion->estado = 'pendiente_stock';
-        $nuevaCotizacion->estado_aprobacion = 'pendiente';
+        
+        // Si la NVV original ya fue aprobada, heredar su estado
+        if ($heredarAprobaciones) {
+            $nuevaCotizacion->estado_aprobacion = $estadoAprobacionOriginal;
+            $nuevaCotizacion->tiene_problemas_stock = true;
+            // Las NVVs separadas NUNCA deben tener problemas de crédito, incluso si heredan aprobaciones
+            // (heredan aprobaciones pero no problemas de crédito porque se separan solo por stock)
+            $nuevaCotizacion->tiene_problemas_credito = false;
+            // NO resetear aprobaciones, mantener las de la original (el replicate ya las copió)
+        } else {
+            // Si está pendiente, validar crédito del cliente para establecer tiene_problemas_credito
+            // Calcular total del producto separado para validar crédito
+            $precioBase = $producto->precio_unitario * $producto->cantidad;
+            $descuentoPorcentaje = $producto->descuento_porcentaje ?? 0;
+            $descuentoValor = $precioBase * ($descuentoPorcentaje / 100);
+            $subtotalConDescuento = $precioBase - $descuentoValor;
+            $ivaValor = $subtotalConDescuento * 0.19;
+            $totalProducto = $subtotalConDescuento + $ivaValor;
+            
+            // Validar cliente para determinar si tiene problemas de crédito
+            $validacionCliente = ClienteValidacionService::validarClienteParaNotaVenta(
+                $cotizacionOriginal->cliente_codigo,
+                $totalProducto
+            );
+            $tieneProblemasCredito = $validacionCliente['requiere_autorizacion'] ?? false;
+            
+            // Si está pendiente, iniciar como pendiente
+            $nuevaCotizacion->estado_aprobacion = 'pendiente';
+            $nuevaCotizacion->tiene_problemas_stock = true;
+            $nuevaCotizacion->tiene_problemas_credito = $tieneProblemasCredito;
+            
+            // Resetear aprobaciones ya que está pendiente
+            $nuevaCotizacion->aprobado_por_supervisor = null;
+            $nuevaCotizacion->fecha_aprobacion_supervisor = null;
+            $nuevaCotizacion->comentarios_supervisor = null;
+            $nuevaCotizacion->aprobado_por_compras = null;
+            $nuevaCotizacion->fecha_aprobacion_compras = null;
+            $nuevaCotizacion->comentarios_compras = null;
+            $nuevaCotizacion->aprobado_por_picking = null;
+            $nuevaCotizacion->fecha_aprobacion_picking = null;
+            $nuevaCotizacion->comentarios_picking = null;
+        }
+        
         $nuevaCotizacion->fecha_creacion = now();
         $nuevaCotizacion->fecha_modificacion = now();
         $nuevaCotizacion->comentarios = "NVV separada por problemas de stock del producto: {$producto->producto_nombre}. Motivo: {$motivo}";
+        $nuevaCotizacion->nota_original_id = $cotizacionOriginal->id; // Referencia a la NVV original/padre
         $nuevaCotizacion->save();
 
         // Duplicar el producto problemático
@@ -2558,8 +2782,8 @@ class AprobacionController extends Controller
         $cotizacion = Cotizacion::with(['productos', 'user'])->findOrFail($id);
         $user = Auth::user();
 
-        // Verificar permisos - Compras y Picking pueden separar productos
-        if (!$user->hasRole('Compras') && !$user->hasRole('Picking')) {
+        // Verificar permisos - Compras, Picking y Picking Operativo pueden separar productos
+        if (!$user->hasRole('Compras') && !$this->tieneRolPicking($user)) {
             return response()->json(['error' => 'No tienes permisos para realizar esta acción'], 403);
         }
 
@@ -2571,9 +2795,9 @@ class AprobacionController extends Controller
                 return response()->json(['error' => 'No se encontraron productos válidos'], 400);
             }
 
-            // Para los perfiles Compras y Picking, permitir separar cualquier producto
+            // Para los perfiles Compras, Picking y Picking Operativo, permitir separar cualquier producto
             // (pueden modificar cantidades después de la separación)
-            if (!$user->hasRole('Compras') && !$user->hasRole('Picking')) {
+            if (!$user->hasRole('Compras') && !$this->tieneRolPicking($user)) {
                 // Solo para otros roles, verificar problemas de stock
                 $productosSinProblemas = $productosSeleccionados->filter(function($producto) {
                     return $producto->stock_disponible >= $producto->cantidad;
@@ -2746,35 +2970,88 @@ class AprobacionController extends Controller
     {
         // Determinar estado según el rol del usuario
         $estadoSeparado = 'separado_por_compras'; // Por defecto para Compras
-        if ($user->hasRole('Picking')) {
+        if ($this->tieneRolPicking($user)) {
             $estadoSeparado = 'separado_por_picking';
         } elseif ($user->hasRole('Compras')) {
             $estadoSeparado = 'separado_por_compras';
         }
         
-        // Las NVVs separadas SIEMPRE deben quedar pendientes de compras
-        // porque ellos son los que generan las compras de productos
-        $estadoAprobacion = 'pendiente';
+        // Determinar estado de aprobación según si la NVV original ya fue aprobada
+        // Si la NVV original ya fue aprobada, heredar ese estado
+        // Si está pendiente, evaluar según problemas de crédito/stock
         
-        // Crear nueva cotización con los productos seleccionados
-        $nuevaCotizacion = $cotizacionOriginal->replicate();
-        $nuevaCotizacion->estado = $estadoSeparado; // Usar el nuevo estado separado
-        $nuevaCotizacion->estado_aprobacion = $estadoAprobacion;
+        $estadoAprobacionOriginal = $cotizacionOriginal->estado_aprobacion;
+        $heredarAprobaciones = in_array($estadoAprobacionOriginal, [
+            'aprobada_supervisor',
+            'aprobada_compras',
+            'aprobada_picking',
+            'pendiente_picking'
+        ]);
+        
         // Las NVVs separadas siempre tienen problemas de stock (necesitan compras)
-        $nuevaCotizacion->tiene_problemas_stock = true;
+        // PERO NO deben heredar problemas de crédito de la NVV original
+        $tieneProblemasCredito = false; // Las NVVs separadas NO tienen problemas de crédito
+        
+        // Si la NVV original ya fue aprobada, heredar su estado y aprobaciones
+        if ($heredarAprobaciones) {
+            $estadoAprobacion = $estadoAprobacionOriginal;
+            
+            // Heredar aprobaciones de la NVV original (el replicate ya copia estos campos)
+            $nuevaCotizacion = $cotizacionOriginal->replicate();
+            $nuevaCotizacion->estado = $estadoSeparado;
+            $nuevaCotizacion->estado_aprobacion = $estadoAprobacion;
+            $nuevaCotizacion->tiene_problemas_stock = true;
+            // Las NVVs separadas NUNCA deben tener problemas de crédito, incluso si heredan aprobaciones
+            $nuevaCotizacion->tiene_problemas_credito = false;
+            
+            // Mantener las aprobaciones de la original (el replicate ya las copió automáticamente)
+            // aprobado_por_supervisor, fecha_aprobacion_supervisor, etc. se mantienen del replicate
+        } else {
+            // Si la NVV original está pendiente, verificar crédito del cliente para la nueva NVV
+            // Calcular total de la nueva NVV para validar crédito
+            $totalNuevaNvv = $productos->sum(function($producto) {
+                $cantidadSeparar = $producto->cantidad_separar ?? $producto->cantidad;
+                $precioBase = $producto->precio_unitario * $cantidadSeparar;
+                $descuentoPorcentaje = $producto->descuento_porcentaje ?? 0;
+                $descuentoValor = $precioBase * ($descuentoPorcentaje / 100);
+                $subtotalConDescuento = $precioBase - $descuentoValor;
+                $ivaValor = $subtotalConDescuento * 0.19;
+                return $subtotalConDescuento + $ivaValor;
+            });
+            
+            // Validar cliente para determinar si tiene problemas de crédito
+            $validacionCliente = \App\Services\ClienteValidacionService::validarClienteParaNotaVenta(
+                $cotizacionOriginal->cliente_codigo,
+                $totalNuevaNvv
+            );
+            $tieneProblemasCredito = $validacionCliente['requiere_autorizacion'] ?? false;
+            
+            // Si la NVV original está pendiente, la nueva NVV también inicia pendiente
+            // pero se establece tiene_problemas_credito según la validación del cliente
+            $estadoAprobacion = 'pendiente';
+            
+            $nuevaCotizacion = $cotizacionOriginal->replicate();
+            $nuevaCotizacion->estado = $estadoSeparado;
+            $nuevaCotizacion->estado_aprobacion = $estadoAprobacion;
+            $nuevaCotizacion->tiene_problemas_stock = true;
+            $nuevaCotizacion->tiene_problemas_credito = $tieneProblemasCredito;
+            
+            // Resetear aprobaciones ya que está pendiente
+            $nuevaCotizacion->aprobado_por_supervisor = null;
+            $nuevaCotizacion->fecha_aprobacion_supervisor = null;
+            $nuevaCotizacion->comentarios_supervisor = null;
+            $nuevaCotizacion->aprobado_por_compras = null;
+            $nuevaCotizacion->fecha_aprobacion_compras = null;
+            $nuevaCotizacion->comentarios_compras = null;
+            $nuevaCotizacion->aprobado_por_picking = null;
+            $nuevaCotizacion->fecha_aprobacion_picking = null;
+            $nuevaCotizacion->comentarios_picking = null;
+        }
+        
         $nuevaCotizacion->created_at = now();
         $nuevaCotizacion->updated_at = now();
         $nuevaCotizacion->observaciones = "NVV creada con productos separados. Motivo: {$motivo}";
         $nuevaCotizacion->nota_original_id = $cotizacionOriginal->id; // Referencia a la NVV original/padre
-        
-        // Las NVVs separadas siempre empiezan desde cero, sin aprobaciones previas
-        // ya que deben ser revisadas nuevamente
-        $nuevaCotizacion->aprobado_por_supervisor = null;
-        $nuevaCotizacion->fecha_aprobacion_supervisor = null;
-        $nuevaCotizacion->comentarios_supervisor = null;
-        $nuevaCotizacion->aprobado_por_compras = null;
-        $nuevaCotizacion->fecha_aprobacion_compras = null;
-        $nuevaCotizacion->comentarios_compras = null;
         
         $nuevaCotizacion->save();
 
@@ -2954,8 +3231,8 @@ class AprobacionController extends Controller
             $cantidadSeparar = $request->cantidad_separar;
             $user = Auth::user();
 
-            // Verificar permisos - solo Compras y Picking pueden separar
-            if (!$user->hasRole('Compras') && !$user->hasRole('Picking')) {
+            // Verificar permisos - solo Compras, Picking y Picking Operativo pueden separar
+            if (!$user->hasRole('Compras') && !$this->tieneRolPicking($user)) {
                 return response()->json(['error' => 'No tienes permisos para realizar esta acción'], 403);
             }
 
@@ -3081,7 +3358,7 @@ class AprobacionController extends Controller
     {
         // Determinar estado según el rol del usuario
         $estadoSeparado = 'separado_por_compras'; // Por defecto para Compras
-        if ($user->hasRole('Picking')) {
+        if ($this->tieneRolPicking($user)) {
             $estadoSeparado = 'separado_por_picking';
         } elseif ($user->hasRole('Compras')) {
             $estadoSeparado = 'separado_por_compras';
