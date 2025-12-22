@@ -124,24 +124,24 @@ class StockConsultaService
                             $parts = array_values($parts); // Reindexar
                         } else {
                             // Si no hay tabs, usar espacios múltiples
-                            $parts = preg_split('/\s+/', $line);
+                    $parts = preg_split('/\s+/', $line);
                         }
                         
                         // Validar que tengamos al menos 3 partes
-                        if (count($parts) >= 3) {
-                            $codigo = trim($parts[0]);
+                    if (count($parts) >= 3) {
+                        $codigo = trim($parts[0]);
                             $stockFisico = (float)trim($parts[1]);
                             $stockComprometido = (float)trim($parts[2]);
-                            
+                        
                             // Validar que el código no esté vacío y sea válido
                             if (!empty($codigo) && strlen($codigo) >= 3 && is_numeric($stockFisico) && is_numeric($stockComprometido)) {
-                                $stockData = [
-                                    'stock_fisico' => $stockFisico,
-                                    'stock_comprometido' => $stockComprometido,
-                                    'consultado_at' => now()->toDateTimeString()
-                                ];
-                                
-                                $stocks[$codigo] = $stockData;
+                        $stockData = [
+                            'stock_fisico' => $stockFisico,
+                            'stock_comprometido' => $stockComprometido,
+                            'consultado_at' => now()->toDateTimeString()
+                        ];
+                        
+                        $stocks[$codigo] = $stockData;
                                 $this->actualizarStockSiEsDiferente($codigo, $stockFisico, $stockComprometido);
                                 Log::info("✅ Stock parseado con split y actualizado en MySQL para {$codigo}: Físico={$stockFisico}, Comprometido={$stockComprometido}");
                             } else {
@@ -201,23 +201,23 @@ class StockConsultaService
             }
             
             // SIEMPRE actualizar (no verificar si es diferente)
-            // Calcular stock comprometido local (NVV)
-            $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($codigo);
-            
-            // Stock disponible = stock físico - (stock comprometido SQL + stock comprometido local)
-            $stockDisponible = $stockFisico - ($stockComprometido + $stockComprometidoLocal);
-            
-            DB::table('productos')
-                ->where('KOPR', $codigo)
-                ->update([
-                    'stock_fisico' => $stockFisico,
-                    'stock_comprometido' => $stockComprometido,
-                    'stock_disponible' => max(0, $stockDisponible),
-                    'updated_at' => now()
-                ]);
-            
+                // Calcular stock comprometido local (NVV)
+                $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($codigo);
+                
+                // Stock disponible = stock físico - (stock comprometido SQL + stock comprometido local)
+                $stockDisponible = $stockFisico - ($stockComprometido + $stockComprometidoLocal);
+                
+                DB::table('productos')
+                    ->where('KOPR', $codigo)
+                    ->update([
+                        'stock_fisico' => $stockFisico,
+                        'stock_comprometido' => $stockComprometido,
+                        'stock_disponible' => max(0, $stockDisponible),
+                        'updated_at' => now()
+                    ]);
+                
             Log::info("✅ Stock ACTUALIZADO en MySQL para {$codigo}: Físico={$stockFisico}, Comprometido={$stockComprometido}, Disponible={$stockDisponible}");
-            return true;
+                return true;
             
         } catch (\Exception $e) {
             Log::error("Error actualizando stock para {$codigo}: " . $e->getMessage());

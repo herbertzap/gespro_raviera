@@ -291,6 +291,35 @@
                                         </div>
                                     </div>
 
+                                    <!-- Modal de Producto Oculto -->
+                                    <div class="modal fade" id="modalProductoOculto" tabindex="-1" role="dialog" aria-labelledby="modalProductoOcultoLabel" aria-hidden="true">
+                                        <div class="modal-dialog modal-dialog-centered" role="document">
+                                            <div class="modal-content">
+                                                <div class="modal-header bg-danger">
+                                                    <h5 class="modal-title" id="modalProductoOcultoLabel">
+                                                        <i class="material-icons">visibility_off</i> Producto Oculto
+                                                    </h5>
+                                                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                                        <span aria-hidden="true">&times;</span>
+                                                    </button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <div class="alert alert-warning">
+                                                        <i class="material-icons">warning</i>
+                                                        <strong>El producto <span id="codigoProductoOculto"></span> se encuentra oculto en el sistema.</strong>
+                                                    </div>
+                                                    <p><strong>Nombre del producto:</strong> <span id="nombreProductoOculto"></span></p>
+                                                    <p class="text-muted">Por favor, seleccione otro producto disponible.</p>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                                                        <i class="material-icons">close</i> Cerrar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <!-- Modal de Sincronización -->
                                     <div class="modal fade" id="modalSincronizacion" tabindex="-1" role="dialog" aria-labelledby="modalSincronizacionLabel" aria-hidden="true" data-backdrop="static" data-keyboard="false">
                                         <div class="modal-dialog modal-dialog-centered" role="document">
@@ -559,17 +588,19 @@ function mostrarResultadosProductosAjax(productos) {
         // Usar información de stock mejorada (se usará al agregar, pero no se muestra en la búsqueda)
         const stockReal = producto.STOCK_DISPONIBLE_REAL !== undefined ? producto.STOCK_DISPONIBLE_REAL : producto.STOCK_DISPONIBLE;
         
-        // Verificar si el producto se puede agregar (precio válido)
+        // Verificar si el producto se puede agregar (precio válido y no oculto)
+        const productoOculto = producto.ES_OCULTO === true || producto.ES_OCULTO === 'true';
         const precioValido = producto.PRECIO_VALIDO !== undefined ? producto.PRECIO_VALIDO : (producto.PRECIO_UD1 > 0);
-        const motivoBloqueo = producto.MOTIVO_BLOQUEO || (precioValido ? null : 'Precio no disponible');
+        const puedeAgregar = precioValido && !productoOculto;
+        const motivoBloqueo = productoOculto ? 'Producto oculto en el sistema' : (producto.MOTIVO_BLOQUEO || (precioValido ? null : 'Precio no disponible'));
         
         // Determinar clases y estilos según el estado del producto
-        const rowClass = !precioValido ? 'table-secondary' : '';
-        const checkboxDisabled = !precioValido ? 'disabled' : '';
-        const buttonClass = precioValido ? 'btn-primary' : 'btn-secondary';
-        const buttonDisabled = !precioValido ? 'disabled' : '';
-        const buttonText = precioValido ? 'Agregar' : 'Sin precio';
-        const buttonIcon = precioValido ? 'add_shopping_cart' : 'block';
+        const rowClass = !puedeAgregar ? 'table-secondary' : '';
+        const checkboxDisabled = !puedeAgregar ? 'disabled' : '';
+        const buttonClass = puedeAgregar ? 'btn-primary' : 'btn-secondary';
+        const buttonDisabled = !puedeAgregar ? 'disabled' : '';
+        const buttonText = productoOculto ? 'Oculto' : (precioValido ? 'Agregar' : 'Sin precio');
+        const buttonIcon = productoOculto ? 'visibility_off' : (precioValido ? 'add_shopping_cart' : 'block');
         
         const multiploVenta = producto.MULTIPLO_VENTA || 1;
         const multiploInfo = multiploVenta > 1 ? `<br><small class="text-info">Múltiplo: ${multiploVenta}</small>` : '';
@@ -585,9 +616,10 @@ function mostrarResultadosProductosAjax(productos) {
                 <td>
                     <strong class="${!precioValido ? 'text-muted' : ''}" data-precio="${producto.PRECIO_UD1 || 0}">$${Math.round(producto.PRECIO_UD1 || 0).toLocaleString()}</strong>
                     ${!precioValido ? '<br><small class="text-danger"><i class="material-icons">warning</i> Precio no disponible</small>' : ''}
+                    ${productoOculto ? '<br><small class="text-danger"><i class="material-icons">visibility_off</i> Producto oculto</small>' : ''}
                 </td>
                 <td>
-                    <button class="btn btn-sm ${buttonClass}" onclick="${precioValido ? `agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', '${producto.NOMBRE_PRODUCTO.replace(/'/g, "\\'")}', ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}', ${producto.DESCUENTO_MAXIMO || 0}, ${multiploVenta})` : 'alert(\'Este producto no tiene precio disponible\')'}" ${buttonDisabled} title="${motivoBloqueo || ''}">
+                    <button class="btn btn-sm ${buttonClass}" onclick="${productoOculto ? `mostrarModalProductoOculto('${producto.CODIGO_PRODUCTO}', '${producto.NOMBRE_PRODUCTO.replace(/'/g, "\\'")}')` : (precioValido ? `agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', '${producto.NOMBRE_PRODUCTO.replace(/'/g, "\\'")}', ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}', ${producto.DESCUENTO_MAXIMO || 0}, ${multiploVenta})` : 'alert(\'Este producto no tiene precio disponible\')')}" ${buttonDisabled} title="${motivoBloqueo || ''}">
                         <i class="material-icons">${buttonIcon}</i> ${buttonText}
                     </button>
                 </td>
@@ -607,6 +639,13 @@ function mostrarResultadosProductosAjax(productos) {
     document.getElementById('contenidoResultados').innerHTML = contenido;
     document.getElementById('tituloResultados').textContent = `Productos Encontrados (${productos.length})`;
     document.getElementById('resultadosBusqueda').style.display = 'block';
+}
+
+// Función para mostrar modal de producto oculto
+function mostrarModalProductoOculto(codigo, nombre) {
+    document.getElementById('codigoProductoOculto').textContent = codigo;
+    document.getElementById('nombreProductoOculto').textContent = nombre;
+    $('#modalProductoOculto').modal('show');
 }
 
 // Función para limpiar búsqueda

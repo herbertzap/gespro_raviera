@@ -161,8 +161,8 @@
                         </li>
                         <li @if ($pageSlug == 'manejo-stock-barrido-simplificado') class="active " @endif>
                             <a href="{{ route('manejo-stock.barrido-simplificado') }}">
-                                <i class="tim-icons icon-barcode"></i>
-                                <p>{{ __('Barrido Simplificado') }}</p>
+                                <i class="material-icons">qr_code</i>
+                                <p>{{ __('Captura Código de Barra') }}</p>
                             </a>
                         </li>
                         <li @if ($pageSlug == 'manejo-stock-historial') class="active " @endif>

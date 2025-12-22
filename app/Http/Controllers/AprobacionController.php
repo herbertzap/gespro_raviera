@@ -3279,8 +3279,8 @@ class AprobacionController extends Controller
         $cotizacion = Cotizacion::with(['productos', 'user'])->findOrFail($id);
         $user = Auth::user();
 
-        // Verificar permisos - solo Compras y Picking pueden separar
-        if (!$user->hasRole('Compras') && !$user->hasRole('Picking')) {
+        // Verificar permisos - Compras, Picking y Picking Operativo pueden separar
+        if (!$user->hasRole('Compras') && !$this->tieneRolPicking($user)) {
             return response()->json(['error' => 'No tienes permisos para realizar esta acción'], 403);
         }
 

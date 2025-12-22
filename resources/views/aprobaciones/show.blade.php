@@ -473,12 +473,30 @@
                         </h4>
                     </div>
                     <div class="card-body">
+                        @php
+                            // Definir variables una vez para todo el bloque de productos
+                            $usuarioEsPicking = Auth::user()->hasRole('Picking') || Auth::user()->hasRole('Picking Operativo');
+                            $usuarioEsCompras = Auth::user()->hasRole('Compras');
+                            // Picking puede separar cualquier producto, Compras solo si hay problemas de stock
+                            $puedeVerCheckbox = false;
+                            if ($usuarioEsPicking) {
+                                $puedeVerCheckbox = true;
+                            } elseif ($usuarioEsCompras && $cotizacion->tiene_problemas_stock && !$cotizacion->aprobado_por_compras) {
+                                $puedeVerCheckbox = true;
+                            }
+                            $puedeVerAcciones = false;
+                            if ($usuarioEsPicking) {
+                                $puedeVerAcciones = true;
+                            } elseif ($usuarioEsCompras && $cotizacion->tiene_problemas_stock && !$cotizacion->aprobado_por_compras) {
+                                $puedeVerAcciones = true;
+                            }
+                        @endphp
                         @if($cotizacion->productos->count() > 0)
                             <div class="table-responsive">
                                 <table class="table table-hover">
                                     <thead>
                                         <tr>
-                                            @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking')))
+                                            @if($puedeVerCheckbox)
                                                 <th>
                                                     <input type="checkbox" id="selectAll" onchange="toggleAllProducts()">
                                                 </th>
@@ -495,7 +513,7 @@
                                             <th>Total</th>
                                             <th>Stock</th>
                                             <th>Estado</th>
-                                            @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking') || Auth::user()->hasRole('Picking Operativo')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking') || Auth::user()->hasRole('Picking Operativo')))
+                                            @if($puedeVerAcciones)
                                                 <th>Acciones</th>
                                             @endif
                                         </tr>
@@ -503,7 +521,7 @@
                                     <tbody>
                                         @foreach($cotizacion->productos as $producto)
                                             <tr data-producto-id="{{ $producto->id }}" data-cantidad="{{ $producto->cantidad }}" data-precio="{{ $producto->precio_unitario }}">
-                                                @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking')))
+                                                @if($puedeVerCheckbox)
                                                     <td>
                                                         <input type="checkbox" class="product-checkbox" value="{{ $producto->id }}" 
                                                                onchange="updateSelectedProducts()">
@@ -544,7 +562,19 @@
                                                     @endif
                                                 </td>
                                                 <td>
-                                                    @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking') || Auth::user()->hasRole('Picking Operativo')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking') || Auth::user()->hasRole('Picking Operativo')))
+                                                    @php
+                                                        // Picking puede separar cualquier producto (con o sin problemas de stock)
+                                                        // Compras solo puede separar si hay problemas de stock
+                                                        $puedeSeparar = false;
+                                                        if ($usuarioEsPicking) {
+                                                            // Picking puede separar siempre
+                                                            $puedeSeparar = true;
+                                                        } elseif ($usuarioEsCompras && $cotizacion->tiene_problemas_stock && !$cotizacion->aprobado_por_compras) {
+                                                            // Compras solo si hay problemas de stock y no está aprobado por compras
+                                                            $puedeSeparar = true;
+                                                        }
+                                                    @endphp
+                                                    @if($puedeSeparar)
                                                         @php
                                                             // Obtener stock disponible
                                                             $productoStockSep = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
@@ -557,8 +587,13 @@
                                                             $multiploVenta = optional($productoStockSep)->multiplo_venta ?? 1;
                                                             if ($multiploVenta <= 0) { $multiploVenta = 1; }
                                                             
-                                                            // Calcular diferencia automáticamente: (pedido - stock) = diferencia
-                                                            $diferencia = max(0, $producto->cantidad - $stockDisponibleRealSep);
+                                                            // Para Picking: calcular diferencia (pedido - stock) = diferencia
+                                                            // Para Compras: solo si hay problemas de stock
+                                                            // Si es Picking o el producto tiene problemas de stock, calcular diferencia
+                                                            $diferencia = 0;
+                                                            if ($usuarioEsPicking || $stockDisponibleRealSep < $producto->cantidad) {
+                                                                $diferencia = max(0, $producto->cantidad - $stockDisponibleRealSep);
+                                                            }
                                                             
                                                             // Ajustar diferencia a múltiplos si es necesario
                                                             if ($multiploVenta > 1 && $diferencia > 0) {
@@ -571,7 +606,7 @@
                                                                 }
                                                             }
                                                             
-                                                            // Usar cantidad_separar si ya existe, sino usar la diferencia calculada
+                                                            // Usar cantidad_separar si ya existe, sino usar la diferencia calculada (0 para Picking si no hay problemas)
                                                             $cantidadSepararFinal = $producto->cantidad_separar ?? $diferencia;
                                                             
                                                             // Asegurar que respete múltiplos si ya existe un valor
@@ -580,6 +615,11 @@
                                                                 if ($cantidadSepararFinal === 0 && $diferencia > 0) {
                                                                     $cantidadSepararFinal = $multiploVenta;
                                                                 }
+                                                            }
+                                                            
+                                                            // Para Picking: permitir cantidad mínima (el múltiplo) si no hay diferencia calculada
+                                                            if ($usuarioEsPicking && $cantidadSepararFinal === 0 && $multiploVenta > 0) {
+                                                                $cantidadSepararFinal = $multiploVenta; // Valor mínimo para Picking poder separar
                                                             }
                                                         @endphp
                                                         <div class="input-group input-group-sm">
@@ -665,14 +705,24 @@
                                                         <span class="badge badge-warning">Stock Insuficiente</span>
                                                     @endif
                                                 </td>
-                                                @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking')))
+                                                @php
+                                                    // Picking puede separar cualquier producto (con o sin problemas de stock)
+                                                    // Compras solo puede separar si hay problemas de stock
+                                                    $puedeSepararIndividual = false;
+                                                    if ($usuarioEsPicking) {
+                                                        // Picking puede separar siempre
+                                                        $puedeSepararIndividual = true;
+                                                    } elseif ($usuarioEsCompras && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || $stockDisponibleReal < $producto->cantidad)) {
+                                                        // Compras solo si hay problemas de stock y el producto tiene stock insuficiente
+                                                        $puedeSepararIndividual = true;
+                                                    }
+                                                @endphp
+                                                @if($puedeSepararIndividual)
                                                     <td>
-                                                        @if($stockDisponibleReal < $producto->cantidad)
-                                                            <button class="btn btn-warning btn-sm" 
-                                                                    onclick="separarProductoIndividual({{ $producto->id }})">
-                                                                <i class="material-icons">call_split</i> Separar
-                                                            </button>
-                                                        @endif
+                                                        <button class="btn btn-warning btn-sm" 
+                                                                onclick="separarProductoIndividual({{ $producto->id }})">
+                                                            <i class="material-icons">call_split</i> Separar
+                                                        </button>
                                                     </td>
                                                 @endif
                                             </tr>
@@ -687,7 +737,18 @@
                         @endif
                         
                         <!-- Botones de Acción para Compras y Picking -->
-                        @if((Auth::user()->hasRole('Compras') || Auth::user()->hasRole('Picking')) && $cotizacion->tiene_problemas_stock && (!$cotizacion->aprobado_por_compras || Auth::user()->hasRole('Picking')))
+                        @php
+                            // Picking puede usar herramientas siempre, Compras solo si hay problemas de stock
+                            $puedeUsarHerramientas = false;
+                            if ($usuarioEsPicking) {
+                                // Picking puede usar herramientas siempre
+                                $puedeUsarHerramientas = true;
+                            } elseif ($usuarioEsCompras && $cotizacion->tiene_problemas_stock && !$cotizacion->aprobado_por_compras) {
+                                // Compras solo si hay problemas de stock y no está aprobado
+                                $puedeUsarHerramientas = true;
+                            }
+                        @endphp
+                        @if($puedeUsarHerramientas)
                             <div class="row mt-3">
                                 <div class="col-md-12">
                                     <div class="card">

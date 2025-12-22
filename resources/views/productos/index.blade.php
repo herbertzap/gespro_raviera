@@ -22,6 +22,9 @@
                                 <a href="{{ route('productos.descargar-informe-compras') }}" class="btn btn-success btn-sm">
                                     <i class="material-icons">file_download</i> Descargar Informe de Compras
                                 </a>
+                                <button type="button" class="btn btn-warning btn-sm ml-2" onclick="iniciarSincronizacionProductos()">
+                                    <i class="material-icons">sync</i> Sincronizar Productos General
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -260,6 +263,117 @@
     </div>
 </div>
 
+<!-- Modal de Sincronización de Productos -->
+<div class="modal fade" id="modalSincronizacionProductos" tabindex="-1" role="dialog" data-backdrop="static" data-keyboard="false">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="material-icons text-warning">sync</i> Sincronización de Productos
+                </h5>
+                <button type="button" class="close" data-dismiss="modal" id="btnCerrarModal" style="display:none;">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="sincronizacionIniciando" class="text-center">
+                    <div class="spinner-border text-warning" role="status">
+                        <span class="sr-only">Cargando...</span>
+                    </div>
+                    <p class="mt-3">Iniciando sincronización...</p>
+                </div>
+                
+                <div id="sincronizacionProgreso" style="display:none;">
+                    <h6 class="text-info">
+                        <i class="material-icons">info</i> Sincronizando productos desde SQL Server
+                    </h6>
+                    <p class="text-muted small">
+                        Esto puede tomar varios minutos. Se procesan en lotes de 1000 productos.
+                        <br>Estimado: 5,000 - 11,000 productos totales
+                    </p>
+                    
+                    <!-- Barra de progreso -->
+                    <div class="progress mb-3" style="height: 30px;">
+                        <div id="barraProgreso" class="progress-bar progress-bar-striped progress-bar-animated bg-warning" 
+                             role="progressbar" style="width: 0%">
+                            <span id="textoProgreso">0%</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Estadísticas -->
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="card card-stats">
+                                <div class="card-body text-center">
+                                    <h6 class="card-title">Productos Procesados</h6>
+                                    <h3 id="totalProcesados" class="text-info">0</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card card-stats">
+                                <div class="card-body text-center">
+                                    <h6 class="card-title">Productos Creados</h6>
+                                    <h3 id="totalCreados" class="text-success">0</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card card-stats">
+                                <div class="card-body text-center">
+                                    <h6 class="card-title">Productos Actualizados</h6>
+                                    <h3 id="totalActualizados" class="text-warning">0</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Estado actual -->
+                    <div class="mt-3">
+                        <p class="mb-1"><strong>Estado actual:</strong></p>
+                        <p id="estadoActual" class="text-muted">Preparando sincronización...</p>
+                    </div>
+                </div>
+                
+                <div id="sincronizacionCompletada" style="display:none;">
+                    <div class="alert alert-success">
+                        <h5><i class="material-icons">check_circle</i> Sincronización Completada</h5>
+                        <hr>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <strong>Total Procesados:</strong>
+                                <h4 id="resumenProcesados" class="text-info">0</h4>
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Productos Creados:</strong>
+                                <h4 id="resumenCreados" class="text-success">0</h4>
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Productos Actualizados:</strong>
+                                <h4 id="resumenActualizados" class="text-warning">0</h4>
+                            </div>
+                        </div>
+                        <p class="mt-3 mb-0">
+                            <i class="material-icons">update</i> 
+                            Los productos han sido sincronizados con stock, precios y datos actualizados.
+                        </p>
+                    </div>
+                </div>
+                
+                <div id="sincronizacionError" style="display:none;">
+                    <div class="alert alert-danger">
+                        <h5><i class="material-icons">error</i> Error en la Sincronización</h5>
+                        <p id="mensajeError"></p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal" id="btnCerrarModalFooter">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @endsection
 
 @section('scripts')
@@ -269,5 +383,161 @@ function crearNVVConProducto() {
     // Aquí implementarías la lógica para crear una nueva NVV
     alert('Funcionalidad de crear NVV con producto - Por implementar');
 }
+
+// Variables globales para la sincronización
+let sincronizacionEnProceso = false;
+let estadisticasTotales = {
+    procesados: 0,
+    creados: 0,
+    actualizados: 0
+};
+const ESTIMADO_TOTAL = 8000; // Valor medio estimado para cálculo de porcentaje
+
+// Función para iniciar la sincronización
+function iniciarSincronizacionProductos() {
+    if (sincronizacionEnProceso) {
+        alert('Ya hay una sincronización en proceso. Por favor, espere a que termine.');
+        return;
+    }
+    
+    // Reiniciar estadísticas
+    estadisticasTotales = {
+        procesados: 0,
+        creados: 0,
+        actualizados: 0
+    };
+    
+    // Mostrar modal
+    $('#modalSincronizacionProductos').modal('show');
+    
+    // Mostrar sección de inicio
+    $('#sincronizacionIniciando').show();
+    $('#sincronizacionProgreso').hide();
+    $('#sincronizacionCompletada').hide();
+    $('#sincronizacionError').hide();
+    $('#btnCerrarModal').hide();
+    $('#btnCerrarModalFooter').prop('disabled', true);
+    
+    // Iniciar sincronización después de un breve delay para mostrar el modal
+    setTimeout(() => {
+        procesarSincronizacion(0);
+    }, 500);
+}
+
+// Función recursiva para procesar la sincronización por lotes
+function procesarSincronizacion(batch) {
+    sincronizacionEnProceso = true;
+    
+    // Actualizar estado
+    $('#sincronizacionIniciando').hide();
+    $('#sincronizacionProgreso').show();
+    $('#estadoActual').text(`Procesando lote ${batch + 1} (productos ${batch * 1000} - ${(batch + 1) * 1000})...`);
+    
+    // Hacer petición AJAX
+    $.ajax({
+        url: '{{ route("productos.sincronizar-general") }}',
+        method: 'POST',
+        data: {
+            batch: batch,
+            _token: '{{ csrf_token() }}'
+        },
+        success: function(response) {
+            if (response.success) {
+                // Acumular estadísticas
+                estadisticasTotales.procesados += response.procesados || 0;
+                estadisticasTotales.creados += response.nuevos || 0;
+                estadisticasTotales.actualizados += response.actualizados || 0;
+                
+                // Actualizar UI
+                $('#totalProcesados').text(estadisticasTotales.procesados.toLocaleString());
+                $('#totalCreados').text(estadisticasTotales.creados.toLocaleString());
+                $('#totalActualizados').text(estadisticasTotales.actualizados.toLocaleString());
+                
+                // Actualizar barra de progreso (estimado)
+                const porcentaje = Math.min(100, Math.round((estadisticasTotales.procesados / ESTIMADO_TOTAL) * 100));
+                $('#barraProgreso').css('width', porcentaje + '%');
+                $('#textoProgreso').text(porcentaje + '%');
+                
+                // Verificar si hay más lotes
+                if (response.hasMore && response.nextBatch !== null) {
+                    // Continuar con el siguiente lote
+                    setTimeout(() => {
+                        procesarSincronizacion(response.nextBatch);
+                    }, 500); // Pequeño delay entre lotes
+                } else {
+                    // Sincronización completada
+                    sincronizacionCompletada();
+                }
+            } else {
+                mostrarError(response.message || 'Error desconocido en la sincronización');
+            }
+        },
+        error: function(xhr) {
+            let mensajeError = 'Error al comunicarse con el servidor';
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+                mensajeError = xhr.responseJSON.message;
+            }
+            mostrarError(mensajeError);
+        }
+    });
+}
+
+// Función para mostrar que la sincronización está completa
+function sincronizacionCompletada() {
+    sincronizacionEnProceso = false;
+    
+    // Actualizar barra de progreso al 100%
+    $('#barraProgreso').removeClass('progress-bar-animated').css('width', '100%');
+    $('#textoProgreso').text('100%');
+    
+    // Mostrar resumen
+    $('#sincronizacionProgreso').hide();
+    $('#sincronizacionCompletada').show();
+    
+    $('#resumenProcesados').text(estadisticasTotales.procesados.toLocaleString());
+    $('#resumenCreados').text(estadisticasTotales.creados.toLocaleString());
+    $('#resumenActualizados').text(estadisticasTotales.actualizados.toLocaleString());
+    
+    // Habilitar botón de cerrar
+    $('#btnCerrarModal').show();
+    $('#btnCerrarModalFooter').prop('disabled', false);
+    
+    // Recargar la página después de 3 segundos para mostrar datos actualizados
+    setTimeout(() => {
+        window.location.reload();
+    }, 3000);
+}
+
+// Función para mostrar errores
+function mostrarError(mensaje) {
+    sincronizacionEnProceso = false;
+    
+    $('#sincronizacionProgreso').hide();
+    $('#sincronizacionIniciando').hide();
+    $('#sincronizacionError').show();
+    $('#mensajeError').text(mensaje);
+    
+    // Habilitar botón de cerrar
+    $('#btnCerrarModal').show();
+    $('#btnCerrarModalFooter').prop('disabled', false);
+}
+
+// Prevenir cierre del modal durante la sincronización
+$('#modalSincronizacionProductos').on('hide.bs.modal', function(e) {
+    if (sincronizacionEnProceso) {
+        e.preventDefault();
+        e.stopPropagation();
+        alert('La sincronización está en proceso. Por favor, espere a que termine.');
+        return false;
+    }
+});
+
+// Limpiar al cerrar el modal
+$('#modalSincronizacionProductos').on('hidden.bs.modal', function() {
+    // Reiniciar estado si se cerró sin completar
+    if (sincronizacionEnProceso) {
+        sincronizacionEnProceso = false;
+    }
+});
 </script>
 @endsection

@@ -626,6 +626,13 @@ class ClienteController extends Controller
             // Verificar si puede generar cotización
             $validacion = $cliente->puedeGenerarCotizacion();
 
+            // Obtener cheques asociados al cliente
+            $chequesEnCarteraResult = $this->cobranzaService->getChequesEnCarteraDetallePorCliente($codigo, 100, 0);
+            $chequesProtestadosResult = $this->cobranzaService->getChequesProtestadosDetallePorCliente($codigo, 100, 0);
+            
+            $chequesEnCarteraDetalle = $chequesEnCarteraResult['data'] ?? [];
+            $chequesProtestadosDetalle = $chequesProtestadosResult['data'] ?? [];
+
             // Renderizar vista parcial
             $html = view('clientes.partials.info-tab', compact(
                 'cliente',
@@ -634,7 +641,9 @@ class ClienteController extends Controller
                 'nvvSistema',
                 'creditoCompras',
                 'creditoCliente',
-                'validacion'
+                'validacion',
+                'chequesEnCarteraDetalle',
+                'chequesProtestadosDetalle'
             ))->render();
 
             return response()->json([
@@ -646,6 +655,48 @@ class ClienteController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error al cargar información del cliente: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener cheques del cliente vía AJAX para mostrar en tab de aprobaciones
+     */
+    public function getChequesAjax($codigo)
+    {
+        try {
+            $user = Auth::user();
+            
+            // Verificar permisos - Supervisor puede ver cheques
+            if (!$user->hasRole('Supervisor') && !$user->hasRole('Super Admin')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No tienes permisos para ver esta información'
+                ], 403);
+            }
+            
+            // Obtener cheques asociados al cliente (sin paginación, por cliente suelen ser pocos)
+            $chequesEnCarteraResult = $this->cobranzaService->getChequesEnCarteraDetallePorCliente($codigo, 100, 0);
+            $chequesProtestadosResult = $this->cobranzaService->getChequesProtestadosDetallePorCliente($codigo, 100, 0);
+            
+            $chequesEnCarteraDetalle = $chequesEnCarteraResult['data'] ?? [];
+            $chequesProtestadosDetalle = $chequesProtestadosResult['data'] ?? [];
+            
+            // Renderizar vista parcial de cheques
+            $html = view('clientes.partials.cheques-tab', compact(
+                'chequesEnCarteraDetalle',
+                'chequesProtestadosDetalle'
+            ))->render();
+            
+            return response()->json([
+                'success' => true,
+                'html' => $html
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error al obtener cheques del cliente (AJAX): ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al cargar cheques del cliente: ' . $e->getMessage()
             ], 500);
         }
     }

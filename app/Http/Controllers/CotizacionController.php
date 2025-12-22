@@ -359,7 +359,13 @@ class CotizacionController extends Controller
             
             // Buscar productos en tabla local MySQL (consulta optimizada)
             // Buscar por código (KOPR) o por nombre (NOKOPR) con múltiples términos
-            $query = DB::table('productos')->where('activo', true);
+            // Excluir productos ocultos (TIPR = 'OCU')
+            $query = DB::table('productos')
+                ->where('activo', true)
+                ->where(function($q) {
+                    $q->where('TIPR', '!=', 'OCU')
+                      ->orWhereNull('TIPR'); // Incluir productos sin TIPR definido
+                });
             
             if (count($terminos) > 1) {
                 // Búsqueda con múltiples términos: todos los términos deben estar en el nombre
@@ -437,16 +443,21 @@ class CotizacionController extends Controller
             }
             
             // Calcular stock real dinámicamente: STFI1 - (STOCNV1 + NVV local)
+            // Y verificar si el producto está oculto en SQL Server
             $stockService = new \App\Services\StockComprometidoService();
             foreach ($productos as &$producto) {
                 try {
                     $codigo = $producto['CODIGO_PRODUCTO'];
                     $stockReal = $stockService->obtenerStockDisponibleReal($codigo);
                     
+                    // Verificar si el producto está oculto consultando SQL Server
+                    $productoOculto = $stockService->verificarProductoOculto($codigo);
+                    
                     $producto['STOCK_DISPONIBLE_REAL'] = $stockReal;
                     $producto['STOCK_DISPONIBLE'] = $stockReal;
                     $producto['STOCK_DISPONIBLE_ORIGINAL'] = $producto['STOCK_DISPONIBLE_ORIGINAL'] ?? ($producto['STOCK_FISICO'] ?? 0);
                     $producto['STOCK_COMPROMETIDO'] = $producto['STOCK_COMPROMETIDO'] ?? 0;
+                    $producto['ES_OCULTO'] = $productoOculto; // Flag para indicar si está oculto
                     
                     // Estado visual
                     $producto['TIENE_STOCK'] = $stockReal > 0;
@@ -3108,6 +3119,26 @@ class CotizacionController extends Controller
     public function obtenerStockProducto($codigo)
     {
         try {
+            // PRIMERO: Verificar si el producto está oculto en SQL Server
+            $stockService = new \App\Services\StockComprometidoService();
+            $productoOculto = $stockService->verificarProductoOculto($codigo);
+            
+            // Si está oculto, retornar error inmediatamente sin consultar stock
+            if ($productoOculto) {
+                $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
+                $nombreProducto = $producto ? $producto->NOKOPR : $codigo;
+                
+                \Log::warning("⚠️ Intento de agregar producto oculto: {$codigo} ({$nombreProducto})");
+                
+                return response()->json([
+                    'success' => false,
+                    'es_oculto' => true,
+                    'message' => "El producto {$codigo} ({$nombreProducto}) se encuentra oculto en el sistema. Por favor, seleccione otro producto.",
+                    'codigo' => $codigo,
+                    'nombre' => $nombreProducto
+                ]);
+            }
+            
             // Usar tsql para consultar directamente a MAEST con KOBO='LIB' (servidor antiguo sin TLS)
             $host = env('SQLSRV_EXTERNAL_HOST');
             $port = env('SQLSRV_EXTERNAL_PORT', '1433');
@@ -3240,6 +3271,7 @@ class CotizacionController extends Controller
 
             return response()->json([
                 'success' => true,
+                'es_oculto' => false, // Producto no está oculto (ya se verificó arriba)
                 'stock_disponible' => $stockDisponible,
                 'stock_fisico' => $stockFisicoMySQL, // Retornar el valor actualizado de MySQL
                 'stock_comprometido' => $stockComprometidoMySQL, // Retornar el valor actualizado de MySQL

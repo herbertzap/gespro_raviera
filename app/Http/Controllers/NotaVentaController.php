@@ -358,7 +358,13 @@ class NotaVentaController extends Controller
             
             // Buscar productos en tabla local MySQL (consulta optimizada)
             // Buscar por código (KOPR) o por nombre (NOKOPR) con múltiples términos
-            $query = DB::table('productos')->where('activo', true);
+            // Excluir productos ocultos (TIPR = 'OCU')
+            $query = DB::table('productos')
+                ->where('activo', true)
+                ->where(function($q) {
+                    $q->where('TIPR', '!=', 'OCU')
+                      ->orWhereNull('TIPR'); // Incluir productos sin TIPR definido
+                });
             
             if (count($terminos) > 1) {
                 // Búsqueda con múltiples términos: todos los términos deben estar en el nombre
@@ -436,14 +442,19 @@ class NotaVentaController extends Controller
             }
             
             // Calcular stock real dinámicamente: STFI1 - (STOCNV1 + NVV local)
+            // Y verificar si el producto está oculto en SQL Server
             $stockService = new \App\Services\StockComprometidoService();
             foreach ($productos as &$producto) {
                 try {
                     $codigo = $producto['CODIGO_PRODUCTO'];
                     $stockReal = $stockService->obtenerStockDisponibleReal($codigo);
                     
+                    // Verificar si el producto está oculto consultando SQL Server
+                    $productoOculto = $stockService->verificarProductoOculto($codigo);
+                    
                     $producto['STOCK_DISPONIBLE_REAL'] = $stockReal;
                     $producto['STOCK_DISPONIBLE'] = $stockReal;
+                    $producto['ES_OCULTO'] = $productoOculto; // Flag para indicar si está oculto
                     $producto['STOCK_DISPONIBLE_ORIGINAL'] = $producto['STOCK_DISPONIBLE_ORIGINAL'] ?? ($producto['STOCK_FISICO'] ?? 0);
                     $producto['STOCK_COMPROMETIDO'] = $producto['STOCK_COMPROMETIDO'] ?? 0;
                     
@@ -2705,11 +2716,11 @@ class NotaVentaController extends Controller
                 
                 if ($productoDB) {
                     // Obtener múltiplo de venta
-                    $multiplo = $productoDB->MUVECODI ?? 1;
+                    $multiplo = $productoDB->multiplo_venta ?? 1;
                     if ($multiplo <= 0) $multiplo = 1;
                     
                     // Obtener unidad de medida
-                    $unidad = $productoDB->KOPRUDEN ?? 'UN';
+                    $unidad = $productoDB->UD01PR ?? 'UN';
                     
                     // Obtener descuento máximo según lista de precios
                     if ($listaPrecios === '01P' || $listaPrecios === '01') {
@@ -2730,14 +2741,14 @@ class NotaVentaController extends Controller
                     'nombre' => $producto->nombre_producto,
                     'cantidad' => $producto->cantidad,
                     'precio' => floatval($producto->precio_unitario),
-                    'subtotal' => floatval($producto->subtotal),
+                    'subtotal' => floatval($producto->subtotal ?? ($producto->precio_unitario * $producto->cantidad)),
                     'descuento' => floatval($producto->descuento_porcentaje ?? 0),
                     'descuentoMaximo' => floatval($descuentoMaximo),
                     'multiplo' => intval($multiplo),
-                    'stock_disponible' => $producto->stock_disponible,
-                    'stock_suficiente' => $producto->stock_suficiente,
+                    'stock_disponible' => $producto->stock_disponible ?? 0,
+                    'stock_suficiente' => $producto->stock_suficiente ?? true,
                     'unidad' => $unidad,
-                    'stock' => $producto->stock_disponible // Alias para compatibilidad con frontend
+                    'stock' => $producto->stock_disponible ?? 0 // Alias para compatibilidad con frontend
                 ];
             }
             

@@ -73,6 +73,93 @@ class StockComprometidoService
     }
     
     /**
+     * Verificar si un producto está oculto (ATPR = 'OCU') consultando SQL Server
+     */
+    public function verificarProductoOculto($codigoProducto)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            $codigoEscapado = str_replace("'", "''", $codigoProducto);
+            
+            // Consultar ATPR desde SQL Server
+            $query = "
+                SELECT TOP 1 ATPR
+                FROM MAEPR
+                WHERE KOPR = '{$codigoEscapado}'
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_oculto_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+            unlink($tempFile);
+            
+            if (!$output) {
+                Log::warning("Output vacío al verificar si producto está oculto: " . $codigoProducto);
+                return false; // Si hay error, asumimos que no está oculto para no bloquear
+            }
+            
+            // Buscar el valor de ATPR en el output
+            $lines = explode("\n", $output);
+            $headerFound = false;
+            
+            foreach ($lines as $line) {
+                $line = trim($line);
+                
+                // Saltar líneas vacías y de configuración
+                if (empty($line)) {
+                    continue;
+                }
+                
+                // Saltar mensajes de configuración y warnings
+                if (strpos($line, 'locale') !== false || 
+                    strpos($line, 'Setting') !== false || 
+                    strpos($line, 'rows affected') !== false ||
+                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'Warning:') !== false ||
+                    preg_match('/^\d+>$/', $line)) {
+                    continue;
+                }
+                
+                // Buscar header de columna ATPR
+                if (stripos($line, 'ATPR') !== false && (stripos($line, 'ATPR') === 0 || strpos($line, 'ATPR') < 10)) {
+                    $headerFound = true;
+                    Log::info("Header ATPR encontrado en línea: {$line}");
+                    continue;
+                }
+                
+                // Si encontramos el header, la siguiente línea con datos debe ser el valor
+                // O buscar directamente 'OCU' en cualquier línea
+                $lineUpper = strtoupper(trim($line));
+                if ($lineUpper === 'OCU') {
+                    Log::warning("⚠️ Producto {$codigoProducto} está OCULTO (ATPR = 'OCU')");
+                    return true;
+                }
+                
+                // También buscar 'OCU' dentro de la línea (por si hay espacios o otros caracteres)
+                if ($headerFound && stripos($line, 'OCU') !== false) {
+                    Log::warning("⚠️ Producto {$codigoProducto} está OCULTO (encontrado 'OCU' en línea: {$line})");
+                    return true;
+                }
+            }
+            
+            Log::info("✅ Producto {$codigoProducto} NO está oculto (no se encontró 'OCU' en ATPR)");
+            
+            return false;
+            
+        } catch (\Exception $e) {
+            Log::error('Error verificando producto oculto: ' . $e->getMessage());
+            return false; // En caso de error, asumimos que no está oculto
+        }
+    }
+    
+    /**
      * Liberar stock comprometido
      */
     public function liberarStock($cotizacionId, $motivo = null)

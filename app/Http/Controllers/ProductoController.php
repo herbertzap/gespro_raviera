@@ -57,11 +57,16 @@ class ProductoController extends Controller
             }
             
             // Buscar en la tabla productos (MySQL) que tiene los datos sincronizados
+            // Excluir productos ocultos (TIPR = 'OCU')
             $productos = \App\Models\Producto::where(function($query) use ($termino) {
                     $query->where('KOPR', 'LIKE', "%{$termino}%")
                           ->orWhere('NOKOPR', 'LIKE', "%{$termino}%");
                 })
                 ->where('activo', true)
+                ->where(function($q) {
+                    $q->where('TIPR', '!=', 'OCU')
+                      ->orWhereNull('TIPR'); // Incluir productos sin TIPR definido
+                })
                 ->limit(20)
                 ->get()
                 ->map(function ($producto) {
@@ -237,7 +242,7 @@ class ProductoController extends Controller
     {
         try {
             $user = auth()->user();
-            if (!$user || (!$user->hasRole('Supervisor') && !$user->hasRole('Super Admin'))) {
+            if (!$user || (!$user->hasRole('Supervisor') && !$user->hasRole('Super Admin') && !$user->hasRole('Compras'))) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Acceso no autorizado'
@@ -245,9 +250,11 @@ class ProductoController extends Controller
             }
 
             $limit = (int) $request->get('limit', 1000);
+            $offset = (int) $request->get('offset', 0);
 
             Artisan::call('productos:sincronizar', [
-                '--limit' => $limit
+                '--limit' => $limit,
+                '--offset' => $offset
             ]);
 
             $output = Artisan::output();
@@ -279,6 +286,75 @@ class ProductoController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Error sincronizando productos: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al sincronizar productos: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Sincronizar todos los productos de forma general (procesa en lotes)
+     */
+    public function sincronizarProductosGeneral(Request $request)
+    {
+        try {
+            $user = auth()->user();
+            if (!$user || (!$user->hasRole('Supervisor') && !$user->hasRole('Super Admin') && !$user->hasRole('Compras'))) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Acceso no autorizado'
+                ], 403);
+            }
+
+            // Ejecutar sincronización en background usando el comando mejorado
+            // Procesamos en lotes de 1000 productos
+            $limit = 1000;
+            $batch = (int) $request->get('batch', 0);
+            $offset = $batch * $limit;
+
+            Log::info("Iniciando sincronización batch {$batch} - offset: {$offset}, limit: {$limit}");
+
+            Artisan::call('productos:sincronizar', [
+                '--limit' => $limit,
+                '--offset' => $offset
+            ]);
+
+            $output = Artisan::output();
+
+            $nProcesados = 0;
+            $nCreados = 0;
+            $nActualizados = 0;
+
+            // Extraer totales desde el output
+            foreach (explode("\n", $output) as $line) {
+                $line = trim($line);
+                if (stripos($line, 'Productos procesados:') !== false) {
+                    $nProcesados = (int) filter_var($line, FILTER_SANITIZE_NUMBER_INT);
+                } elseif (stripos($line, 'Productos creados:') !== false) {
+                    $nCreados = (int) filter_var($line, FILTER_SANITIZE_NUMBER_INT);
+                } elseif (stripos($line, 'Productos actualizados:') !== false) {
+                    $nActualizados = (int) filter_var($line, FILTER_SANITIZE_NUMBER_INT);
+                }
+            }
+
+            // Si se procesaron menos productos que el límite, significa que terminamos
+            $hasMore = $nProcesados >= $limit;
+
+            return response()->json([
+                'success' => true,
+                'message' => "Lote {$batch} sincronizado",
+                'nuevos' => $nCreados,
+                'actualizados' => $nActualizados,
+                'procesados' => $nProcesados,
+                'batch' => $batch,
+                'offset' => $offset,
+                'hasMore' => $hasMore,
+                'nextBatch' => $hasMore ? ($batch + 1) : null
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error sincronizando productos general: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Error al sincronizar productos: ' . $e->getMessage()

@@ -67,18 +67,26 @@ class SincronizarProductos extends Command
 
         foreach ($lines as $line) {
             $line = trim($line);
+            // Filtrar líneas vacías o de configuración
             if (empty($line) || 
                 strpos($line, 'Setting') === 0 || 
                 strpos($line, 'locale') === 0 || 
                 strpos($line, 'using') === 0 ||
                 strpos($line, 'CODIGO_PRODUCTO') !== false ||
-                strpos($line, 'rows affected)') !== false) {
+                strpos($line, 'LINEA') !== false ||
+                strpos($line, 'KOPR') === 0 && strpos($line, '|') === false ||
+                strpos($line, 'rows affected)') !== false ||
+                preg_match('/^\d+>$/', $line) || // Líneas que son solo números seguidos de >
+                preg_match('/^Msg \d+/', $line)) { // Mensajes de error
                 continue;
             }
-
-            if (!empty($line)) {
+            
+            // Solo incluir líneas que tienen el delimitador | y contienen datos válidos
+            if (strpos($line, '|') !== false && strlen($line) > 10) {
                 $dataLines[] = $line;
-                $this->info('Línea encontrada: ' . substr($line, 0, 100) . '...');
+                if ($this->getOutput()->isVerbose()) {
+                    $this->line('Línea encontrada: ' . substr($line, 0, 100) . '...');
+                }
             }
         }
 
@@ -113,10 +121,17 @@ class SincronizarProductos extends Command
             // Función helper para convertir valores vacíos a 0 y manejar valores muy grandes
             $convertToFloat = function($value, $isDiscount = false) {
                 $value = trim($value ?? '');
-                if (empty($value)) {
+                // Manejar valores NULL o vacíos
+                if (empty($value) || $value === 'NULL' || strtoupper($value) === 'NULL') {
                     return 0.0;
                 }
+                // Convertir a float
                 $floatValue = (float)$value;
+                
+                // Si la conversión falla (NaN o infinity), retornar 0
+                if (!is_finite($floatValue)) {
+                    return 0.0;
+                }
                 
                 // Para descuentos, limitar a 100 (porcentaje máximo)
                 if ($isDiscount && $floatValue > 100) {
@@ -134,12 +149,12 @@ class SincronizarProductos extends Command
             $stockComprometido = $convertToFloat($fields[5] ?? '');
             $stockDisponible = $convertToFloat($fields[6] ?? '');
             
-            // Precios 01P
-            $precio01p = $convertToFloat($fields[7] ?? '');
-            $precio01pUd2 = $convertToFloat($fields[8] ?? '');
-            $descuentoMaximo01p = $convertToFloat($fields[9] ?? '', true);
+            // Precios 01P - verificar que los campos existan antes de procesarlos
+            $precio01p = isset($fields[7]) ? $convertToFloat($fields[7]) : 0.0;
+            $precio01pUd2 = isset($fields[8]) ? $convertToFloat($fields[8]) : 0.0;
+            $descuentoMaximo01p = isset($fields[9]) ? $convertToFloat($fields[9], true) : 0.0;
             
-            // Listas 02P y 03P no se usan
+            // Listas 02P y 03P no se usan (se sincronizan con 0 por ahora)
             $precio02p = 0.0;
             $precio02pUd2 = 0.0;
             $descuentoMaximo02p = 0.0;
@@ -191,8 +206,30 @@ class SincronizarProductos extends Command
             ];
 
             if ($productoExistente) {
-                // Actualizar producto existente
-                DB::table('productos')->where('KOPR', $codigoProducto)->update($data);
+                // Actualizar producto existente - SOLO actualizar campos que vienen de la sincronización
+                // Mantener campos existentes que no se están sincronizando (como KOPRRA, KOPRTE, etc.)
+                $updateData = [
+                    'NOKOPR' => $nombreProducto,
+                    'TIPR' => $tipoProducto,
+                    'UD01PR' => $unidadMedida,
+                    'precio_01p' => $precio01p,
+                    'precio_01p_ud2' => $precio01pUd2,
+                    'descuento_maximo_01p' => $descuentoMaximo01p,
+                    'precio_02p' => $precio02p,
+                    'precio_02p_ud2' => $precio02pUd2,
+                    'descuento_maximo_02p' => $descuentoMaximo02p,
+                    'precio_03p' => $precio03p,
+                    'precio_03p_ud2' => $precio03pUd2,
+                    'descuento_maximo_03p' => $descuentoMaximo03p,
+                    'stock_fisico' => $stockFisico,
+                    'stock_comprometido' => $stockComprometido,
+                    'stock_disponible' => $stockDisponible,
+                    'ultima_sincronizacion' => now(),
+                    'updated_at' => now(),
+                    'activo' => true,
+                ];
+                
+                DB::table('productos')->where('KOPR', $codigoProducto)->update($updateData);
                 $productosActualizados++;
             } else {
                 // Crear nuevo producto

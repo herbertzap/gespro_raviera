@@ -68,11 +68,39 @@ class CobranzaController extends Controller
     {
         // Filtrar por búsqueda (código o nombre)
         if (!empty($filtros['buscar'])) {
-            $buscar = strtolower($filtros['buscar']);
-            $clientes = array_filter($clientes, function($cliente) use ($buscar) {
-                return strpos(strtolower($cliente['CODIGO_CLIENTE']), $buscar) !== false ||
-                       strpos(strtolower($cliente['NOMBRE_CLIENTE']), $buscar) !== false;
+            $buscar = trim($filtros['buscar']);
+            $buscarLower = mb_strtolower($buscar, 'UTF-8');
+            
+            // Dividir la búsqueda en términos individuales (palabras)
+            $terminos = array_filter(explode(' ', $buscarLower));
+            
+            $clientes = array_filter($clientes, function($cliente) use ($buscarLower, $terminos) {
+                $codigoCliente = mb_strtolower($cliente['CODIGO_CLIENTE'] ?? '', 'UTF-8');
+                $nombreCliente = mb_strtolower($cliente['NOMBRE_CLIENTE'] ?? '', 'UTF-8');
+                
+                // Primero verificar si coincide con el código del cliente (búsqueda exacta por código)
+                if (strpos($codigoCliente, $buscarLower) !== false) {
+                    return true;
+                }
+                
+                // Si hay múltiples términos, todos deben estar presentes en el nombre (no necesariamente juntos)
+                if (count($terminos) > 1) {
+                    $todosTerminosEncontrados = true;
+                    foreach ($terminos as $termino) {
+                        if (strpos($nombreCliente, $termino) === false) {
+                            $todosTerminosEncontrados = false;
+                            break;
+                        }
+                    }
+                    return $todosTerminosEncontrados;
+                } else {
+                    // Búsqueda simple: buscar el término completo en el nombre
+                    return strpos($nombreCliente, $buscarLower) !== false;
+                }
             });
+            
+            // Reindexar el array después del filtro
+            $clientes = array_values($clientes);
         }
         
         // Filtrar por saldo mínimo

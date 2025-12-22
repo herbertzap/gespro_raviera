@@ -75,6 +75,15 @@ class Producto extends Model
         return $query->where('activo', true);
     }
 
+    // Scope para excluir productos ocultos (TIPR = 'OCU')
+    public function scopeNoOcultos($query)
+    {
+        return $query->where(function($q) {
+            $q->where('TIPR', '!=', 'OCU')
+              ->orWhereNull('TIPR');
+        });
+    }
+
     // Método para obtener precio según lista
     public function getPrecio($listaPrecios = '01P')
     {

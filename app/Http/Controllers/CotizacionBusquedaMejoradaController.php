@@ -59,7 +59,13 @@ class CotizacionBusquedaMejoradaController extends Controller
             $terminos = array_filter(explode(' ', trim($busqueda)));
             
             // PASO 1: Buscar productos en tabla local MySQL (consulta optimizada)
-            $query = DB::table('productos')->where('activo', true);
+            // Excluir productos ocultos (TIPR = 'OCU')
+            $query = DB::table('productos')
+                ->where('activo', true)
+                ->where(function($q) {
+                    $q->where('TIPR', '!=', 'OCU')
+                      ->orWhereNull('TIPR'); // Incluir productos sin TIPR definido
+                });
             
             if (count($terminos) > 1) {
                 // Búsqueda con múltiples términos: todos los términos deben estar en el nombre
@@ -164,6 +170,7 @@ class CotizacionBusquedaMejoradaController extends Controller
                         'LISTA_PRECIOS' => $listaPrecios,
                         'PRECIO_VALIDO' => $precioValido,
                         'MOTIVO_BLOQUEO' => $precioValido ? null : 'Precio no disponible',
+                        'ES_OCULTO' => $productoOculto, // Flag para indicar si está oculto
                         'TIENE_STOCK' => $stockReal > 0,
                         'STOCK_INSUFICIENTE' => $stockReal < 1,
                         'CLASE_STOCK' => $stockReal <= 0 ? 'text-danger' : ($stockReal < 10 ? 'text-warning' : 'text-success'),
