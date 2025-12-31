@@ -376,7 +376,7 @@
 
 @endsection
 
-@section('scripts')
+@push('js')
 <script>
 // Función para crear NVV con producto
 function crearNVVConProducto() {
@@ -540,4 +540,4 @@ $('#modalSincronizacionProductos').on('hidden.bs.modal', function() {
     }
 });
 </script>
-@endsection
+@endpush
