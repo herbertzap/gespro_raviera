@@ -445,7 +445,9 @@ class CotizacionController extends Controller
             // Calcular stock real dinámicamente: STFI1 - (STOCNV1 + NVV local)
             // Y verificar si el producto está oculto en SQL Server
             $stockService = new \App\Services\StockComprometidoService();
-            foreach ($productos as &$producto) {
+            $productosFiltrados = [];
+            
+            foreach ($productos as $producto) {
                 try {
                     $codigo = $producto['CODIGO_PRODUCTO'];
                     $stockReal = $stockService->obtenerStockDisponibleReal($codigo);
@@ -453,11 +455,17 @@ class CotizacionController extends Controller
                     // Verificar si el producto está oculto consultando SQL Server
                     $productoOculto = $stockService->verificarProductoOculto($codigo);
                     
+                    // NO mostrar productos ocultos en el listado
+                    if ($productoOculto) {
+                        \Log::info("🚫 Producto oculto excluido de búsqueda: {$codigo}");
+                        continue; // Saltar este producto
+                    }
+                    
                     $producto['STOCK_DISPONIBLE_REAL'] = $stockReal;
                     $producto['STOCK_DISPONIBLE'] = $stockReal;
                     $producto['STOCK_DISPONIBLE_ORIGINAL'] = $producto['STOCK_DISPONIBLE_ORIGINAL'] ?? ($producto['STOCK_FISICO'] ?? 0);
                     $producto['STOCK_COMPROMETIDO'] = $producto['STOCK_COMPROMETIDO'] ?? 0;
-                    $producto['ES_OCULTO'] = $productoOculto; // Flag para indicar si está oculto
+                    $producto['ES_OCULTO'] = false; // Ya se filtró, siempre será false aquí
                     
                     // Estado visual
                     $producto['TIENE_STOCK'] = $stockReal > 0;
@@ -472,15 +480,25 @@ class CotizacionController extends Controller
                         $producto['CLASE_STOCK'] = 'text-success';
                         $producto['ESTADO_STOCK'] = 'Stock disponible';
                     }
+                    
+                    $productosFiltrados[] = $producto;
                 } catch (\Exception $e) {
                     \Log::warning('Error calculando stock para producto ' . ($producto['CODIGO_PRODUCTO'] ?? 'N/A') . ': ' . $e->getMessage());
                 }
             }
             
+            // Si después de filtrar no quedan productos, retornar error
+            if (empty($productosFiltrados)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se encontraron productos disponibles para el término de búsqueda: ' . $busqueda
+                ]);
+            }
+            
             return response()->json([
                 'success' => true,
-                'data' => $productos,
-                'total' => count($productos),
+                'data' => $productosFiltrados,
+                'total' => count($productosFiltrados),
                 'search_term' => $busqueda
             ]);
             
@@ -3249,6 +3267,14 @@ class CotizacionController extends Controller
                 // Continuar aunque falle la actualización, pero loguear el error
             }
 
+            // 2. VALIDACIÓN DE PRECIOS: Consultar y actualizar precios desde SQL Server si son diferentes
+            try {
+                $this->consultarYActualizarPreciosProducto($codigo);
+            } catch (\Exception $e) {
+                \Log::warning("⚠️ Error consultando/actualizando precios para {$codigo}: " . $e->getMessage());
+                // Continuar aunque falle la actualización de precios
+            }
+
             // Obtener stock comprometido local adicional (por cotizaciones/NVV pendientes)
             $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($codigo);
 
@@ -3324,5 +3350,112 @@ class CotizacionController extends Controller
         });
         
         return $clientes;
+    }
+
+    /**
+     * Consultar y actualizar precios del producto desde SQL Server si son diferentes
+     */
+    private function consultarYActualizarPreciosProducto($codigo)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+
+            $codigoEscapado = "'" . addslashes(trim($codigo)) . "'";
+
+            // Consultar precios para listas 01P y 02P desde TABPRE
+            $query = "
+                SELECT 
+                    CAST(ISNULL(PP01UD, 0) AS FLOAT) AS PRECIO_01P,
+                    CAST(ISNULL(PP02UD, 0) AS FLOAT) AS PRECIO_02P,
+                    CAST(ISNULL(DTMA01UD, 0) AS FLOAT) AS DESCUENTO_MAX_01P
+                FROM TABPRE
+                WHERE KOPR = {$codigoEscapado}
+                AND KOLT = '01P'
+            ";
+
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_precio_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+
+            unlink($tempFile);
+
+            if (empty($output) || str_contains(strtolower($output), 'error')) {
+                \Log::warning("⚠️ No se pudo consultar precios desde SQL Server para {$codigo}");
+                return;
+            }
+
+            // Parsear resultado
+            $precio01P = 0;
+            $precio02P = 0;
+            $descuentoMax01P = 0;
+
+            $lines = explode("\n", $output);
+            $headerFound = false;
+
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if (empty($line)) continue;
+
+                // Buscar header
+                if (stripos($line, 'PRECIO_01P') !== false || stripos($line, 'PRECIO_02P') !== false) {
+                    $headerFound = true;
+                    continue;
+                }
+
+                if ($headerFound) {
+                    // Parsear línea de datos (formato: valor1    valor2    valor3)
+                    if (preg_match('/(\d+\.?\d*)\s+(\d+\.?\d*)\s+(\d+\.?\d*)/', $line, $matches)) {
+                        $precio01P = (float)$matches[1];
+                        $precio02P = (float)$matches[2];
+                        $descuentoMax01P = (float)$matches[3];
+                        break;
+                    }
+                }
+            }
+
+            // Obtener producto actual de MySQL
+            $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
+            if (!$producto) {
+                \Log::warning("⚠️ Producto {$codigo} no encontrado en MySQL para actualizar precios");
+                return;
+            }
+
+            // Comparar y actualizar si son diferentes
+            $necesitaActualizacion = false;
+            $updates = [];
+
+            if (abs($precio01P - ($producto->precio_01p ?? 0)) > 0.01) {
+                $updates['precio_01p'] = $precio01P;
+                $necesitaActualizacion = true;
+                \Log::info("💰 Precio 01P diferente para {$codigo}: MySQL=" . ($producto->precio_01p ?? 0) . ", SQL Server={$precio01P}");
+            }
+
+            if (abs($precio02P - ($producto->precio_02p ?? 0)) > 0.01) {
+                $updates['precio_02p'] = $precio02P;
+                $necesitaActualizacion = true;
+                \Log::info("💰 Precio 02P diferente para {$codigo}: MySQL=" . ($producto->precio_02p ?? 0) . ", SQL Server={$precio02P}");
+            }
+
+            if (abs($descuentoMax01P - ($producto->descuento_maximo_01p ?? 0)) > 0.01) {
+                $updates['descuento_maximo_01p'] = $descuentoMax01P;
+                $necesitaActualizacion = true;
+                \Log::info("💰 Descuento máximo 01P diferente para {$codigo}: MySQL=" . ($producto->descuento_maximo_01p ?? 0) . ", SQL Server={$descuentoMax01P}");
+            }
+
+            if ($necesitaActualizacion) {
+                $producto->update($updates);
+                \Log::info("✅ Precios ACTUALIZADOS en MySQL para {$codigo}: " . json_encode($updates));
+            }
+
+        } catch (\Exception $e) {
+            \Log::error("❌ Error consultando/actualizando precios para {$codigo}: " . $e->getMessage());
+            throw $e;
+        }
     }
 } 

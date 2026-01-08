@@ -150,6 +150,15 @@ class CotizacionBusquedaMejoradaController extends Controller
                 // Calcular stock real considerando stock comprometido local (NVV)
                 $stockReal = $this->stockComprometidoService->obtenerStockDisponibleReal($codigo);
                 
+                // Verificar si el producto está oculto consultando SQL Server
+                $productoOculto = $this->stockComprometidoService->verificarProductoOculto($codigo);
+                
+                // NO mostrar productos ocultos en el listado
+                if ($productoOculto) {
+                    \Log::info("🚫 Producto oculto excluido de búsqueda: {$codigo}");
+                    continue; // Saltar este producto
+                }
+                
                 $precioValido = ($precio > 0);
                 
                 // Solo agregar productos con precio mayor a 0
@@ -170,7 +179,7 @@ class CotizacionBusquedaMejoradaController extends Controller
                         'LISTA_PRECIOS' => $listaPrecios,
                         'PRECIO_VALIDO' => $precioValido,
                         'MOTIVO_BLOQUEO' => $precioValido ? null : 'Precio no disponible',
-                        'ES_OCULTO' => $productoOculto, // Flag para indicar si está oculto
+                        'ES_OCULTO' => false, // Ya se filtró, siempre será false aquí
                         'TIENE_STOCK' => $stockReal > 0,
                         'STOCK_INSUFICIENTE' => $stockReal < 1,
                         'CLASE_STOCK' => $stockReal <= 0 ? 'text-danger' : ($stockReal < 10 ? 'text-warning' : 'text-success'),
