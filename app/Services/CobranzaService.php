@@ -4600,7 +4600,7 @@ class CobranzaService
                 CAST(dbo.CLIENTES.NOKOEN AS VARCHAR(100)) + '|' +
                 CAST(dbo.MAEDPCE.FEVEDP AS VARCHAR(20)) + '|' +
                 CAST(dbo.MAEDPCE.MODP AS VARCHAR(10)) + '|' +
-                CAST(CASE WHEN dbo.MAEDPCE.TIDP = 'CHC' THEN dbo.MAEDPCE.VADP * -1 ELSE dbo.MAEDPCE.VADP * 1 END AS VARCHAR(20)) + '|' +
+                CAST(CAST(CASE WHEN dbo.MAEDPCE.TIDP = 'CHC' THEN dbo.MAEDPCE.VADP * -1 ELSE dbo.MAEDPCE.VADP * 1 END AS DECIMAL(18,0)) AS VARCHAR(20)) + '|' +
                 CAST(dbo.MAEDPCE.SUREDP AS VARCHAR(10)) + '|' +
                 CAST(ISNULL(dbo.TABSU.NOKOSU, '') AS VARCHAR(100)) + '|' +
                 CAST(dbo.MAEDPCE.EMDP AS VARCHAR(10)) + '|' +
@@ -4668,15 +4668,22 @@ class CobranzaService
                         $fechaVencimientoStr = trim($datos[4] ?? '');
                         $valorStr = trim($datos[6] ?? '0');
                         
-                        // Limpiar valor (puede tener comas o puntos decimales)
-                        $valorStr = str_replace(',', '.', $valorStr);
-                        $valorStr = preg_replace('/[^0-9.-]/', '', $valorStr);
+                        // Limpiar valor: los cheques son números enteros sin decimales
+                        // SQL Server puede devolver números con separadores de miles (puntos o comas)
+                        // Eliminar TODOS los caracteres no numéricos excepto el signo negativo al inicio
+                        $valorStr = preg_replace('/[^0-9-]/', '', $valorStr);
+                        // Si hay signo negativo, asegurar que esté solo al inicio
+                        if (strpos($valorStr, '-') !== false && strpos($valorStr, '-') !== 0) {
+                            $valorStr = '-' . str_replace('-', '', $valorStr);
+                        }
+                        // Convertir a entero (los cheques no tienen decimales)
+                        $valor = (int)floatval($valorStr);
                         
                         $cheques[] = [
                             'numero' => mb_convert_encoding(trim($datos[1] ?? ''), 'UTF-8', 'ISO-8859-1'),
                             'cliente' => mb_convert_encoding(trim($datos[3] ?? ''), 'UTF-8', 'ISO-8859-1'),
                             'codigo_cliente' => mb_convert_encoding(trim($datos[2] ?? ''), 'UTF-8', 'ISO-8859-1'),
-                            'valor' => floatval($valorStr),
+                            'valor' => $valor,
                             'fecha_vencimiento' => $this->parseFecha($fechaVencimientoStr),
                             'vendedor' => mb_convert_encoding(trim($datos[12] ?? ''), 'UTF-8', 'ISO-8859-1')
                         ];
