@@ -28,11 +28,21 @@ class StockService
                     CAST(ISNULL(MAEST.STFI1, 0) AS VARCHAR(4000)) + '|' +
                     CAST(ISNULL(MAEST.STOCNV1, 0) AS VARCHAR(4000)) + '|' +
                     CAST(ISNULL(MAEPR.UD01PR, 'UN') AS VARCHAR(4000)) + '|' +
-                    CAST(ISNULL(TABPRE.PP01UD, 0) AS VARCHAR(4000)) AS DATOS
+                    CAST(ISNULL(TABPRE01.PP01UD, 0) AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(TABPRE01.PP02UD, 0) AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(TABPRE01.DTMA01UD, 0) AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(TABPRE02.PP01UD, 0) AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(TABPRE02.PP02UD, 0) AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(TABPRE02.DTMA01UD, 0) AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(TABPRE03.PP01UD, 0) AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(TABPRE03.PP02UD, 0) AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(TABPRE03.DTMA01UD, 0) AS VARCHAR(4000)) AS DATOS
                 FROM MAEST
                 LEFT JOIN MAEPR ON MAEPR.KOPR = MAEST.KOPR
                 LEFT JOIN TABBO ON MAEST.KOBO = TABBO.KOBO
-                LEFT JOIN TABPRE ON MAEPR.KOPR = TABPRE.KOPR AND TABPRE.KOLT = '01'
+                LEFT JOIN TABPRE AS TABPRE01 ON MAEPR.KOPR = TABPRE01.KOPR AND TABPRE01.KOLT = '01'
+                LEFT JOIN TABPRE AS TABPRE02 ON MAEPR.KOPR = TABPRE02.KOPR AND TABPRE02.KOLT = '02'
+                LEFT JOIN TABPRE AS TABPRE03 ON MAEPR.KOPR = TABPRE03.KOPR AND TABPRE03.KOLT = '03'
                 WHERE MAEST.KOBO = 'LIB'
                 ORDER BY MAEPR.KOPR
             ";
@@ -88,6 +98,12 @@ class StockService
             if (strpos($line, '|') !== false) {
                 $fields = explode('|', $line);
                 
+                // Función helper para convertir a float manteniendo decimales
+                $convertToFloat = function($value) {
+                    $value = trim($value);
+                    return $value === '' || $value === null ? 0.0 : (float)$value;
+                };
+                
                 if (count($fields) >= 8) {
                     $stockFisico = (float)$fields[4];
                     $stockComprometidoSQL = (float)$fields[5];
@@ -107,8 +123,33 @@ class StockService
                         'stock_comprometido' => $stockComprometidoSQL,
                         'stock_disponible' => $stockDisponible,
                         'unidad_medida' => trim($fields[6]) ?: 'UN',
-                        'precio_venta' => (float)$fields[7]
+                        'precio_venta' => $convertToFloat($fields[7])
                     ];
+                    
+                    // Si hay 17 campos, incluir precios de las tres listas (01P, 02P, 03P)
+                    if (count($fields) >= 17) {
+                        // Lista 01P: campos 8, 9, 10
+                        $precio01p = $convertToFloat($fields[8]);
+                        $producto['precio_01p'] = $precio01p;
+                        $producto['precio_01p_ud2'] = $convertToFloat($fields[9]);
+                        $producto['descuento_maximo_01p'] = $convertToFloat($fields[10]);
+                        
+                        // Lista 02P: campos 11, 12, 13
+                        $producto['precio_02p'] = $convertToFloat($fields[11]);
+                        $producto['precio_02p_ud2'] = $convertToFloat($fields[12]);
+                        $producto['descuento_maximo_02p'] = $convertToFloat($fields[13]);
+                        
+                        // Lista 03P: campos 14, 15, 16
+                        $producto['precio_03p'] = $convertToFloat($fields[14]);
+                        $producto['precio_03p_ud2'] = $convertToFloat($fields[15]);
+                        $producto['descuento_maximo_03p'] = $convertToFloat($fields[16]);
+                        
+                        // precio_venta es el precio de la lista 01P
+                        $producto['precio_venta'] = $precio01p;
+                    } else {
+                        // Formato antiguo: campo 7 es precio_venta de lista '01'
+                        $producto['precio_venta'] = (float)$fields[7];
+                    }
                     
                     // Log para debuggear el primer producto problemático
                     if (strpos($fields[0], '1002225000000') !== false) {
@@ -148,16 +189,35 @@ class StockService
         
         // Actualizar la tabla productos (usada por el cotizador)
         try {
+            $updateData = [
+                'NOKOPR' => $producto['nombre_producto'],
+                'UD01PR' => $producto['unidad_medida'],
+                'stock_fisico' => $producto['stock_fisico'],
+                'stock_comprometido' => $producto['stock_comprometido'] ?? 0,
+                'stock_disponible' => $producto['stock_disponible'],
+                'updated_at' => now()
+            ];
+            
+            // Agregar precios de las listas si están disponibles
+            if (isset($producto['precio_01p'])) {
+                $updateData['precio_01p'] = $producto['precio_01p'];
+                $updateData['precio_01p_ud2'] = $producto['precio_01p_ud2'] ?? 0;
+                $updateData['descuento_maximo_01p'] = $producto['descuento_maximo_01p'] ?? 0;
+            }
+            if (isset($producto['precio_02p'])) {
+                $updateData['precio_02p'] = $producto['precio_02p'];
+                $updateData['precio_02p_ud2'] = $producto['precio_02p_ud2'] ?? 0;
+                $updateData['descuento_maximo_02p'] = $producto['descuento_maximo_02p'] ?? 0;
+            }
+            if (isset($producto['precio_03p'])) {
+                $updateData['precio_03p'] = $producto['precio_03p'];
+                $updateData['precio_03p_ud2'] = $producto['precio_03p_ud2'] ?? 0;
+                $updateData['descuento_maximo_03p'] = $producto['descuento_maximo_03p'] ?? 0;
+            }
+            
             \DB::table('productos')
                 ->where('KOPR', $producto['codigo_producto'])
-                ->update([
-                    'NOKOPR' => $producto['nombre_producto'],
-                    'UD01PR' => $producto['unidad_medida'],
-                    'stock_fisico' => $producto['stock_fisico'],
-                    'stock_comprometido' => $producto['stock_comprometido'] ?? 0,
-                    'stock_disponible' => $producto['stock_disponible'],
-                    'updated_at' => now()
-                ]);
+                ->update($updateData);
         } catch (\Exception $e) {
             Log::warning('No se pudo actualizar tabla productos para ' . $producto['codigo_producto'] . ': ' . $e->getMessage());
         }

@@ -148,6 +148,9 @@ class ClienteValidacionService
 
     /**
      * Validar retraso en facturas
+     * 
+     * Nota: FEULVEDO en MAEEDO ya representa la fecha de vencimiento (fecha emisión + DIPRVE)
+     * DIAS_VENCIDO = GETDATE() - FEULVEDO, por lo que una factura está vencida si DIAS_VENCIDO > 0
      */
     private static function validarRetrasoFacturas($cliente)
     {
@@ -155,43 +158,53 @@ class ClienteValidacionService
             $cobranzaService = new CobranzaService();
             $facturasPendientes = $cobranzaService->getFacturasPendientesCliente($cliente->codigo_cliente);
             
-            $diasMaximos = $cliente->dias_credito ?? 30;
-            $facturasRetrasadas = [];
-            $diasRetrasoMaximo = 0;
+            $facturasVencidas = [];
+            $diasVencidoMaximo = 0;
 
             foreach ($facturasPendientes as $factura) {
-                $fechaVencimiento = \Carbon\Carbon::parse($factura['fecha_vencimiento']);
-                $diasRetraso = now()->diffInDays($fechaVencimiento, false);
+                // Usar directamente DIAS_VENCIDO que ya viene calculado desde SQL Server
+                // DIAS_VENCIDO = GETDATE() - FEULVEDO
+                // Una factura está vencida si DIAS_VENCIDO > 0 (FEULVEDO ya incorpora DIPRVE)
+                $diasVencido = isset($factura['DIAS_VENCIDO']) ? (int)$factura['DIAS_VENCIDO'] : 0;
                 
-                if ($diasRetraso > $diasMaximos) {
-                    $facturasRetrasadas[] = [
-                        'numero' => $factura['numero_factura'],
-                        'dias_retraso' => $diasRetraso,
-                        'monto' => $factura['saldo']
+                if ($diasVencido > 0) {
+                    // Factura vencida
+                    $facturasVencidas[] = [
+                        'tipo' => $factura['TIPO_DOCTO'] ?? '',
+                        'numero' => $factura['NRO_DOCTO'] ?? '',
+                        'dias_vencido' => $diasVencido,
+                        'monto' => $factura['SALDO'] ?? 0,
+                        'fecha_vencimiento' => $factura['VENCIMIENTO'] ?? '',
+                        'estado' => $factura['ESTADO'] ?? 'VENCIDO'
                     ];
-                    $diasRetrasoMaximo = max($diasRetrasoMaximo, $diasRetraso);
+                    $diasVencidoMaximo = max($diasVencidoMaximo, $diasVencido);
                 }
             }
 
             // Actualizar días de retraso en el cliente
             $cliente->update([
-                'dias_retraso_facturas' => $diasRetrasoMaximo,
-                'requiere_autorizacion_retraso' => count($facturasRetrasadas) > 0
+                'dias_retraso_facturas' => $diasVencidoMaximo,
+                'requiere_autorizacion_retraso' => count($facturasVencidas) > 0
             ]);
 
-            if (count($facturasRetrasadas) > 0) {
+            if (count($facturasVencidas) > 0) {
+                $mensaje = count($facturasVencidas) == 1 
+                    ? "1 factura vencida hace {$diasVencidoMaximo} día(s)"
+                    : count($facturasVencidas) . " facturas vencidas (máximo: {$diasVencidoMaximo} días)";
+                
                 return [
                     'valido' => false,
-                    'motivo' => "Facturas con retraso de hasta {$diasRetrasoMaximo} días. Máximo permitido: {$diasMaximos} días",
+                    'motivo' => $mensaje,
                     'estado' => 'warning',
-                    'facturas_retrasadas' => $facturasRetrasadas,
-                    'dias_retraso_maximo' => $diasRetrasoMaximo
+                    'facturas_vencidas' => $facturasVencidas,
+                    'dias_vencido_maximo' => $diasVencidoMaximo,
+                    'total_facturas_vencidas' => count($facturasVencidas)
                 ];
             }
 
             return [
                 'valido' => true,
-                'motivo' => "Sin facturas en retraso. Máximo permitido: {$diasMaximos} días",
+                'motivo' => "Sin facturas vencidas",
                 'estado' => 'success'
             ];
 

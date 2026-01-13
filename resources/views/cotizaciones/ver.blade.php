@@ -393,9 +393,9 @@ function mostrarResultadosProductosAjax(productos) {
                     ${producto.STOCK_COMPROMETIDO > 0 ? `<br><small class="text-muted">Comprometido: ${producto.STOCK_COMPROMETIDO}</small>` : ''}
                     ${stockReal <= 0 ? '<br><small class="text-warning"><i class="material-icons">info</i> Sin stock - Nota pendiente</small>' : ''}
                 </td>
-                <td><strong>$${Math.round(producto.PRECIO_UD1 || 0).toLocaleString()}</strong></td>
+                <td><strong>$${parseFloat(producto.PRECIO_UD1 || 0).toLocaleString('es-CL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
                 <td>
-                    <button class="btn btn-sm btn-primary" onclick="agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', '${producto.NOMBRE_PRODUCTO.replace(/'/g, "\\'")}', ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}')">
+                    <button class="btn btn-sm btn-primary" onclick="agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', ${JSON.stringify(producto.NOMBRE_PRODUCTO)}, ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}')">
                         <i class="material-icons">add_shopping_cart</i> Agregar
                     </button>
                 </td>

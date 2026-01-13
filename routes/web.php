@@ -71,6 +71,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/nota-venta/editar/{id}', [App\Http\Controllers\NotaVentaController::class, 'editar'])->name('nota-venta.editar');
     Route::put('/nota-venta/actualizar/{id}', [App\Http\Controllers\NotaVentaController::class, 'actualizar'])->name('nota-venta.actualizar');
     Route::get('/nota-venta/ver/{id}', [App\Http\Controllers\NotaVentaController::class, 'ver'])->name('nota-venta.ver');
+    Route::get('/nota-venta/pdf/{id}', [App\Http\Controllers\NotaVentaController::class, 'generarPDF'])->name('nota-venta.pdf');
     Route::delete('/nota-venta/{id}', [App\Http\Controllers\NotaVentaController::class, 'eliminar'])->name('nota-venta.eliminar');
     Route::post('/nota-venta/generar-nota-venta/{id}', [App\Http\Controllers\NotaVentaController::class, 'generarNotaVenta'])->name('nota-venta.generar-nota-venta');
     Route::post('/nota-venta/convertir-a-nota-venta/{id}', [App\Http\Controllers\NotaVentaController::class, 'convertirANotaVenta'])->name('nota-venta.convertir-a-nota-venta');

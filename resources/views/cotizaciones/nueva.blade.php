@@ -614,12 +614,12 @@ function mostrarResultadosProductosAjax(productos) {
                 <td><strong>${producto.CODIGO_PRODUCTO || ''}</strong></td>
                 <td>${producto.NOMBRE_PRODUCTO || ''}${multiploInfo}</td>
                 <td>
-                    <strong class="${!precioValido ? 'text-muted' : ''}" data-precio="${producto.PRECIO_UD1 || 0}">$${Math.round(producto.PRECIO_UD1 || 0).toLocaleString()}</strong>
+                    <strong class="${!precioValido ? 'text-muted' : ''}" data-precio="${producto.PRECIO_UD1 || 0}">$${parseFloat(producto.PRECIO_UD1 || 0).toLocaleString('es-CL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
                     ${!precioValido ? '<br><small class="text-danger"><i class="material-icons">warning</i> Precio no disponible</small>' : ''}
                     ${productoOculto ? '<br><small class="text-danger"><i class="material-icons">visibility_off</i> Producto oculto</small>' : ''}
                 </td>
                 <td>
-                    <button class="btn btn-sm ${buttonClass}" onclick="${productoOculto ? `mostrarModalProductoOculto('${producto.CODIGO_PRODUCTO}', '${producto.NOMBRE_PRODUCTO.replace(/'/g, "\\'")}')` : (precioValido ? `agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', '${producto.NOMBRE_PRODUCTO.replace(/'/g, "\\'")}', ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}', ${producto.DESCUENTO_MAXIMO || 0}, ${multiploVenta})` : 'alert(\'Este producto no tiene precio disponible\')')}" ${buttonDisabled} title="${motivoBloqueo || ''}">
+                    <button class="btn btn-sm ${buttonClass}" onclick="${productoOculto ? `mostrarModalProductoOculto('${producto.CODIGO_PRODUCTO}', ${JSON.stringify(producto.NOMBRE_PRODUCTO)})` : (precioValido ? `agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', ${JSON.stringify(producto.NOMBRE_PRODUCTO)}, ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}', ${producto.DESCUENTO_MAXIMO || 0}, ${multiploVenta})` : 'alert(\'Este producto no tiene precio disponible\')')}" ${buttonDisabled} title="${motivoBloqueo || ''}">
                         <i class="material-icons">${buttonIcon}</i> ${buttonText}
                     </button>
                 </td>

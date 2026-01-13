@@ -3391,4 +3391,43 @@ class NotaVentaController extends Controller
             throw $e;
         }
     }
+
+    /**
+     * Generar y descargar PDF de una Nota de Venta
+     */
+    public function generarPDF($id)
+    {
+        try {
+            $cotizacion = Cotizacion::with('productos')->findOrFail($id);
+            
+            // Verificar que sea una nota de venta, no una cotización
+            if ($cotizacion->tipo_documento !== 'nota_venta') {
+                abort(404, 'No se encontró la nota de venta solicitada');
+            }
+            
+            // Cargar datos del cliente para la vista PDF
+            $cliente = Cliente::where('codigo_cliente', $cotizacion->cliente_codigo)->first();
+
+            // Generar PDF usando DomPDF
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('cotizaciones.pdf', compact('cotizacion', 'cliente'));
+            
+            // Configurar el PDF
+            $pdf->setPaper('A4', 'portrait');
+            $pdf->setOptions([
+                'isHtml5ParserEnabled' => true,
+                'isRemoteEnabled' => true,
+                'defaultFont' => 'Arial'
+            ]);
+            
+            // Generar nombre del archivo
+            $filename = 'Nota_Venta_' . $cotizacion->id . '_' . now()->format('Y-m-d') . '.pdf';
+            
+            // Descargar el PDF
+            return $pdf->download($filename);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error generando PDF de nota de venta: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Error al generar el PDF: ' . $e->getMessage());
+        }
+    }
 } 

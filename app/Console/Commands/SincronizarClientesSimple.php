@@ -188,24 +188,91 @@ class SincronizarClientesSimple extends Command
             
             // Separar los campos por el delimitador |
             $campos = explode('|', $datosCompletos);
+            $numCampos = count($campos);
             
-            // Mínimo 7 campos para datos básicos (nombre, dirección, teléfono, código vendedor, nombre vendedor, región, comuna)
-            if (count($campos) < 7) {
+            // Mínimo 7 campos para datos básicos
+            if ($numCampos < 7) {
                 return null;
             }
             
-            // Extraer cada campo según el orden de la consulta SQL (sin el código cliente que ya se extrajo)
-            // Orden: NOKOEN, DIEN, FOEN, KOFUEN, NOKOFU, NOKOCI, NOKOCM, [CRTO], [SUEN], [BLOQUEADO]
-            $nombreCliente = trim($campos[0] ?? '');
-            $direccion = trim($campos[1] ?? '');
-            $telefono = trim($campos[2] ?? '');
-            $codigoVendedor = trim($campos[3] ?? $vendedor ?? 'LCB');
-            $nombreVendedor = trim($campos[4] ?? '');
-            $region = trim($campos[5] ?? '');
-            $comuna = trim($campos[6] ?? '');
-            $creditoTotal = floatval(trim($campos[7] ?? 0));  // CRTO (opcional)
-            $saldoUtilizado = floatval(trim($campos[8] ?? 0));  // SUEN (opcional)
-            $bloqueado = trim($campos[9] ?? $campos[7] ?? '0');  // BLOQUEADO (puede estar en índice 7 u 9)
+            // Inicializar variables
+            $nombreCliente = '';
+            $direccion = '';
+            $telefono = '';
+            $codigoVendedor = $vendedor ?? 'LCB';
+            $nombreVendedor = '';
+            $region = '';
+            $comuna = '';
+            $creditoTotal = 0;
+            $saldoUtilizado = 0;
+            $bloqueado = '0';
+            $email = '';
+            $condicionPago = '';
+            $diasCredito = 0;
+            $comentarioAdmin = '';
+            $rutCliente = '';
+            
+            // Detectar formato según número de campos y extraer campos específicos
+            // Nota: Después de extraer el código cliente, el formato ejecutarSincronizacion tiene 12 campos
+            if ($numCampos >= 12) {
+                // Formato ejecutarSincronizacion (después de extraer código): NOKOEN(0), DIEN(1), FOEN(2), KOFUEN(3), NOKOFU(4), NOKOCI(5), NOKOCM(6), CRTO(7), SUEN(8), BLOQUEADO(9), CPEN(10), DIPRVE(11)
+                $nombreCliente = trim($campos[0] ?? '');
+                $direccion = trim($campos[1] ?? '');
+                $telefono = trim($campos[2] ?? '');
+                $codigoVendedor = trim($campos[3] ?? $vendedor ?? 'LCB');
+                $nombreVendedor = trim($campos[4] ?? '');
+                $region = trim($campos[5] ?? ''); // NOKOCI - nombre de región
+                $comuna = trim($campos[6] ?? ''); // NOKOCM - nombre de comuna
+                // CRTO puede venir en notación científica (1e+007), convertir correctamente
+                $creditoTotalStr = trim($campos[7] ?? '0');
+                $creditoTotal = (float)$creditoTotalStr;
+                $saldoUtilizadoStr = trim($campos[8] ?? '0');
+                $saldoUtilizado = (float)$saldoUtilizadoStr;
+                $bloqueado = trim($campos[9] ?? '0');
+                $condicionPago = trim($campos[10] ?? ''); // CPEN - posición 10
+                $diasCredito = intval(trim($campos[11] ?? 0)); // DIPRVE - posición 11
+            } elseif ($numCampos == 12) {
+                // Formato handle/sincronizar-simple: NOKOEN(0), DIEN(1), FOEN(2), KOFUEN(3), EMAIL(4), BLOQUEADO(5), CPEN(6), DIPRVE(7), OBEN(8), RTEN(9), CIEN(10), CMEN(11)
+                $nombreCliente = trim($campos[0] ?? '');
+                $direccion = trim($campos[1] ?? '');
+                $telefono = trim($campos[2] ?? '');
+                $codigoVendedor = trim($campos[3] ?? $vendedor ?? 'LCB');
+                $email = trim($campos[4] ?? '');
+                $bloqueado = trim($campos[5] ?? '0');
+                $condicionPago = trim($campos[6] ?? '');
+                $diasCredito = intval(trim($campos[7] ?? 0));
+                $comentarioAdmin = trim($campos[8] ?? '');
+                $rutCliente = trim($campos[9] ?? '');
+                $region = trim($campos[10] ?? ''); // CIEN - código de región
+                $comuna = trim($campos[11] ?? ''); // CMEN - código de comuna
+            } elseif ($numCampos == 10) {
+                // Formato sincronizarTodosLosClientes: NOKOEN(0), DIEN(1), FOEN(2), KOFUEN(3), NOKOFU(4), NOKOCI(5), NOKOCM(6), 0(7), CPEN(8), DIPRVE(9)
+                // Nota: El campo 7 es un 0 fijo, no se usa
+                $nombreCliente = trim($campos[0] ?? '');
+                $direccion = trim($campos[1] ?? '');
+                $telefono = trim($campos[2] ?? '');
+                $codigoVendedor = trim($campos[3] ?? $vendedor ?? 'LCB');
+                $nombreVendedor = trim($campos[4] ?? '');
+                $region = trim($campos[5] ?? ''); // NOKOCI - posición 5
+                $comuna = trim($campos[6] ?? ''); // NOKOCM - posición 6
+                $condicionPago = trim($campos[8] ?? ''); // CPEN - posición 8 (saltando el 0 en posición 7)
+                $diasCredito = intval(trim($campos[9] ?? 0)); // DIPRVE - posición 9
+            } else {
+                // Formato antiguo o desconocido - intentar extraer campos básicos
+                $nombreCliente = trim($campos[0] ?? '');
+                $direccion = trim($campos[1] ?? '');
+                $telefono = trim($campos[2] ?? '');
+                $codigoVendedor = trim($campos[3] ?? $vendedor ?? 'LCB');
+                if ($numCampos > 4) {
+                    $nombreVendedor = trim($campos[4] ?? '');
+                }
+                if ($numCampos > 5) {
+                    $region = trim($campos[5] ?? '');
+                }
+                if ($numCampos > 6) {
+                    $comuna = trim($campos[6] ?? '');
+                }
+            }
             
             // Limpiar campos NULL y espacios
             if ($nombreCliente === 'NULL') $nombreCliente = '';
@@ -245,11 +312,15 @@ class SincronizarClientesSimple extends Command
                 'NOMBRE_VENDEDOR' => $nombreVendedor,
                 'REGION' => $region,
                 'COMUNA' => $comuna,
-                'EMAIL' => '',
+                'EMAIL' => $email,
                 'BLOQUEADO' => $bloqueado,
                 'CREDITO_TOTAL' => $creditoTotal,
                 'CREDITO_UTILIZADO' => $saldoUtilizado,
-                'CREDITO_DISPONIBLE' => $creditoDisponible
+                'CREDITO_DISPONIBLE' => $creditoDisponible,
+                'CONDICION_PAGO' => $condicionPago,
+                'DIAS_CREDITO' => $diasCredito,
+                'COMENTARIO_ADMIN' => $comentarioAdmin,
+                'RUT_CLIENTE' => $rutCliente
             ];
             
         } catch (\Exception $e) {
@@ -287,7 +358,9 @@ class SincronizarClientesSimple extends Command
                     CAST(ISNULL(TABCM.NOKOCM, '') AS VARCHAR(50)) + '|' +
                     CAST(ISNULL(MAEEN.CRTO, 0) AS VARCHAR(20)) + '|' +
                     CAST(ISNULL(MAEEN.SUEN, 0) AS VARCHAR(20)) + '|' +
-                    CAST(ISNULL(MAEEN.BLOQUEADO, 0) AS VARCHAR(1)) AS DATOS_CLIENTE
+                    CAST(ISNULL(MAEEN.BLOQUEADO, 0) AS VARCHAR(1)) + '|' +
+                    CAST(ISNULL(MAEEN.CPEN, '') AS VARCHAR(50)) + '|' +
+                    CAST(ISNULL(MAEEN.DIPRVE, 0) AS VARCHAR(10)) AS DATOS_CLIENTE
                 FROM dbo.MAEEN 
                 LEFT JOIN dbo.TABFU ON MAEEN.KOFUEN = TABFU.KOFU
                 LEFT JOIN dbo.TABCI ON MAEEN.PAEN = TABCI.KOPA AND MAEEN.CIEN = TABCI.KOCI
@@ -435,13 +508,15 @@ class SincronizarClientesSimple extends Command
                 SELECT 
                     CAST(MAEEN.KOEN AS VARCHAR(20)) + '|' +
                     CAST(MAEEN.NOKOEN AS VARCHAR(100)) + '|' +
-                    CAST(MAEEN.DIEN AS VARCHAR(100)) + '|' +
-                    CAST(MAEEN.FOEN AS VARCHAR(20)) + '|' +
+                    CAST(ISNULL(MAEEN.DIEN, '') AS VARCHAR(100)) + '|' +
+                    CAST(ISNULL(MAEEN.FOEN, '') AS VARCHAR(20)) + '|' +
                     CAST(MAEEN.KOFUEN AS VARCHAR(10)) + '|' +
                     CAST(ISNULL(TABFU.NOKOFU, '') AS VARCHAR(100)) + '|' +
                     CAST(ISNULL(TABCI.NOKOCI, '') AS VARCHAR(50)) + '|' +
                     CAST(ISNULL(TABCM.NOKOCM, '') AS VARCHAR(50)) + '|' +
-                    CAST(0 AS VARCHAR(1)) AS DATOS_CLIENTE
+                    CAST(0 AS VARCHAR(1)) + '|' +
+                    CAST(ISNULL(MAEEN.CPEN, '') AS VARCHAR(50)) + '|' +
+                    CAST(ISNULL(MAEEN.DIPRVE, 0) AS VARCHAR(10)) AS DATOS_CLIENTE
                 FROM dbo.MAEEN 
                 LEFT JOIN dbo.TABFU ON MAEEN.KOFUEN = TABFU.KOFU
                 LEFT JOIN dbo.TABCI ON MAEEN.PAEN = TABCI.KOPA AND MAEEN.CIEN = TABCI.KOCI
@@ -521,6 +596,8 @@ class SincronizarClientesSimple extends Command
                     'lista_precios_codigo' => '01',
                     'lista_precios_nombre' => 'Lista General',
                     'bloqueado' => (isset($clienteExterno['BLOQUEADO']) && (trim($clienteExterno['BLOQUEADO']) == '1' || trim($clienteExterno['BLOQUEADO']) == 1 || trim($clienteExterno['BLOQUEADO']) === true)),
+                    'condicion_pago' => $clienteExterno['CONDICION_PAGO'] ?? '',
+                    'dias_credito' => intval($clienteExterno['DIAS_CREDITO'] ?? 0),
                     'activo' => true,
                     'ultima_sincronizacion' => now()
                 ];

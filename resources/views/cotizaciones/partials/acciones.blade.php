@@ -241,7 +241,16 @@ function showNotification(message, type) {
 
 // Función para descargar PDF
 function descargarPDF(cotizacionId) {
-    window.open(`/cotizacion/pdf/${cotizacionId}`, '_blank');
+    // Determinar si es cotización o nota de venta basado en el tipo_documento
+    // Si no está disponible en el frontend, intentar ambas rutas o usar una ruta unificada
+    // Por ahora, intentar la ruta de nota-venta primero, luego cotizacion
+    const esNVV = {{ $cotizacion->tipo_documento === 'nota_venta' ? 'true' : 'false' }};
+    
+    if (esNVV) {
+        window.open(`/nota-venta/pdf/${cotizacionId}`, '_blank');
+    } else {
+        window.open(`/cotizacion/pdf/${cotizacionId}`, '_blank');
+    }
 }
 
 // Función para confirmar sincronización
