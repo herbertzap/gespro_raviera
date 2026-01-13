@@ -232,13 +232,38 @@
     </div>
     
     <div class="observations">
-        <h4>Otras Observaciones:</h4>
-        <p>{{ $cotizacion->observaciones ?? 'Sin observaciones' }}</p>
-        @if($observacionesExtra)
-        <p><strong>Observaciones Extra:</strong> {{ $observacionesExtra }}</p>
+        <h4>Observaciones:</h4>
+        
+        @if($cotizacion->observacion_vendedor)
+        <div style="margin-bottom: 10px; padding: 5px; background-color: #e3f2fd; border-left: 3px solid #2196F3;">
+            <p style="margin: 0; font-weight: bold; color: #1976D2;">Observaciones del Vendedor:</p>
+            <p style="margin: 5px 0 0 0;">{{ $cotizacion->observacion_vendedor }}</p>
+        </div>
         @endif
+        
+        @if($cotizacion->observaciones)
+        <div style="margin-bottom: 10px; padding: 5px;">
+            <p style="margin: 0; font-weight: bold;">Observaciones Generales:</p>
+            <p style="margin: 5px 0 0 0;">{{ $cotizacion->observaciones }}</p>
+        </div>
+        @endif
+        
+        @if(isset($observacionesExtra) && $observacionesExtra)
+        <div style="margin-bottom: 10px; padding: 5px;">
+            <p style="margin: 0; font-weight: bold;">Observaciones Extra:</p>
+            <p style="margin: 5px 0 0 0;">{{ $observacionesExtra }}</p>
+        </div>
+        @endif
+        
         @if($cotizacion->observaciones_picking)
-        <p><strong>Observaciones Picking:</strong> {{ $cotizacion->observaciones_picking }}</p>
+        <div style="margin-bottom: 10px; padding: 5px; background-color: #fff3cd; border-left: 3px solid #ffc107;">
+            <p style="margin: 0; font-weight: bold; color: #856404;">Observaciones de Picking:</p>
+            <p style="margin: 5px 0 0 0;">{{ $cotizacion->observaciones_picking }}</p>
+        </div>
+        @endif
+        
+        @if(!$cotizacion->observacion_vendedor && !$cotizacion->observaciones && (!isset($observacionesExtra) || !$observacionesExtra) && !$cotizacion->observaciones_picking)
+        <p style="margin: 0; font-style: italic; color: #666;">Sin observaciones</p>
         @endif
     </div>
     

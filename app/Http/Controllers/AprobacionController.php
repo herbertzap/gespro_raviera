@@ -1155,7 +1155,83 @@ class AprobacionController extends Controller
                 }
             }
             
-            Log::info('Siguiente ID para MAEEDO: ' . $siguienteId);
+            Log::info('Siguiente ID calculado para MAEEDO: ' . $siguienteId);
+            
+            // Verificar que el ID no exista ya (puede haber sido creado por otro proceso)
+            $intentosId = 0;
+            $maxIntentosId = 10;
+            $idOriginal = $siguienteId;
+            
+            while ($intentosId < $maxIntentosId) {
+                $queryVerificarId = "SELECT COUNT(*) as existe FROM MAEEDO WHERE IDMAEEDO = {$siguienteId}";
+                
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $queryVerificarId . "\ngo\nquit");
+                
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+                
+                unlink($tempFile);
+                
+                // Parsear resultado - buscar el número del COUNT
+                // El resultado de tsql para COUNT(*) típicamente tiene el formato:
+                // existe
+                // --------
+                // 0 o 1
+                $existe = false;
+                $count = 0;
+                
+                // Buscar el número después de "existe" o en la última línea numérica
+                $lines = explode("\n", $result);
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    // Buscar líneas que contengan solo números (el resultado del COUNT)
+                    if (preg_match('/^\d+$/', $line)) {
+                        $count = (int)$line;
+                        $existe = $count > 0;
+                        break;
+                    }
+                }
+                
+                // Si no encontramos un número en una línea separada, buscar después de "existe"
+                if ($count == 0 && preg_match('/existe\s*\n\s*[-]+\s*\n\s*(\d+)/', $result, $matches)) {
+                    $count = (int)$matches[1];
+                    $existe = $count > 0;
+                }
+                
+                // Fallback: buscar cualquier número que no sea parte de un puerto o IP
+                if ($count == 0 && preg_match('/\b([1-9]\d*)\b/', $result, $matches)) {
+                    // Verificar que no sea un puerto común (1433, etc) o parte de una IP
+                    $potentialCount = (int)$matches[1];
+                    if ($potentialCount <= 10 && $potentialCount >= 0) {
+                        $count = $potentialCount;
+                        $existe = $count > 0;
+                    }
+                }
+                
+                Log::info("Verificación IDMAEEDO {$siguienteId}: COUNT = {$count}, Resultado raw: " . substr($result, 0, 200));
+                
+                if (!$existe) {
+                    // ID disponible
+                    if ($intentosId > 0) {
+                        Log::warning("⚠️ IDMAEEDO {$idOriginal} ya existía, usando {$siguienteId} en su lugar");
+                    } else {
+                        Log::info("✅ IDMAEEDO {$siguienteId} disponible");
+                    }
+                    break;
+                } else {
+                    // ID ya existe, incrementar y volver a verificar
+                    $intentosId++;
+                    $siguienteId++;
+                    Log::warning("⚠️ IDMAEEDO " . ($siguienteId - 1) . " ya existe en SQL Server (COUNT = {$count}), incrementando a {$siguienteId}");
+                }
+            }
+            
+            if ($intentosId >= $maxIntentosId) {
+                throw new \Exception("No se pudo encontrar un IDMAEEDO disponible después de {$maxIntentosId} intentos. Último ID probado: {$siguienteId}");
+            }
+            
+            Log::info("✅ IDMAEEDO final asignado: {$siguienteId}");
             
             // Obtener el último NUDO de NVV y sumarle 1 (consulta simple y directa)
             // IMPORTANTE: Filtrar por TIDO = 'NVV' porque cada tipo de documento tiene su propia numeración
@@ -1358,7 +1434,15 @@ class AprobacionController extends Controller
             ";
             
             Log::info("=== SQL INSERT MAEEDO ===");
-            Log::info($insertMAEEDO);
+            Log::info("IDMAEEDO: {$siguienteId}");
+            Log::info("NUDO: {$nudoFormateado}");
+            Log::info("ENDO: {$cotizacion->cliente_codigo}");
+            Log::info("SUENDO: {$sucursalCliente}");
+            Log::info("VANEDO: {$VANEDO}");
+            Log::info("VAIVDO: {$VAIVDO}");
+            Log::info("VABRDO: {$VABRDO}");
+            Log::info("CAPRCO: {$sumaCantidades}");
+            Log::info("SQL completo (primeros 500 caracteres): " . substr($insertMAEEDO, 0, 500));
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $insertMAEEDO . "\ngo\nquit");
@@ -1368,8 +1452,16 @@ class AprobacionController extends Controller
             
             unlink($tempFile);
             
-            if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
-                throw new \Exception('Error insertando encabezado: ' . $result);
+            // Log completo del resultado para debugging
+            Log::info("=== RESULTADO INSERT MAEEDO ===");
+            Log::info("Resultado completo: " . substr($result, 0, 1000));
+            
+            if (str_contains($result, 'Msg') || str_contains($result, 'Error') || str_contains($result, 'Violation') || str_contains($result, 'duplicate')) {
+                Log::error("❌ ERROR INSERTANDO MAEEDO:");
+                Log::error("IDMAEEDO intentado: {$siguienteId}");
+                Log::error("NUDO: {$nudoFormateado}");
+                Log::error("Resultado completo: " . $result);
+                throw new \Exception('Error insertando encabezado: ' . substr($result, 0, 500));
             }
             
             Log::info('Encabezado MAEEDO insertado correctamente');
