@@ -1174,42 +1174,35 @@ class AprobacionController extends Controller
                 unlink($tempFile);
                 
                 // Parsear resultado - buscar el número del COUNT
-                // El resultado de tsql para COUNT(*) típicamente tiene el formato:
+                // El resultado de tsql para COUNT(*) tiene el formato:
                 // existe
-                // --------
                 // 0 o 1
+                // (1 row affected)
                 $existe = false;
                 $count = 0;
                 
-                // Buscar el número después de "existe" o en la última línea numérica
-                $lines = explode("\n", $result);
-                foreach ($lines as $line) {
-                    $line = trim($line);
-                    // Buscar líneas que contengan solo números (el resultado del COUNT)
-                    if (preg_match('/^\d+$/', $line)) {
-                        $count = (int)$line;
-                        $existe = $count > 0;
-                        break;
-                    }
-                }
-                
-                // Si no encontramos un número en una línea separada, buscar después de "existe"
-                if ($count == 0 && preg_match('/existe\s*\n\s*[-]+\s*\n\s*(\d+)/', $result, $matches)) {
+                // Buscar el patrón específico: "existe" seguido de un número en la siguiente línea
+                if (preg_match('/existe\s*\n\s*(\d+)/', $result, $matches)) {
                     $count = (int)$matches[1];
                     $existe = $count > 0;
-                }
-                
-                // Fallback: buscar cualquier número que no sea parte de un puerto o IP
-                if ($count == 0 && preg_match('/\b([1-9]\d*)\b/', $result, $matches)) {
-                    // Verificar que no sea un puerto común (1433, etc) o parte de una IP
-                    $potentialCount = (int)$matches[1];
-                    if ($potentialCount <= 10 && $potentialCount >= 0) {
-                        $count = $potentialCount;
-                        $existe = $count > 0;
+                } else {
+                    // Fallback: buscar líneas que contengan solo números (el resultado del COUNT)
+                    $lines = explode("\n", $result);
+                    foreach ($lines as $line) {
+                        $line = trim($line);
+                        // Buscar líneas que contengan solo números y que sean 0 o 1 (COUNT solo puede ser 0 o 1)
+                        if (preg_match('/^[01]$/', $line)) {
+                            $count = (int)$line;
+                            $existe = $count > 0;
+                            break;
+                        }
                     }
                 }
                 
-                Log::info("Verificación IDMAEEDO {$siguienteId}: COUNT = {$count}, Resultado raw: " . substr($result, 0, 200));
+                Log::info("Verificación IDMAEEDO {$siguienteId}: COUNT = {$count}, Existe = " . ($existe ? 'SI' : 'NO'));
+                if ($count == 0 && !$existe) {
+                    Log::debug("Resultado raw (primeros 300 chars): " . substr($result, 0, 300));
+                }
                 
                 if (!$existe) {
                     // ID disponible
