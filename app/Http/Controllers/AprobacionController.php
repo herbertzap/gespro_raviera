@@ -577,7 +577,13 @@ class AprobacionController extends Controller
             Log::info("🔥 MODO REAL ACTIVADO - SE INSERTARÁ EN SQL SERVER");
             $startTime = microtime(true);
             
-            $resultado = $this->insertarEnSQLServer($cotizacion);
+            // Pasar los datos de picking del request a insertarEnSQLServer
+            $datosPicking = [
+                'separado_por' => $request->guia_picking_separado_por,
+                'revisado_por' => $request->guia_picking_revisado_por,
+                'numero_bultos' => $request->guia_picking_numero_bultos,
+            ];
+            $resultado = $this->insertarEnSQLServer($cotizacion, $datosPicking);
             
             $endTime = microtime(true);
             $duration = $endTime - $startTime;
@@ -1119,7 +1125,7 @@ class AprobacionController extends Controller
     /**
      * Insertar cotización en SQL Server
      */
-    private function insertarEnSQLServer($cotizacion)
+    private function insertarEnSQLServer($cotizacion, $datosPicking = [])
     {
         try {
             // Obtener siguiente correlativo para IDMAEEDO
@@ -1654,10 +1660,10 @@ class AprobacionController extends Controller
             // Obtener condición de pago del cliente
             $condicionPago = $this->obtenerCondicionPagoCliente($cotizacion->cliente_codigo);
             
-            // Obtener datos de picking (separador, revisor, número de bultos)
-            $separadorPor = $cotizacion->guia_picking_separado_por ?? '';
-            $revisadoPor = $cotizacion->guia_picking_revisado_por ?? '';
-            $numeroBultos = $cotizacion->guia_picking_numero_bultos ?? '';
+            // Obtener datos de picking (prioridad: parámetro $datosPicking > cotización > vacío)
+            $separadorPor = $datosPicking['separado_por'] ?? $cotizacion->guia_picking_separado_por ?? '';
+            $revisadoPor = $datosPicking['revisado_por'] ?? $cotizacion->guia_picking_revisado_por ?? '';
+            $numeroBultos = $datosPicking['numero_bultos'] ?? $cotizacion->guia_picking_numero_bultos ?? '';
             
             // Truncar campos de picking si es necesario (ajustar según estructura de TEXTO1, TEXTO2, TEXTO3 en MAEEDOOB)
             $separadorPorTruncado = substr($separadorPor, 0, 100); // Ajustar según longitud del campo TEXTO1
@@ -1682,12 +1688,12 @@ class AprobacionController extends Controller
                 'TEXTO3' => substr($numeroBultosEscapado, 0, 50),
             ]);
             
-            // INSERT MAEEDOOB con todos los campos requeridos incluyendo EMPRESA
+            // INSERT MAEEDOOB - La tabla NO tiene IDMAEDOOB ni EMPRESA según estructura real
             $insertMAEEDOOB = "
                 INSERT INTO MAEEDOOB (
-                    IDMAEEDO, IDMAEDOOB, EMPRESA, OBDO, CPDO, OCDO, TEXTO1, TEXTO2, TEXTO3
+                    IDMAEEDO, OBDO, CPDO, OCDO, TEXTO1, TEXTO2, TEXTO3
                 ) VALUES (
-                    {$siguienteId}, 1, '01', '{$observacionEscapada}', '{$condicionPagoEscapada}', '{$ordenCompraEscapada}', 
+                    {$siguienteId}, '{$observacionEscapada}', '{$condicionPagoEscapada}', '{$ordenCompraEscapada}', 
                     '{$separadorPorEscapado}', '{$revisadoPorEscapado}', '{$numeroBultosEscapado}'
                 )
             ";
