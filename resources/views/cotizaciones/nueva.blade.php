@@ -605,6 +605,18 @@ function mostrarResultadosProductosAjax(productos) {
         const multiploVenta = producto.MULTIPLO_VENTA || 1;
         const multiploInfo = multiploVenta > 1 ? `<br><small class="text-info">Múltiplo: ${multiploVenta}</small>` : '';
         
+        // Usar data attributes en lugar de onclick para evitar problemas con comillas
+        const productoData = {
+            codigo: producto.CODIGO_PRODUCTO,
+            nombre: producto.NOMBRE_PRODUCTO,
+            precio: producto.PRECIO_UD1 || 0,
+            stock: stockReal || 0,
+            unidad: producto.UNIDAD_MEDIDA || 'UN',
+            descuentoMaximo: producto.DESCUENTO_MAXIMO || 0,
+            multiplo: multiploVenta || 1,
+            oculto: productoOculto
+        };
+        
         contenido += `
             <tr class="${rowClass}">
                 <td><input type="checkbox" class="producto-checkbox" value="${producto.CODIGO_PRODUCTO}" 
@@ -619,7 +631,10 @@ function mostrarResultadosProductosAjax(productos) {
                     ${productoOculto ? '<br><small class="text-danger"><i class="material-icons">visibility_off</i> Producto oculto</small>' : ''}
                 </td>
                 <td>
-                    <button class="btn btn-sm ${buttonClass}" onclick="${productoOculto ? `mostrarModalProductoOculto('${producto.CODIGO_PRODUCTO}', ${JSON.stringify(producto.NOMBRE_PRODUCTO)})` : (precioValido ? `agregarProductoDesdePHP('${producto.CODIGO_PRODUCTO}', ${JSON.stringify(producto.NOMBRE_PRODUCTO)}, ${producto.PRECIO_UD1 || 0}, ${stockReal || 0}, '${producto.UNIDAD_MEDIDA || 'UN'}', ${producto.DESCUENTO_MAXIMO || 0}, ${multiploVenta})` : 'alert(\'Este producto no tiene precio disponible\')')}" ${buttonDisabled} title="${motivoBloqueo || ''}">
+                    <button class="btn btn-sm ${buttonClass} btn-agregar-producto" 
+                        data-producto='${JSON.stringify(productoData)}'
+                        ${buttonDisabled} 
+                        title="${motivoBloqueo || ''}">
                         <i class="material-icons">${buttonIcon}</i> ${buttonText}
                     </button>
                 </td>
@@ -638,6 +653,37 @@ function mostrarResultadosProductosAjax(productos) {
     
     document.getElementById('contenidoResultados').innerHTML = contenido;
     document.getElementById('tituloResultados').textContent = `Productos Encontrados (${productos.length})`;
+    
+    // Configurar event listeners para los botones de agregar producto (evita problemas con comillas en onclick)
+    document.querySelectorAll('.btn-agregar-producto').forEach(button => {
+        button.addEventListener('click', function() {
+            if (this.disabled) return;
+            
+            try {
+                const productoData = JSON.parse(this.getAttribute('data-producto'));
+                
+                if (productoData.oculto) {
+                    mostrarModalProductoOculto(productoData.codigo, productoData.nombre);
+                } else if (productoData.precio > 0) {
+                    agregarProductoDesdePHP(
+                        productoData.codigo,
+                        productoData.nombre,
+                        productoData.precio,
+                        productoData.stock,
+                        productoData.unidad,
+                        productoData.descuentoMaximo,
+                        productoData.multiplo
+                    );
+                } else {
+                    alert('Este producto no tiene precio disponible');
+                }
+            } catch (e) {
+                console.error('Error al procesar producto:', e);
+                alert('Error al agregar el producto');
+            }
+        });
+    });
+    
     document.getElementById('resultadosBusqueda').style.display = 'block';
 }
 
