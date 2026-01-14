@@ -1226,10 +1226,10 @@ class AprobacionController extends Controller
             
             Log::info("✅ IDMAEEDO final asignado: {$siguienteId}");
             
-            // Obtener el último NUDO de NVV y sumarle 1 (consulta simple y directa)
+            // Obtener el máximo NUDO de NVV y sumarle 1 (consulta simple y directa)
             // IMPORTANTE: Filtrar por TIDO = 'NVV' porque cada tipo de documento tiene su propia numeración
-            // Ordenar por el valor numérico del NUDO para obtener el mayor
-            $queryNudo = "SELECT TOP 1 NUDO FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1 ORDER BY CAST(NUDO AS INT) DESC";
+            // Usar MAX directamente para obtener el mayor valor numérico en una sola consulta
+            $queryNudo = "SELECT MAX(CAST(NUDO AS INT)) as max_nudo FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1";
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
             file_put_contents($tempFile, $queryNudo . "\ngo\nquit");
@@ -1238,113 +1238,28 @@ class AprobacionController extends Controller
             $result = shell_exec($command);
             unlink($tempFile);
             
-            Log::info("Resultado query último NUDO: " . $result);
+            Log::info("Resultado query máximo NUDO: " . substr($result, 0, 200));
             
-            // Parsear el resultado - buscar el NUDO en el formato 0000037566
-            $ultimoNudoStr = '';
-            if (preg_match('/(\d{10})/', $result, $matches)) {
-                $ultimoNudoStr = $matches[1];
+            // Parsear el resultado - buscar el número después de "max_nudo"
+            $maxNudo = 0;
+            if (preg_match('/max_nudo\s*\n\s*(\d+)/', $result, $matches)) {
+                $maxNudo = (int)$matches[1];
+            } elseif (preg_match('/(\d{6,})/', $result, $matches)) {
+                // Fallback: buscar cualquier número grande (6+ dígitos)
+                $maxNudo = (int)$matches[1];
             }
             
-            if (empty($ultimoNudoStr)) {
-                Log::error("No se pudo obtener el último NUDO. Resultado de tsql: " . $result);
-                throw new \Exception("No se pudo obtener el último número correlativo de NVV");
+            if ($maxNudo <= 0) {
+                Log::warning("No se pudo obtener el máximo NUDO, usando 1 como valor por defecto. Resultado: " . substr($result, 0, 300));
+                $maxNudo = 0; // Si no hay registros, empezar desde 1
             }
             
-            // Convertir a entero, sumar 1, y formatear de vuelta
-            $ultimoNudo = (int)$ultimoNudoStr;
-            $siguienteNudo = $ultimoNudo + 1;
+            // Sumar 1 al máximo NUDO para obtener el siguiente disponible
+            $siguienteNudo = $maxNudo + 1;
             $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
             
-            Log::info("Último NUDO de NVV: {$ultimoNudoStr}");
-            Log::info("NUDO inicial calculado: {$nudoFormateado}");
-            
-            // Validar que el NUDO no exista ya en SQL Server (puede haber sido creado por otro proceso/vendedor)
-            // Si existe, incrementar hasta encontrar uno disponible
-            $intentos = 0;
-            $maxIntentos = 5; // Límite máximo de intentos para evitar timeouts
-            while ($intentos < $maxIntentos) {
-                $queryVerificarNudo = "SELECT COUNT(*) as existe FROM MAEEDO WHERE TIDO = 'NVV' AND NUDO = '{$nudoFormateado}'";
-                
-                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $queryVerificarNudo . "\ngo\nquit");
-                
-                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                $result = shell_exec($command);
-                
-                unlink($tempFile);
-                
-                // Parsear resultado - buscar el número del COUNT
-                // El resultado de tsql para COUNT(*) tiene el formato:
-                // existe
-                // 0 o 1
-                // (1 row affected)
-                $existe = false;
-                $count = 0;
-                
-                // Buscar el patrón específico: "existe" seguido de un número en la siguiente línea
-                if (preg_match('/existe\s*\n\s*(\d+)/', $result, $matches)) {
-                    $count = (int)$matches[1];
-                    $existe = $count > 0;
-                } else {
-                    // Fallback: buscar líneas que contengan solo números (el resultado del COUNT)
-                    $lines = explode("\n", $result);
-                    foreach ($lines as $line) {
-                        $line = trim($line);
-                        // Buscar líneas que contengan solo números y que sean 0 o 1 (COUNT solo puede ser 0 o 1)
-                        if (preg_match('/^[01]$/', $line)) {
-                            $count = (int)$line;
-                            $existe = $count > 0;
-                            break;
-                        }
-                    }
-                }
-                
-                Log::info("Verificación NUDO {$nudoFormateado}: COUNT = {$count}, Existe = " . ($existe ? 'SI' : 'NO'));
-                if ($count == 0 && !$existe) {
-                    Log::debug("Resultado raw (primeros 300 chars): " . substr($result, 0, 300));
-                }
-                
-                if (!$existe) {
-                    // NUDO disponible, salir del loop
-                    if ($intentos > 0) {
-                        Log::info("✅ NUDO {$nudoFormateado} disponible (verificado después de {$intentos} incremento(s))");
-                    }
-                    break;
-                } else {
-                    // NUDO ya existe, incrementar y volver a verificar
-                    $intentos++;
-                    $siguienteNudo++;
-                    $nudoFormateadoAnterior = $nudoFormateado;
-                    $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
-                    Log::warning("⚠️ NUDO {$nudoFormateadoAnterior} ya existe en SQL Server, incrementando a {$nudoFormateado}");
-                }
-            }
-            
-            if ($intentos >= $maxIntentos) {
-                // Si llegamos al límite, intentar obtener el máximo NUDO directamente y sumar más
-                Log::warning("⚠️ Límite de intentos alcanzado, intentando obtener máximo NUDO directamente");
-                $queryMaxNudo = "SELECT MAX(CAST(NUDO AS INT)) as max_nudo FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1";
-                
-                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $queryMaxNudo . "\ngo\nquit");
-                
-                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                $result = shell_exec($command);
-                unlink($tempFile);
-                
-                // Parsear el máximo NUDO
-                if (preg_match('/max_nudo\s*\n\s*(\d+)/', $result, $matches) || preg_match('/(\d{6,})/', $result, $matches)) {
-                    $maxNudo = (int)$matches[1];
-                    $siguienteNudo = $maxNudo + 1;
-                    $nudoFormateado = str_pad($siguienteNudo, 10, '0', STR_PAD_LEFT);
-                    Log::info("✅ NUDO calculado desde máximo: {$nudoFormateado} (máximo encontrado: {$maxNudo})");
-                } else {
-                    throw new \Exception("No se pudo encontrar un NUDO disponible después de {$maxIntentos} intentos. Último NUDO probado: {$nudoFormateado}");
-                }
-            }
-            
-            Log::info("✅ NUDO asignado final: {$nudoFormateado}");
+            Log::info("Máximo NUDO de NVV encontrado: {$maxNudo}");
+            Log::info("✅ NUDO asignado: {$nudoFormateado}");
             
             // Calcular fecha de vencimiento (30 días desde hoy)
             $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
