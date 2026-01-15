@@ -1162,75 +1162,9 @@ class AprobacionController extends Controller
             }
             
             Log::info('Siguiente ID calculado para MAEEDO: ' . $siguienteId);
-            
-            // Verificar que el ID no exista ya (puede haber sido creado por otro proceso)
-            $intentosId = 0;
-            $maxIntentosId = 10;
-            $idOriginal = $siguienteId;
-            
-            while ($intentosId < $maxIntentosId) {
-                $queryVerificarId = "SELECT COUNT(*) as existe FROM MAEEDO WHERE IDMAEEDO = {$siguienteId}";
-                
-                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $queryVerificarId . "\ngo\nquit");
-                
-                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                $result = shell_exec($command);
-                
-                unlink($tempFile);
-                
-                // Parsear resultado - buscar el número del COUNT
-                // El resultado de tsql para COUNT(*) tiene el formato:
-                // existe
-                // 0 o 1
-                // (1 row affected)
-                $existe = false;
-                $count = 0;
-                
-                // Buscar el patrón específico: "existe" seguido de un número en la siguiente línea
-                if (preg_match('/existe\s*\n\s*(\d+)/', $result, $matches)) {
-                    $count = (int)$matches[1];
-                    $existe = $count > 0;
-                } else {
-                    // Fallback: buscar líneas que contengan solo números (el resultado del COUNT)
-                    $lines = explode("\n", $result);
-                    foreach ($lines as $line) {
-                        $line = trim($line);
-                        // Buscar líneas que contengan solo números y que sean 0 o 1 (COUNT solo puede ser 0 o 1)
-                        if (preg_match('/^[01]$/', $line)) {
-                            $count = (int)$line;
-                            $existe = $count > 0;
-                            break;
-                        }
-                    }
-                }
-                
-                Log::info("Verificación IDMAEEDO {$siguienteId}: COUNT = {$count}, Existe = " . ($existe ? 'SI' : 'NO'));
-                if ($count == 0 && !$existe) {
-                    Log::debug("Resultado raw (primeros 300 chars): " . substr($result, 0, 300));
-                }
-                
-                if (!$existe) {
-                    // ID disponible
-                    if ($intentosId > 0) {
-                        Log::warning("⚠️ IDMAEEDO {$idOriginal} ya existía, usando {$siguienteId} en su lugar");
-                    } else {
-                        Log::info("✅ IDMAEEDO {$siguienteId} disponible");
-                    }
-                    break;
-                } else {
-                    // ID ya existe, incrementar y volver a verificar
-                    $intentosId++;
-                    $siguienteId++;
-                    Log::warning("⚠️ IDMAEEDO " . ($siguienteId - 1) . " ya existe en SQL Server (COUNT = {$count}), incrementando a {$siguienteId}");
-                }
-            }
-            
-            if ($intentosId >= $maxIntentosId) {
-                throw new \Exception("No se pudo encontrar un IDMAEEDO disponible después de {$maxIntentosId} intentos. Último ID probado: {$siguienteId}");
-            }
-            
-            Log::info("✅ IDMAEEDO final asignado: {$siguienteId}");
+            // OPTIMIZACIÓN: Eliminado loop de verificación (MAX + 1 debería ser único)
+            // Si hay colisión, SQL Server lanzará error de clave primaria y se manejará en el catch
+            Log::info("✅ IDMAEEDO asignado: {$siguienteId}");
             
             // Obtener el máximo NUDO de NVV y sumarle 1 (consulta simple y directa)
             // IMPORTANTE: Filtrar por TIDO = 'NVV' porque cada tipo de documento tiene su propia numeración
@@ -1274,40 +1208,77 @@ class AprobacionController extends Controller
             $codigoVendedor = $cotizacion->user->codigo_vendedor ?? '001';
             $nombreVendedor = $cotizacion->user->name ?? 'Vendedor Sistema';
             
-            // Obtener datos adicionales del cliente
-            $listaPrecios = $this->obtenerListaPreciosCliente($cotizacion->cliente_codigo);
-            $diasPago = $this->obtenerDiasPagoCliente($cotizacion->cliente_codigo);
-            $nuevecr = $this->obtenerNuevecrCliente($cotizacion->cliente_codigo);
-            $condicionPago = $this->obtenerCondicionPagoCliente($cotizacion->cliente_codigo);
+            // OPTIMIZACIÓN: Combinar todas las consultas de datos del cliente en una sola
+            $queryCliente = "SELECT 
+                LTRIM(RTRIM(SUEN)) as SUCURSAL,
+                ISNULL(DIPRVE, 0) as DIPRVE,
+                ISNULL(CPEN, '') as CPEN,
+                ISNULL(NUVECR, 0) as NUVECR
+            FROM MAEEN WHERE KOEN = '{$cotizacion->cliente_codigo}'";
             
-            // Obtener sucursal del cliente desde SQL Server
-            $querySucursal = "SELECT LTRIM(RTRIM(SUEN)) as SUCURSAL FROM MAEEN WHERE KOEN = '{$cotizacion->cliente_codigo}'";
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $querySucursal . "\ngo\nquit");
+            file_put_contents($tempFile, $queryCliente . "\ngo\nquit");
             
             $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
             $result = shell_exec($command);
             unlink($tempFile);
             
-            // Parsear sucursal del cliente
+            // Parsear todos los datos del cliente de una vez
             $sucursalCliente = '';
+            $diasPago = 0;
+            $condicionPago = '';
+            $nuevecr = 0;
+            
             if ($result && !str_contains($result, 'error')) {
                 $lines = explode("\n", $result);
-                $foundHeader = false;
+                $foundHeaders = false;
+                $headerIndexes = [];
+                
                 foreach ($lines as $line) {
                     $line = trim($line);
-                    // Primero encontrar el header "SUCURSAL"
-                    if ($line === 'SUCURSAL') {
-                        $foundHeader = true;
+                    if (empty($line) || str_contains($line, 'row') || str_contains($line, '---') || str_contains($line, 'Setting')) {
                         continue;
                     }
-                    // Después del header, la siguiente línea con contenido es el valor
-                    if ($foundHeader && !empty($line) && !str_contains($line, 'row') && !str_contains($line, '---') && !str_contains($line, '>')) {
-                        $sucursalCliente = $line;
+                    
+                    // Buscar línea de headers
+                    if (str_contains($line, 'SUCURSAL') || str_contains($line, 'DIPRVE') || str_contains($line, 'CPEN') || str_contains($line, 'NUVECR')) {
+                        $foundHeaders = true;
+                        // Extraer índices de cada columna
+                        $parts = preg_split('/\s+/', $line);
+                        foreach ($parts as $idx => $part) {
+                            $part = trim($part);
+                            if ($part === 'SUCURSAL') $headerIndexes['SUCURSAL'] = $idx;
+                            if ($part === 'DIPRVE') $headerIndexes['DIPRVE'] = $idx;
+                            if ($part === 'CPEN') $headerIndexes['CPEN'] = $idx;
+                            if ($part === 'NUVECR') $headerIndexes['NUVECR'] = $idx;
+                        }
+                        continue;
+                    }
+                    
+                    // Después de headers, siguiente línea con datos
+                    if ($foundHeaders && !empty($headerIndexes)) {
+                        $values = preg_split('/\s+/', $line);
+                        if (count($values) > max($headerIndexes)) {
+                            if (isset($headerIndexes['SUCURSAL'])) {
+                                $sucursalCliente = trim($values[$headerIndexes['SUCURSAL']] ?? '');
+                            }
+                            if (isset($headerIndexes['DIPRVE'])) {
+                                $diasPago = (int)($values[$headerIndexes['DIPRVE']] ?? 0);
+                            }
+                            if (isset($headerIndexes['CPEN'])) {
+                                $condicionPago = trim($values[$headerIndexes['CPEN']] ?? '');
+                            }
+                            if (isset($headerIndexes['NUVECR'])) {
+                                $nuevecr = (float)($values[$headerIndexes['NUVECR']] ?? 0);
+                            }
+                        }
                         break;
                     }
                 }
             }
+            
+            // Obtener lista de precios desde MySQL (rápido, no necesita optimización)
+            $listaPrecios = $this->obtenerListaPreciosCliente($cotizacion->cliente_codigo);
             
             // Si la sucursal está vacía o no se encontró, dejar vacío (no usar '001' como fallback)
             Log::info("Sucursal del cliente '{$cotizacion->cliente_codigo}': '{$sucursalCliente}' " . (empty($sucursalCliente) ? "(vacía - correcto)" : ""));
@@ -1418,7 +1389,48 @@ class AprobacionController extends Controller
             
             Log::info('Encabezado MAEEDO insertado correctamente');
             
-            // Insertar detalles en MAEDDO (COPIADO EXACTO DE PREVISUALIZACIÓN)
+            // OPTIMIZACIÓN: Obtener todos los precios mínimos en una sola consulta
+            $codigosProductos = [];
+            foreach ($cotizacion->productos as $producto) {
+                $codigosProductos[] = "'" . substr($producto->codigo_producto, 0, 13) . "'";
+            }
+            $codigosProductosStr = implode(',', $codigosProductos);
+            $preciosMinimos = [];
+            
+            if (!empty($codigosProductosStr)) {
+                $queryPreciosMin = "SELECT KOPR, ISNULL(PM, 0) as PM FROM MAEPREM WHERE KOPR IN ({$codigosProductosStr})";
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $queryPreciosMin . "\ngo\nquit");
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+                unlink($tempFile);
+                
+                if ($result && !str_contains($result, 'error')) {
+                    $lines = explode("\n", $result);
+                    $foundHeaders = false;
+                    foreach ($lines as $line) {
+                        $line = trim($line);
+                        if (empty($line) || str_contains($line, 'row') || str_contains($line, '---') || str_contains($line, '>') || str_contains($line, 'Setting')) {
+                            continue;
+                        }
+                        if (str_contains($line, 'KOPR') || str_contains($line, 'PM')) {
+                            $foundHeaders = true;
+                            continue;
+                        }
+                        if ($foundHeaders) {
+                            $parts = preg_split('/\s+/', $line);
+                            if (count($parts) >= 2) {
+                                $preciosMinimos[trim($parts[0])] = (float)trim($parts[1]);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Preparar datos de productos para INSERT masivo
+            $insertsMAEDDO = [];
+            
+            // Insertar detalles en MAEDDO
             foreach ($cotizacion->productos as $index => $producto) {
                 $lineaId = $index + 1;
                 
@@ -1458,35 +1470,36 @@ class AprobacionController extends Controller
                 $caprco2 = $rludpr > 0 ? round($cantidad / $rludpr, 2) : 0;
                 $nulidoFormateado = str_pad($lineaId, 5, '0', STR_PAD_LEFT);
                 
-                // Obtener PPPRPM (precio mínimo)
-                $ppprpm = 0;
-                try {
-                    $queryPrecioMin = "SELECT ISNULL(PM, 0) as PM FROM MAEPREM WHERE KOPR = '{$codigoProducto}'";
-                    $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                    file_put_contents($tempFile, $queryPrecioMin . "\ngo\nquit");
-                    $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                    $result = shell_exec($command);
-                    unlink($tempFile);
-                    
-                    if ($result && !str_contains($result, 'error')) {
-                        $lines = explode("\n", $result);
-                        foreach ($lines as $line) {
-                            $line = trim($line);
-                            if (is_numeric($line)) {
-                                $ppprpm = (float)$line;
-                                break;
-                            }
-                        }
-                    }
-                } catch (\Exception $e) {
-                    // Ignorar error
-                }
+                // Obtener precio mínimo desde el array pre-cargado
+                $ppprpm = $preciosMinimos[$codigoProducto] ?? 0;
                 
                 $descuentoUnitario = $cantidad > 0 ? $valorDescuento / $cantidad : 0;
                 $ppprnere1 = $precioNeto - $descuentoUnitario;
                 $ppprnere2 = $ppprnere1;
                 
-                $insertMAEDDO = "
+                // Escapar comillas simples en nombre del producto
+                $nombreProductoEscapado = str_replace("'", "''", $nombreProducto);
+                
+                // Preparar VALUES para INSERT masivo
+                $insertsMAEDDO[] = "(
+                    {$siguienteId}, '01', 'NVV', '{$nudoFormateado}',
+                    '{$cotizacion->cliente_codigo}', '{$sucursalCliente}',
+                    'SI', '{$nulidoFormateado}', 'LIB', 'LIB', '', '{$codigoVendedor}', 'FPN',
+                    {$udtrpr}, {$rludpr}, '{$ud01prTruncado}', '{$ud02prTruncado}',
+                    '{$codigoProducto}', '{$nombreProductoEscapado}',
+                    {$cantidad}, {$caprco2},
+                    '{$listaPrecios}', '$', 'N', 1,
+                    {$precioNeto}, {$precioNeto}, " . ($precioNeto * 1.19) . ", " . ($precioNeto * 1.19) . ",
+                    {$porcentajeDescuento}, {$vadtneli}, {$subtotalConDescuento}, 19, {$ivaConDescuento}, {$total},
+                    'I', CONVERT(DATETIME, CONVERT(DATE, GETDATE())), CONVERT(DATETIME, CONVERT(DATE, GETDATE())), {$nudtli}, '', 0,
+                    {$ppprpm}, {$ppprnere1}, {$ppprnere2}, 1, 0, 0,
+                    0, 0, 0, CONVERT(DATETIME, CONVERT(DATE, GETDATE()))
+                )";
+            }
+            
+            // OPTIMIZACIÓN: INSERT masivo de todos los detalles en una sola consulta
+            if (!empty($insertsMAEDDO)) {
+                $insertMAEDDOMasivo = "
                     INSERT INTO MAEDDO (
                         IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
                         LILG, NULIDO, SULIDO, BOSULIDO, LUVTLIDO, KOFULIDO, TIPR,
@@ -1498,135 +1511,134 @@ class AprobacionController extends Controller
                         TIGELI, FEEMLI, FEERLI, NUDTLI, ARCHIRST, IDRST,
                         PPPRPM, PPPRNERE1, PPPRNERE2, TASADORIG, CUOGASDIF, PROYECTO,
                         POTENCIA, HUMEDAD, IDTABITPRE, FEERLIMODI
-                    ) VALUES (
-                        {$siguienteId}, '01', 'NVV', '{$nudoFormateado}',
-                        '{$cotizacion->cliente_codigo}', '{$sucursalCliente}',
-                        'SI', '{$nulidoFormateado}', 'LIB', 'LIB', '', '{$codigoVendedor}', 'FPN',
-                        {$udtrpr}, {$rludpr}, '{$ud01prTruncado}', '{$ud02prTruncado}',
-                        '{$codigoProducto}', '{$nombreProducto}',
-                        {$cantidad}, {$caprco2},
-                        '{$listaPrecios}', '$', 'N', 1,
-                        {$precioNeto}, {$precioNeto}, " . ($precioNeto * 1.19) . ", " . ($precioNeto * 1.19) . ",
-                        {$porcentajeDescuento}, {$vadtneli}, {$subtotalConDescuento}, 19, {$ivaConDescuento}, {$total},
-                        'I', CONVERT(DATETIME, CONVERT(DATE, GETDATE())), CONVERT(DATETIME, CONVERT(DATE, GETDATE())), {$nudtli}, '', 0,
-                        {$ppprpm}, {$ppprnere1}, {$ppprnere2}, 1, 0, 0,
-                        0, 0, 0, CONVERT(DATETIME, CONVERT(DATE, GETDATE()))
-                    )
-                ";
+                    ) VALUES " . implode(',', $insertsMAEDDO);
                 
-                Log::info("SQL INSERT MAEDDO línea {$lineaId}:");
-                Log::info($insertMAEDDO);
+                Log::info("SQL INSERT MAEDDO masivo (" . count($insertsMAEDDO) . " líneas)");
                 
                 $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $insertMAEDDO . "\ngo\nquit");
+                file_put_contents($tempFile, $insertMAEDDOMasivo . "\ngo\nquit");
                 
                 $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
                 $result = shell_exec($command);
                 
                 unlink($tempFile);
                 
-                if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
-                    throw new \Exception('Error insertando detalle línea ' . $lineaId . ': ' . $result);
+                if (str_contains($result, 'Msg') || str_contains($result, 'Error') || str_contains($result, 'Violation')) {
+                    Log::error("Error en INSERT masivo MAEDDO: " . substr($result, 0, 500));
+                    Log::warning("Intentando INSERTs individuales como fallback...");
+                    
+                    // Fallback: INSERTs individuales si el masivo falla
+                    foreach ($insertsMAEDDO as $idx => $values) {
+                        $insertIndividual = "
+                            INSERT INTO MAEDDO (
+                                IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
+                                LILG, NULIDO, SULIDO, BOSULIDO, LUVTLIDO, KOFULIDO, TIPR,
+                                UDTRPR, RLUDPR, UD01PR, UD02PR,
+                                KOPRCT, NOKOPR, CAPRCO1, CAPRCO2,
+                                KOLTPR, MOPPPR, TIMOPPPR, TAMOPPPR,
+                                PPPRNE, PPPRNELT, PPPRBR, PPPRBRLT,
+                                PODTGLLI, VADTNELI, VANELI, POIVLI, VAIVLI, VABRLI,
+                                TIGELI, FEEMLI, FEERLI, NUDTLI, ARCHIRST, IDRST,
+                                PPPRPM, PPPRNERE1, PPPRNERE2, TASADORIG, CUOGASDIF, PROYECTO,
+                                POTENCIA, HUMEDAD, IDTABITPRE, FEERLIMODI
+                            ) VALUES {$values}";
+                        
+                        $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                        file_put_contents($tempFile, $insertIndividual . "\ngo\nquit");
+                        $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                        $resultIndividual = shell_exec($command);
+                        unlink($tempFile);
+                        
+                        if (str_contains($resultIndividual, 'Msg') || str_contains($resultIndividual, 'Error')) {
+                            throw new \Exception('Error insertando detalle línea ' . ($idx + 1) . ': ' . substr($resultIndividual, 0, 500));
+                        }
+                    }
+                    Log::info('INSERTs individuales completados correctamente (fallback)');
                 }
             }
             
             Log::info('Detalles MAEDDO insertados correctamente');
             
-            // Actualizar stock comprometido en MAEST
+            // OPTIMIZACIÓN: Combinar todos los UPDATEs en consultas masivas usando CASE WHEN
+            $codigosProductosUpdate = [];
+            $cantidadesUpdate = [];
             foreach ($cotizacion->productos as $producto) {
-                $updateMAEST = "
+                $codigo = substr($producto->codigo_producto, 0, 13);
+                $codigosProductosUpdate[] = "'{$codigo}'";
+                $cantidadesUpdate[$codigo] = $producto->cantidad;
+            }
+            $codigosProductosUpdateStr = implode(',', $codigosProductosUpdate);
+            
+            if (!empty($codigosProductosUpdateStr)) {
+                // Construir CASE WHEN para cada producto
+                $caseStocksalida = [];
+                $caseStocknv1 = [];
+                $caseStocknv2 = [];
+                
+                foreach ($cantidadesUpdate as $codigo => $cantidad) {
+                    $caseStocksalida[] = "WHEN KOPR = '{$codigo}' THEN ISNULL(STOCKSALIDA, 0) + {$cantidad}";
+                    $caseStocknv1[] = "WHEN KOPR = '{$codigo}' THEN ISNULL(STOCKNV1, 0) + {$cantidad}";
+                    $caseStocknv2[] = "WHEN KOPR = '{$codigo}' THEN ISNULL(STOCKNV2, 0) + {$cantidad}";
+                }
+                
+                // UPDATE masivo MAEST (STOCKSALIDA)
+                $updateMAESTMasivo = "
                     UPDATE MAEST 
-                    SET STOCKSALIDA = ISNULL(STOCKSALIDA, 0) + {$producto->cantidad}
-                    WHERE KOPR = '{$producto->codigo_producto}' AND EMPRESA = '01'
+                    SET STOCKSALIDA = CASE " . implode(' ', $caseStocksalida) . " ELSE STOCKSALIDA END
+                    WHERE KOPR IN ({$codigosProductosUpdateStr}) AND EMPRESA = '01'
                 ";
                 
                 $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $updateMAEST . "\ngo\nquit");
-                
+                file_put_contents($tempFile, $updateMAESTMasivo . "\ngo\nquit");
                 $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                $result = shell_exec($command);
-                
+                shell_exec($command);
                 unlink($tempFile);
                 
-                if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
-                    Log::warning('Error actualizando stock comprometido para producto ' . $producto->codigo_producto . ': ' . $result);
-                }
-            }
-            
-            Log::info('Stock comprometido MAEST actualizado correctamente');
-            
-            // Actualizar productos en MAEPR (STOCNV1 y STOCNV2)
-            foreach ($cotizacion->productos as $producto) {
-                $updateMAEPR = "
+                // UPDATE masivo MAEPR (STOCNV1, STOCNV2, ULTIMACOMPRA)
+                $updateMAEPRMasivo = "
                     UPDATE MAEPR 
-                    SET STOCNV1 = ISNULL(STOCNV1, 0) + {$producto->cantidad},
-                        STOCNV2 = ISNULL(STOCNV2, 0) + {$producto->cantidad},
+                    SET STOCNV1 = CASE " . implode(' ', $caseStocknv1) . " ELSE STOCNV1 END,
+                        STOCNV2 = CASE " . implode(' ', $caseStocknv2) . " ELSE STOCNV2 END,
                         ULTIMACOMPRA = GETDATE()
-                    WHERE KOPR = '{$producto->codigo_producto}'
+                    WHERE KOPR IN ({$codigosProductosUpdateStr})
                 ";
                 
                 $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $updateMAEPR . "\ngo\nquit");
-                
+                file_put_contents($tempFile, $updateMAEPRMasivo . "\ngo\nquit");
                 $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                $result = shell_exec($command);
-                
+                shell_exec($command);
                 unlink($tempFile);
                 
-                if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
-                    Log::warning('Error actualizando MAEPR para producto ' . $producto->codigo_producto . ': ' . $result);
-                }
-            }
-            
-            Log::info('STOCNV1 y STOCNV2 en MAEPR actualizados correctamente');
-            
-            // Actualizar stock en MAEST (STOCKNV1 y STOCKNV2)
-            foreach ($cotizacion->productos as $producto) {
-                $updateMAESTStock = "
+                // UPDATE masivo MAEST (STOCKNV1, STOCKNV2)
+                $updateMAESTStockMasivo = "
                     UPDATE MAEST 
-                    SET STOCKNV1 = ISNULL(STOCKNV1, 0) + {$producto->cantidad},
-                        STOCKNV2 = ISNULL(STOCKNV2, 0) + {$producto->cantidad}
-                    WHERE KOPR = '{$producto->codigo_producto}' AND KOPRST = 'LIB'
+                    SET STOCKNV1 = CASE " . implode(' ', $caseStocknv1) . " ELSE STOCKNV1 END,
+                        STOCKNV2 = CASE " . implode(' ', $caseStocknv2) . " ELSE STOCKNV2 END
+                    WHERE KOPR IN ({$codigosProductosUpdateStr}) AND KOPRST = 'LIB'
                 ";
                 
                 $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $updateMAESTStock . "\ngo\nquit");
-                
+                file_put_contents($tempFile, $updateMAESTStockMasivo . "\ngo\nquit");
                 $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                $result = shell_exec($command);
-                
+                shell_exec($command);
                 unlink($tempFile);
                 
-                if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
-                    Log::warning('Error actualizando STOCKNV en MAEST para producto ' . $producto->codigo_producto . ': ' . $result);
-                }
-            }
-            
-            Log::info('STOCKNV1 y STOCKNV2 en MAEST actualizados correctamente');
-            
-            // Actualizar stock en MAEPREM (STOCNV1 y STOCNV2)
-            foreach ($cotizacion->productos as $producto) {
-                $updateMAEPREM = "
+                // UPDATE masivo MAEPREM (STOCNV1, STOCNV2)
+                $updateMAEPREMMasivo = "
                     UPDATE MAEPREM 
-                    SET STOCNV1 = ISNULL(STOCNV1, 0) + {$producto->cantidad},
-                        STOCNV2 = ISNULL(STOCNV2, 0) + {$producto->cantidad}
-                    WHERE KOPR = '{$producto->codigo_producto}' AND EMPRESA = '01'
+                    SET STOCNV1 = CASE " . implode(' ', $caseStocknv1) . " ELSE STOCNV1 END,
+                        STOCNV2 = CASE " . implode(' ', $caseStocknv2) . " ELSE STOCNV2 END
+                    WHERE KOPR IN ({$codigosProductosUpdateStr}) AND EMPRESA = '01'
                 ";
                 
                 $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $updateMAEPREM . "\ngo\nquit");
-                
+                file_put_contents($tempFile, $updateMAEPREMMasivo . "\ngo\nquit");
                 $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                $result = shell_exec($command);
-                
+                shell_exec($command);
                 unlink($tempFile);
                 
-                if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
-                    Log::warning('Error actualizando STOCNV en MAEPREM para producto ' . $producto->codigo_producto . ': ' . $result);
-                }
+                Log::info('Stock comprometido y STOCNV actualizados correctamente (consultas masivas)');
             }
-            
-            Log::info('STOCNV1 y STOCNV2 en MAEPREM actualizados correctamente');
             
             Log::info('Productos MAEPR actualizados correctamente');
             
@@ -1657,8 +1669,7 @@ class AprobacionController extends Controller
             // Truncar orden de compra a 40 caracteres
             $ordenCompraTruncada = substr($numeroOrdenCompra, 0, 40);
             
-            // Obtener condición de pago del cliente
-            $condicionPago = $this->obtenerCondicionPagoCliente($cotizacion->cliente_codigo);
+            // La condición de pago ya se obtuvo arriba en la consulta combinada
             
             // Obtener datos de picking (prioridad: parámetro $datosPicking > cotización > vacío)
             $separadorPor = $datosPicking['separado_por'] ?? $cotizacion->guia_picking_separado_por ?? '';
