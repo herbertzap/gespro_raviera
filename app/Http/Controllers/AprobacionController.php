@@ -2380,7 +2380,7 @@ class AprobacionController extends Controller
     }
 
     /**
-     * Limpiar nombre del producto removiendo información adicional como "xxxxxxxmultiplo: X" o "adicional"
+     * Limpiar nombre del producto removiendo información adicional como "Múltiplo: X" o "adicional"
      */
     private function limpiarNombreProducto($nombreProducto)
     {
@@ -2390,10 +2390,14 @@ class AprobacionController extends Controller
         
         $nombreLimpio = $nombreProducto;
         
-        // Remover patrones como "xxxxxxxmultiplo: X" o "xxxxxmultiplo: X" al final
+        // Remover patrones como "xxxxxxxmultiplo: X" o "xxxxxmultiplo: X" al final (case insensitive)
         $nombreLimpio = preg_replace('/\s*xxxxxxx?multiplo:\s*\d+.*$/i', '', $nombreLimpio);
-        // Remover "multiplo: X" al final
-        $nombreLimpio = preg_replace('/\s*multiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        // Remover "Múltiplo: X" o "multiplo: X" al final (con o sin acento, case insensitive)
+        $nombreLimpio = preg_replace('/\s*[Mm][úu]ltiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        // Remover "MULTIPLO: X" al final
+        $nombreLimpio = preg_replace('/\s*MULTIPLO:\s*\d+.*$/i', '', $nombreLimpio);
+        // Remover "UN.Múltiplo: X" o "UN.MULTIPLO: X" al final
+        $nombreLimpio = preg_replace('/\s*UN\.\s*[Mm][úu]?ltiplo:\s*\d+.*$/i', '', $nombreLimpio);
         // Remover la palabra "adicional" si aparece
         $nombreLimpio = preg_replace('/\s*adicional\s*/i', ' ', $nombreLimpio);
         // Limpiar espacios múltiples y recortar

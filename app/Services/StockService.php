@@ -114,9 +114,12 @@ class StockService
                     // Calcular stock disponible: STFI1 - (STOCNV1 + stock_nvv_mysql)
                     $stockDisponible = $stockFisico - ($stockComprometidoSQL + $stockComprometidoLocal);
                     
+                    // Limpiar nombre del producto removiendo información adicional como "Múltiplo: X"
+                    $nombreProducto = $this->limpiarNombreProducto(trim($fields[1]));
+                    
                     $producto = [
                         'codigo_producto' => trim($fields[0]),
-                        'nombre_producto' => trim($fields[1]),
+                        'nombre_producto' => $nombreProducto,
                         'nombre_bodega' => (trim($fields[2]) ?: 'BODEGA LIB'),
                         'codigo_bodega' => (trim($fields[3]) ?: 'LIB'),
                         'stock_fisico' => $stockFisico,
@@ -337,5 +340,32 @@ class StockService
                 $stockLocal->liberarStock($producto['cantidad']);
             }
         }
+    }
+    
+    /**
+     * Limpiar nombre del producto removiendo información adicional como "Múltiplo: X"
+     */
+    private function limpiarNombreProducto($nombreProducto)
+    {
+        if (empty($nombreProducto)) {
+            return $nombreProducto;
+        }
+        
+        $nombreLimpio = $nombreProducto;
+        
+        // Remover patrones como "xxxxxxxmultiplo: X" o "xxxxxmultiplo: X" al final (case insensitive)
+        $nombreLimpio = preg_replace('/\s*xxxxxxx?multiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        // Remover "Múltiplo: X" o "multiplo: X" al final (con o sin acento, case insensitive)
+        $nombreLimpio = preg_replace('/\s*[Mm][úu]ltiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        // Remover "MULTIPLO: X" al final
+        $nombreLimpio = preg_replace('/\s*MULTIPLO:\s*\d+.*$/i', '', $nombreLimpio);
+        // Remover "UN.Múltiplo: X" o "UN.MULTIPLO: X" al final
+        $nombreLimpio = preg_replace('/\s*UN\.\s*[Mm][úu]?ltiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        // Remover la palabra "adicional" si aparece
+        $nombreLimpio = preg_replace('/\s*adicional\s*/i', ' ', $nombreLimpio);
+        // Limpiar espacios múltiples y recortar
+        $nombreLimpio = preg_replace('/\s+/', ' ', trim($nombreLimpio));
+        
+        return $nombreLimpio;
     }
 } 
