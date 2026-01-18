@@ -1563,9 +1563,10 @@ class AprobacionController extends Controller
             $codigosProductosUpdate = [];
             $cantidadesUpdate = [];
             foreach ($cotizacion->productos as $producto) {
-                $codigo = substr($producto->codigo_producto, 0, 13);
-                $codigosProductosUpdate[] = "'{$codigo}'";
-                $cantidadesUpdate[$codigo] = $producto->cantidad;
+                $codigo = trim(substr($producto->codigo_producto, 0, 13));
+                $codigoEscapado = str_replace("'", "''", $codigo); // Escapar comillas simples
+                $codigosProductosUpdate[] = "'{$codigoEscapado}'";
+                $cantidadesUpdate[$codigoEscapado] = $producto->cantidad;
             }
             $codigosProductosUpdateStr = implode(',', $codigosProductosUpdate);
             
@@ -1577,9 +1578,47 @@ class AprobacionController extends Controller
                 
                 foreach ($cantidadesUpdate as $codigo => $cantidad) {
                     $caseStocksalida[] = "WHEN KOPR = '{$codigo}' THEN ISNULL(STOCKSALIDA, 0) + {$cantidad}";
-                    $caseStocknv1[] = "WHEN KOPR = '{$codigo}' THEN ISNULL(STOCKNV1, 0) + {$cantidad}";
-                    $caseStocknv2[] = "WHEN KOPR = '{$codigo}' THEN ISNULL(STOCKNV2, 0) + {$cantidad}";
+                    $caseStocknv1[] = "WHEN KOPR = '{$codigo}' THEN ISNULL(STOCNV1, 0) + {$cantidad}";
+                    $caseStocknv2[] = "WHEN KOPR = '{$codigo}' THEN ISNULL(STOCNV2, 0) + {$cantidad}";
                 }
+                
+                // Función helper mejorada para detectar errores reales (ignora mensajes informativos)
+                $detectarErrorReal = function($result) {
+                    // Mensajes informativos normales de tsql que NO son errores
+                    $mensajesInformativos = [
+                        'Setting HIGUERA as default database in login packet',
+                        'locale is',
+                        'locale charset is',
+                        'using default charset',
+                        '1>',
+                        '2>',
+                        '3>',
+                    ];
+                    
+                    // Limpiar el resultado removiendo mensajes informativos
+                    $resultLimpio = $result;
+                    foreach ($mensajesInformativos as $msgInfo) {
+                        $resultLimpio = str_replace($msgInfo, '', $resultLimpio);
+                    }
+                    $resultLimpio = preg_replace('/\n\s*\n/', "\n", $resultLimpio);
+                    $resultLimpio = trim($resultLimpio);
+                    
+                    // Verificar errores REALES de SQL Server (Msg con Level >= 11 es error)
+                    if (preg_match('/Msg (\d+), Level (\d+), State \d+/', $result, $matches)) {
+                        $level = (int)$matches[2];
+                        if ($level >= 11) {
+                            return true; // Es un error real
+                        }
+                    } elseif (str_contains($result, 'Cannot insert') || 
+                             str_contains($result, 'violation') || 
+                             str_contains($result, 'constraint') ||
+                             str_contains($result, 'Permission denied') ||
+                             str_contains($result, 'Invalid object name')) {
+                        return true; // Es un error real
+                    }
+                    
+                    return false; // No es un error real
+                };
                 
                 // UPDATE masivo MAEST (STOCKSALIDA)
                 $updateMAESTMasivo = "
@@ -1591,37 +1630,141 @@ class AprobacionController extends Controller
                 $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
                 file_put_contents($tempFile, $updateMAESTMasivo . "\ngo\nquit");
                 $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                shell_exec($command);
+                $resultMAEST = shell_exec($command);
                 unlink($tempFile);
                 
-                // UPDATE masivo MAEPR (STOCNV1, STOCNV2, ULTIMACOMPRA)
-                $updateMAEPRMasivo = "
-                    UPDATE MAEPR 
-                    SET STOCNV1 = CASE " . implode(' ', $caseStocknv1) . " ELSE STOCNV1 END,
-                        STOCNV2 = CASE " . implode(' ', $caseStocknv2) . " ELSE STOCNV2 END,
-                        ULTIMACOMPRA = GETDATE()
-                    WHERE KOPR IN ({$codigosProductosUpdateStr})
-                ";
+                // Verificar si el UPDATE de MAEST tuvo errores reales
+                $maestActualizado = !$detectarErrorReal($resultMAEST);
+                if (!$maestActualizado) {
+                    Log::error("Error en UPDATE masivo MAEST STOCKSALIDA: " . substr($resultMAEST, 0, 500));
+                    Log::error("Query ejecutada: " . substr($updateMAESTMasivo, 0, 500));
+                } else {
+                    Log::info("✅ UPDATE MAEST STOCKSALIDA ejecutado correctamente");
+                }
                 
-                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $updateMAEPRMasivo . "\ngo\nquit");
-                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                shell_exec($command);
-                unlink($tempFile);
+                // Si el UPDATE masivo de MAEST falló, hacer UPDATEs individuales como fallback
+                if (!$maestActualizado) {
+                    Log::warning('UPDATE masivo MAEST STOCKSALIDA falló, ejecutando UPDATEs individuales como fallback');
+                    foreach ($cotizacion->productos as $producto) {
+                        $codigo = trim(substr($producto->codigo_producto, 0, 13));
+                        $codigoEscapado = str_replace("'", "''", $codigo);
+                        $cantidad = $producto->cantidad;
+                        
+                        $updateIndividual = "
+                            UPDATE MAEST 
+                            SET STOCKSALIDA = ISNULL(STOCKSALIDA, 0) + {$cantidad}
+                            WHERE KOPR = '{$codigoEscapado}' AND EMPRESA = '01'
+                        ";
+                        
+                        $tempFile = tempnam(sys_get_temp_dir(), 'sql_individual_');
+                        file_put_contents($tempFile, $updateIndividual . "\ngo\nquit");
+                        $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                        $result = shell_exec($command);
+                        unlink($tempFile);
+                        
+                        if (!$detectarErrorReal($result)) {
+                            Log::info("✅ MAEST STOCKSALIDA actualizado individualmente para producto: {$codigo}");
+                        } else {
+                            Log::error("❌ Error actualizando MAEST STOCKSALIDA individual para producto {$codigo}: " . substr($result, 0, 200));
+                        }
+                    }
+                }
                 
-                // UPDATE masivo MAEST (STOCKNV1, STOCKNV2)
+                // UPDATE MAEPR (STOCNV1, STOCNV2) - Usar UPDATEs individuales (más confiable)
+                Log::info("🔄 Actualizando MAEPR STOCNV1/STOCNV2 para " . count($cotizacion->productos) . " productos");
+                foreach ($cotizacion->productos as $producto) {
+                    $codigo = trim(substr($producto->codigo_producto, 0, 13));
+                    $codigoEscapado = str_replace("'", "''", $codigo);
+                    $cantidad = $producto->cantidad;
+                    
+                    // Obtener valores ANTES del UPDATE
+                    $queryAntes = "SELECT KOPR, STOCNV1, STOCNV2 FROM MAEPR WHERE KOPR = '{$codigoEscapado}'";
+                    $tempFileAntes = tempnam(sys_get_temp_dir(), 'sql_antes_');
+                    file_put_contents($tempFileAntes, $queryAntes . "\ngo\nquit");
+                    $commandAntes = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFileAntes} 2>&1";
+                    $resultAntes = shell_exec($commandAntes);
+                    unlink($tempFileAntes);
+                    
+                    $stocnv1Antes = null;
+                    $stocnv2Antes = null;
+                    if (preg_match('/' . preg_quote($codigo, '/') . '\s+(\d+)\s+(\d+)/', $resultAntes, $matches)) {
+                        $stocnv1Antes = (int)$matches[1];
+                        $stocnv2Antes = (int)$matches[2];
+                        Log::info("📊 ANTES UPDATE para {$codigo}: STOCNV1={$stocnv1Antes}, STOCNV2={$stocnv2Antes}");
+                    }
+                    
+                    // Ejecutar UPDATE
+                    $updateIndividual = "
+                        UPDATE MAEPR 
+                        SET STOCNV1 = ISNULL(STOCNV1, 0) + {$cantidad},
+                            STOCNV2 = ISNULL(STOCNV2, 0) + {$cantidad}
+                        WHERE KOPR = '{$codigoEscapado}'
+                    ";
+                    
+                    Log::info("🔍 Ejecutando UPDATE MAEPR para producto {$codigo}");
+                    
+                    $tempFile = tempnam(sys_get_temp_dir(), 'sql_maepr_');
+                    file_put_contents($tempFile, $updateIndividual . "\ngo\nquit");
+                    $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                    $result = shell_exec($command);
+                    unlink($tempFile);
+                    
+                    // Verificar que realmente se actualizó
+                    $queryDespues = "SELECT KOPR, STOCNV1, STOCNV2 FROM MAEPR WHERE KOPR = '{$codigoEscapado}'";
+                    $tempFileDespues = tempnam(sys_get_temp_dir(), 'sql_despues_');
+                    file_put_contents($tempFileDespues, $queryDespues . "\ngo\nquit");
+                    $commandDespues = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFileDespues} 2>&1";
+                    $resultDespues = shell_exec($commandDespues);
+                    unlink($tempFileDespues);
+                    
+                    $stocnv1Despues = null;
+                    $stocnv2Despues = null;
+                    if (preg_match('/' . preg_quote($codigo, '/') . '\s+(\d+)\s+(\d+)/', $resultDespues, $matches)) {
+                        $stocnv1Despues = (int)$matches[1];
+                        $stocnv2Despues = (int)$matches[2];
+                        Log::info("📊 DESPUÉS UPDATE para {$codigo}: STOCNV1={$stocnv1Despues}, STOCNV2={$stocnv2Despues}");
+                    }
+                    
+                    // Verificar si hubo error o si no se actualizó
+                    if ($detectarErrorReal($result)) {
+                        Log::error("❌ ERROR actualizando MAEPR para producto {$codigo}: " . substr($result, 0, 300));
+                    } elseif ($stocnv1Antes !== null && $stocnv1Despues !== null) {
+                        $diferencia1 = $stocnv1Despues - $stocnv1Antes;
+                        $diferencia2 = $stocnv2Despues - $stocnv2Antes;
+                        
+                        if ($diferencia1 == $cantidad && $diferencia2 == $cantidad) {
+                            Log::info("✅ MAEPR actualizado CORRECTAMENTE para producto {$codigo}: STOCNV1 {$stocnv1Antes}→{$stocnv1Despues} (+{$cantidad}), STOCNV2 {$stocnv2Antes}→{$stocnv2Despues} (+{$cantidad})");
+                        } else {
+                            Log::error("❌ ERROR: MAEPR NO se actualizó correctamente para producto {$codigo}. Diferencia esperada: {$cantidad}, obtenida: STOCNV1={$diferencia1}, STOCNV2={$diferencia2}");
+                            Log::error("   Resultado UPDATE: " . substr($result, 0, 200));
+                        }
+                    } else {
+                        Log::warning("⚠️ No se pudieron verificar los valores para producto {$codigo}. Resultado antes: " . substr($resultAntes, 0, 100) . " | Resultado después: " . substr($resultDespues, 0, 100));
+                    }
+                }
+                Log::info("✅ UPDATE MAEPR STOCNV1/STOCNV2 completado para todos los productos");
+                
+                // UPDATE masivo MAEST (STOCNV1, STOCNV2) - IMPORTANTE: En MAEST los campos son STOCNV1/STOCNV2 (sin K)
+                // IMPORTANTE: MAEST requiere EMPRESA, KOSU y KOBO (no KOPRST)
                 $updateMAESTStockMasivo = "
                     UPDATE MAEST 
-                    SET STOCKNV1 = CASE " . implode(' ', $caseStocknv1) . " ELSE STOCKNV1 END,
-                        STOCKNV2 = CASE " . implode(' ', $caseStocknv2) . " ELSE STOCKNV2 END
-                    WHERE KOPR IN ({$codigosProductosUpdateStr}) AND KOPRST = 'LIB'
+                    SET STOCNV1 = CASE " . implode(' ', $caseStocknv1) . " ELSE STOCNV1 END,
+                        STOCNV2 = CASE " . implode(' ', $caseStocknv2) . " ELSE STOCNV2 END
+                    WHERE KOPR IN ({$codigosProductosUpdateStr}) AND EMPRESA = '01' AND KOSU = 'LIB' AND KOBO = 'LIB'
                 ";
                 
                 $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
                 file_put_contents($tempFile, $updateMAESTStockMasivo . "\ngo\nquit");
                 $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                shell_exec($command);
+                $resultMAESTStock = shell_exec($command);
                 unlink($tempFile);
+                
+                $maestStockActualizado = !$detectarErrorReal($resultMAESTStock);
+                if (!$maestStockActualizado) {
+                    Log::error("Error en UPDATE masivo MAEST STOCKNV1/STOCKNV2: " . substr($resultMAESTStock, 0, 500));
+                } else {
+                    Log::info("✅ UPDATE MAEST STOCKNV1/STOCKNV2 ejecutado correctamente");
+                }
                 
                 // UPDATE masivo MAEPREM (STOCNV1, STOCNV2)
                 $updateMAEPREMMasivo = "
@@ -1634,30 +1777,27 @@ class AprobacionController extends Controller
                 $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
                 file_put_contents($tempFile, $updateMAEPREMMasivo . "\ngo\nquit");
                 $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-                shell_exec($command);
+                $resultMAEPREM = shell_exec($command);
                 unlink($tempFile);
+                
+                $maepremActualizado = !$detectarErrorReal($resultMAEPREM);
+                if (!$maepremActualizado) {
+                    Log::error("Error en UPDATE masivo MAEPREM STOCNV1/STOCNV2: " . substr($resultMAEPREM, 0, 500));
+                } else {
+                    Log::info("✅ UPDATE MAEPREM STOCNV1/STOCNV2 ejecutado correctamente");
+                }
                 
                 Log::info('Stock comprometido y STOCNV actualizados correctamente (consultas masivas)');
             }
             
             Log::info('Productos MAEPR actualizados correctamente');
             
-            // Actualizar stock comprometido en MySQL (productos tabla local)
-            foreach ($cotizacion->productos as $producto) {
-                $productoLocal = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
-                
-                if ($productoLocal) {
-                    // Incrementar stock comprometido virtual
-                    $productoLocal->stock_comprometido = ($productoLocal->stock_comprometido ?? 0) + $producto->cantidad;
-                    // Recalcular stock disponible
-                    $productoLocal->stock_disponible = ($productoLocal->stock_fisico ?? 0) - $productoLocal->stock_comprometido;
-                    $productoLocal->save();
-                    
-                    Log::info("Stock MySQL actualizado para {$producto->codigo_producto}: Comprometido +{$producto->cantidad}, Disponible: {$productoLocal->stock_disponible}");
-                }
-            }
-            
-            Log::info('Stock comprometido MySQL actualizado correctamente');
+            // NOTA: No actualizamos stock comprometido en MySQL aquí
+            // MySQL es solo una tabla de paso/caché. Los datos principales están en SQL Server.
+            // El stock comprometido en MySQL se actualiza automáticamente cuando se ejecuta
+            // la sincronización de productos desde SQL Server (StockService::sincronizarStockDesdeSQLServer)
+            // que obtiene STOCNV1 de SQL Server y lo sincroniza con MySQL.
+            Log::info('Stock comprometido actualizado en SQL Server (MAEPR, MAEST, MAEPREM). MySQL se sincronizará automáticamente en la próxima sincronización de productos.');
             
             // INSERT MAEEDOOB - Observaciones, orden de compra y datos de picking
             $observacionVendedor = $cotizacion->observacion_vendedor ?? '';

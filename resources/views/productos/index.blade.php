@@ -424,6 +424,9 @@ function iniciarSincronizacionProductos() {
     }, 500);
 }
 
+// Variable para controlar si ya se sincronizó el stock
+let stockSincronizado = false;
+
 // Función recursiva para procesar la sincronización por lotes
 function procesarSincronizacion(batch) {
     sincronizacionEnProceso = true;
@@ -441,6 +444,7 @@ function procesarSincronizacion(batch) {
             batch: batch,
             _token: '{{ csrf_token() }}'
         },
+        timeout: 120000, // 2 minutos por lote
         success: function(response) {
             if (response.success) {
                 // Acumular estadísticas
@@ -458,12 +462,19 @@ function procesarSincronizacion(batch) {
                 $('#barraProgreso').css('width', porcentaje + '%');
                 $('#textoProgreso').text(porcentaje + '%');
                 
-                // Verificar si hay más lotes
+                // Verificar si hay más lotes de productos
                 if (response.hasMore && response.nextBatch !== null) {
-                    // Continuar con el siguiente lote
+                    // Continuar con el siguiente lote de productos
                     setTimeout(() => {
                         procesarSincronizacion(response.nextBatch);
                     }, 500); // Pequeño delay entre lotes
+                } else if (response.syncStock && !stockSincronizado) {
+                    // Si terminamos productos, sincronizar stock y precios
+                    stockSincronizado = true;
+                    $('#estadoActual').text('Productos sincronizados. Sincronizando stock y precios desde bodega LIB...');
+                    setTimeout(() => {
+                        sincronizarStock();
+                    }, 500);
                 } else {
                     // Sincronización completada
                     sincronizacionCompletada();
@@ -482,9 +493,43 @@ function procesarSincronizacion(batch) {
     });
 }
 
+// Función para sincronizar stock y precios
+function sincronizarStock() {
+    $.ajax({
+        url: '{{ route("productos.sincronizar-stock") }}',
+        method: 'POST',
+        data: {
+            _token: '{{ csrf_token() }}'
+        },
+        timeout: 300000, // 5 minutos para sincronizar stock
+        success: function(response) {
+            if (response.success) {
+                $('#estadoActual').html(`
+                    <strong>✅ Sincronización completa finalizada</strong><br>
+                    Productos procesados: ${estadisticasTotales.procesados.toLocaleString()}<br>
+                    Productos nuevos: ${estadisticasTotales.creados.toLocaleString()}<br>
+                    Productos actualizados: ${estadisticasTotales.actualizados.toLocaleString()}<br>
+                    Stock actualizado: ${response.stock_actualizado || 0} productos
+                `);
+                sincronizacionCompletada();
+            } else {
+                mostrarError(response.message || 'Error al sincronizar stock');
+            }
+        },
+        error: function(xhr) {
+            let mensajeError = 'Error al sincronizar stock';
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+                mensajeError = xhr.responseJSON.message;
+            }
+            mostrarError(mensajeError);
+        }
+    });
+}
+
 // Función para mostrar que la sincronización está completa
 function sincronizacionCompletada() {
     sincronizacionEnProceso = false;
+    stockSincronizado = false; // Reset para próxima sincronización
     
     // Actualizar barra de progreso al 100%
     $('#barraProgreso').removeClass('progress-bar-animated').css('width', '100%');

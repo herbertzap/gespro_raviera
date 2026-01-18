@@ -28,21 +28,21 @@ class StockService
                     CAST(ISNULL(MAEST.STFI1, 0) AS VARCHAR(4000)) + '|' +
                     CAST(ISNULL(MAEST.STOCNV1, 0) AS VARCHAR(4000)) + '|' +
                     CAST(ISNULL(MAEPR.UD01PR, 'UN') AS VARCHAR(4000)) + '|' +
-                    CAST(ISNULL(TABPRE01.PP01UD, 0) AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(TABPRE01.PP01UD, ISNULL(MAEPR.POIVPR, 0)) AS VARCHAR(4000)) + '|' +
                     CAST(ISNULL(TABPRE01.PP02UD, 0) AS VARCHAR(4000)) + '|' +
                     CAST(ISNULL(TABPRE01.DTMA01UD, 0) AS VARCHAR(4000)) + '|' +
-                    CAST(ISNULL(TABPRE02.PP01UD, 0) AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(TABPRE02.PP01UD, ISNULL(MAEPR.POIVPR, 0)) AS VARCHAR(4000)) + '|' +
                     CAST(ISNULL(TABPRE02.PP02UD, 0) AS VARCHAR(4000)) + '|' +
                     CAST(ISNULL(TABPRE02.DTMA01UD, 0) AS VARCHAR(4000)) + '|' +
-                    CAST(ISNULL(TABPRE03.PP01UD, 0) AS VARCHAR(4000)) + '|' +
+                    CAST(ISNULL(TABPRE03.PP01UD, ISNULL(MAEPR.POIVPR, 0)) AS VARCHAR(4000)) + '|' +
                     CAST(ISNULL(TABPRE03.PP02UD, 0) AS VARCHAR(4000)) + '|' +
                     CAST(ISNULL(TABPRE03.DTMA01UD, 0) AS VARCHAR(4000)) AS DATOS
                 FROM MAEST
                 LEFT JOIN MAEPR ON MAEPR.KOPR = MAEST.KOPR
                 LEFT JOIN TABBO ON MAEST.KOBO = TABBO.KOBO
-                LEFT JOIN TABPRE AS TABPRE01 ON MAEPR.KOPR = TABPRE01.KOPR AND TABPRE01.KOLT = '01'
-                LEFT JOIN TABPRE AS TABPRE02 ON MAEPR.KOPR = TABPRE02.KOPR AND TABPRE02.KOLT = '02'
-                LEFT JOIN TABPRE AS TABPRE03 ON MAEPR.KOPR = TABPRE03.KOPR AND TABPRE03.KOLT = '03'
+                LEFT JOIN TABPRE AS TABPRE01 ON MAEPR.KOPR = TABPRE01.KOPR AND TABPRE01.KOLT = '01P'
+                LEFT JOIN TABPRE AS TABPRE02 ON MAEPR.KOPR = TABPRE02.KOPR AND TABPRE02.KOLT = '02P'
+                LEFT JOIN TABPRE AS TABPRE03 ON MAEPR.KOPR = TABPRE03.KOPR AND TABPRE03.KOLT = '03P'
                 WHERE MAEST.KOBO = 'LIB'
                 ORDER BY MAEPR.KOPR
             ";
@@ -129,26 +129,39 @@ class StockService
                         'precio_venta' => $convertToFloat($fields[7])
                     ];
                     
-                    // Si hay 17 campos, incluir precios de las tres listas (01P, 02P, 03P)
-                    if (count($fields) >= 17) {
-                        // Lista 01P: campos 8, 9, 10
-                        $precio01p = $convertToFloat($fields[8]);
+                    // Si hay 16 o más campos, incluir precios de las tres listas (01P, 02P, 03P)
+                    // Formato: KOPR|NOKOPR|NOKOBO|KOBO|STFI1|STOCNV1|UD01PR|PP01UD(01P)|PP02UD(01P)|DTMA01UD(01P)|PP01UD(02P)|PP02UD(02P)|DTMA01UD(02P)|PP01UD(03P)|PP02UD(03P)|DTMA01UD(03P)
+                    // NOTA: La consulta SQL ahora usa POIVPR como fallback cuando las listas están en NULL
+                    if (count($fields) >= 16) {
+                        // Lista 01P: campos 7, 8, 9
+                        $precio01p = $convertToFloat($fields[7]);
                         $producto['precio_01p'] = $precio01p;
-                        $producto['precio_01p_ud2'] = $convertToFloat($fields[9]);
-                        $producto['descuento_maximo_01p'] = $convertToFloat($fields[10]);
+                        $producto['precio_01p_ud2'] = $convertToFloat($fields[8]);
+                        $producto['descuento_maximo_01p'] = $convertToFloat($fields[9]);
                         
-                        // Lista 02P: campos 11, 12, 13
-                        $producto['precio_02p'] = $convertToFloat($fields[11]);
-                        $producto['precio_02p_ud2'] = $convertToFloat($fields[12]);
-                        $producto['descuento_maximo_02p'] = $convertToFloat($fields[13]);
+                        // Lista 02P: campos 10, 11, 12
+                        $precio02p = $convertToFloat($fields[10]);
+                        $producto['precio_02p'] = $precio02p;
+                        $producto['precio_02p_ud2'] = $convertToFloat($fields[11]);
+                        $producto['descuento_maximo_02p'] = $convertToFloat($fields[12]);
                         
-                        // Lista 03P: campos 14, 15, 16
-                        $producto['precio_03p'] = $convertToFloat($fields[14]);
-                        $producto['precio_03p_ud2'] = $convertToFloat($fields[15]);
-                        $producto['descuento_maximo_03p'] = $convertToFloat($fields[16]);
+                        // Lista 03P: campos 13, 14, 15
+                        $precio03p = $convertToFloat($fields[13]);
+                        $producto['precio_03p'] = $precio03p;
+                        $producto['precio_03p_ud2'] = $convertToFloat($fields[14]);
+                        $producto['descuento_maximo_03p'] = $convertToFloat($fields[15]);
                         
-                        // precio_venta es el precio de la lista 01P
-                        $producto['precio_venta'] = $precio01p;
+                        // precio_venta es el precio de la lista 01P (o el mayor entre las listas si 01P es 0)
+                        if ($precio01p > 0) {
+                            $producto['precio_venta'] = $precio01p;
+                        } elseif ($precio02p > 0) {
+                            $producto['precio_venta'] = $precio02p;
+                        } elseif ($precio03p > 0) {
+                            $producto['precio_venta'] = $precio03p;
+                        } else {
+                            // Si todas las listas están en 0, usar el campo 7 que ya tiene POIVPR como fallback
+                            $producto['precio_venta'] = $precio01p;
+                        }
                     } else {
                         // Formato antiguo: campo 7 es precio_venta de lista '01'
                         $producto['precio_venta'] = (float)$fields[7];
@@ -190,9 +203,11 @@ class StockService
             ]
         );
         
-        // Actualizar la tabla productos (usada por el cotizador)
+        // Actualizar o crear en la tabla productos (usada por el cotizador)
         try {
-            $updateData = [
+            $productoExistente = \DB::table('productos')->where('KOPR', $producto['codigo_producto'])->first();
+            
+            $data = [
                 'NOKOPR' => $producto['nombre_producto'],
                 'UD01PR' => $producto['unidad_medida'],
                 'stock_fisico' => $producto['stock_fisico'],
@@ -202,27 +217,49 @@ class StockService
             ];
             
             // Agregar precios de las listas si están disponibles
+            // Los precios ya vienen con POIVPR como fallback desde la consulta SQL
             if (isset($producto['precio_01p'])) {
-                $updateData['precio_01p'] = $producto['precio_01p'];
-                $updateData['precio_01p_ud2'] = $producto['precio_01p_ud2'] ?? 0;
-                $updateData['descuento_maximo_01p'] = $producto['descuento_maximo_01p'] ?? 0;
+                $data['precio_01p'] = $producto['precio_01p'];
+                $data['precio_01p_ud2'] = $producto['precio_01p_ud2'] ?? 0;
+                $data['descuento_maximo_01p'] = $producto['descuento_maximo_01p'] ?? 0;
+                // Actualizar POIVPR con el precio 01P si es mayor a 0
+                if ($producto['precio_01p'] > 0) {
+                    $data['POIVPR'] = $producto['precio_01p'];
+                }
             }
             if (isset($producto['precio_02p'])) {
-                $updateData['precio_02p'] = $producto['precio_02p'];
-                $updateData['precio_02p_ud2'] = $producto['precio_02p_ud2'] ?? 0;
-                $updateData['descuento_maximo_02p'] = $producto['descuento_maximo_02p'] ?? 0;
+                $data['precio_02p'] = $producto['precio_02p'];
+                $data['precio_02p_ud2'] = $producto['precio_02p_ud2'] ?? 0;
+                $data['descuento_maximo_02p'] = $producto['descuento_maximo_02p'] ?? 0;
             }
             if (isset($producto['precio_03p'])) {
-                $updateData['precio_03p'] = $producto['precio_03p'];
-                $updateData['precio_03p_ud2'] = $producto['precio_03p_ud2'] ?? 0;
-                $updateData['descuento_maximo_03p'] = $producto['descuento_maximo_03p'] ?? 0;
+                $data['precio_03p'] = $producto['precio_03p'];
+                $data['precio_03p_ud2'] = $producto['precio_03p_ud2'] ?? 0;
+                $data['descuento_maximo_03p'] = $producto['descuento_maximo_03p'] ?? 0;
             }
             
-            \DB::table('productos')
-                ->where('KOPR', $producto['codigo_producto'])
-                ->update($updateData);
+            // Si hay precio_venta, también actualizar POIVPR
+            if (isset($producto['precio_venta']) && $producto['precio_venta'] > 0) {
+                $data['POIVPR'] = $producto['precio_venta'];
+            }
+            
+            if ($productoExistente) {
+                // Actualizar producto existente
+                \DB::table('productos')
+                    ->where('KOPR', $producto['codigo_producto'])
+                    ->update($data);
+            } else {
+                // Crear nuevo producto
+                $data['KOPR'] = $producto['codigo_producto'];
+                $data['TIPR'] = null; // Se actualizará en sincronización completa
+                $data['POIVPR'] = 0; // Se actualizará en sincronización completa
+                $data['activo'] = true;
+                $data['created_at'] = now();
+                \DB::table('productos')->insert($data);
+                Log::info('✅ Producto creado en tabla productos: ' . $producto['codigo_producto']);
+            }
         } catch (\Exception $e) {
-            Log::warning('No se pudo actualizar tabla productos para ' . $producto['codigo_producto'] . ': ' . $e->getMessage());
+            Log::warning('No se pudo actualizar/crear tabla productos para ' . $producto['codigo_producto'] . ': ' . $e->getMessage());
         }
         
         return $stockLocal;

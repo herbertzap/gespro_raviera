@@ -53,6 +53,15 @@ class SincronizarProductos extends Command
         $output = shell_exec($command);
 
         unlink($tempFile);
+        
+        // Asegurar que la salida esté en UTF-8 válido
+        if (!mb_check_encoding($output, 'UTF-8')) {
+            // Intentar convertir desde diferentes codificaciones comunes
+            $output = mb_convert_encoding($output, 'UTF-8', 'ISO-8859-1');
+        }
+        
+        // Limpiar caracteres inválidos de UTF-8
+        $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
 
         $this->info('Output completo:');
         $this->line($output);
@@ -102,6 +111,11 @@ class SincronizarProductos extends Command
         $productosCreados = 0;
 
         foreach ($dataLines as $line) {
+            // Asegurar que la línea esté en UTF-8 válido antes de procesar
+            if (!mb_check_encoding($line, 'UTF-8')) {
+                $line = mb_convert_encoding($line, 'UTF-8', 'ISO-8859-1');
+            }
+            
             // Ahora la salida viene delimitada por '|'
             $fields = explode('|', $line);
             
@@ -115,8 +129,12 @@ class SincronizarProductos extends Command
                 continue;
             }
 
-            // Limpiar nombre del producto removiendo información adicional como "Múltiplo: X"
-            $nombreProducto = $this->limpiarNombreProducto(trim($fields[1]));
+            // Limpiar y asegurar UTF-8 en el nombre del producto
+            $nombreProductoRaw = trim($fields[1]);
+            if (!mb_check_encoding($nombreProductoRaw, 'UTF-8')) {
+                $nombreProductoRaw = mb_convert_encoding($nombreProductoRaw, 'UTF-8', 'ISO-8859-1');
+            }
+            $nombreProducto = $this->limpiarNombreProducto($nombreProductoRaw);
             $tipoProducto = trim($fields[2]);
             $unidadMedida = trim($fields[3]);
             // Función helper para convertir valores vacíos a 0 y manejar valores muy grandes

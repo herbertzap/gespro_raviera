@@ -82,7 +82,7 @@ class CotizacionBusquedaMejoradaController extends Controller
                 });
             }
             
-            $productosMySQL = $query->limit(15)->get();
+            $productosMySQL = $query->limit(25)->get();
             
             if ($productosMySQL->isEmpty()) {
                 return response()->json([

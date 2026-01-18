@@ -14,8 +14,9 @@ class Kernel extends ConsoleKernel
     {
         // $schedule->command('inspire')->hourly();
         
-        // Sincronización diaria de productos a las 2:00 AM
-        $schedule->command('productos:sincronizar')
+        // Sincronización diaria completa de productos a las 2:00 AM
+        // Incluye: productos nuevos, actualización de existentes, precios y stock
+        $schedule->command('productos:sincronizar-programado')
                 ->dailyAt('02:00')
                 ->withoutOverlapping()
                 ->runInBackground();

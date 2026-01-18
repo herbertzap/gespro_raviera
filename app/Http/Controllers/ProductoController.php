@@ -258,6 +258,15 @@ class ProductoController extends Controller
             ]);
 
             $output = Artisan::output();
+            
+            // Asegurar que el output esté en UTF-8 válido
+            if (!mb_check_encoding($output, 'UTF-8')) {
+                // Intentar convertir desde diferentes codificaciones comunes
+                $output = mb_convert_encoding($output, 'UTF-8', 'ISO-8859-1');
+            }
+            
+            // Limpiar caracteres inválidos de UTF-8
+            $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
 
             $nProcesados = 0;
             $nCreados = 0;
@@ -265,6 +274,10 @@ class ProductoController extends Controller
 
             // Intentar extraer totales desde el output del comando
             foreach (explode("\n", $output) as $line) {
+                // Asegurar que cada línea esté en UTF-8 válido
+                if (!mb_check_encoding($line, 'UTF-8')) {
+                    $line = mb_convert_encoding($line, 'UTF-8', 'ISO-8859-1');
+                }
                 $line = trim($line);
                 if (stripos($line, 'Productos procesados:') !== false) {
                     $nProcesados = (int) filter_var($line, FILTER_SANITIZE_NUMBER_INT);
@@ -307,57 +320,199 @@ class ProductoController extends Controller
                 ], 403);
             }
 
-            // Ejecutar sincronización en background usando el comando mejorado
-            // Procesamos en lotes de 1000 productos
-            $limit = 1000;
             $batch = (int) $request->get('batch', 0);
-            $offset = $batch * $limit;
+            $syncStock = (bool) $request->get('sync_stock', false); // Flag para sincronizar stock al final
+            
+            // Si es el primer batch (batch 0), sincronizar productos en lotes
+            if ($batch == 0) {
+                // Ejecutar sincronización de productos en lotes de 1000
+                $limit = 1000;
+                $offset = 0;
 
-            Log::info("Iniciando sincronización batch {$batch} - offset: {$offset}, limit: {$limit}");
+                Log::info("Iniciando sincronización batch {$batch} - offset: {$offset}, limit: {$limit}");
 
-            Artisan::call('productos:sincronizar', [
-                '--limit' => $limit,
-                '--offset' => $offset
-            ]);
+                Artisan::call('productos:sincronizar', [
+                    '--limit' => $limit,
+                    '--offset' => $offset
+                ]);
 
-            $output = Artisan::output();
-
-            $nProcesados = 0;
-            $nCreados = 0;
-            $nActualizados = 0;
-
-            // Extraer totales desde el output
-            foreach (explode("\n", $output) as $line) {
-                $line = trim($line);
-                if (stripos($line, 'Productos procesados:') !== false) {
-                    $nProcesados = (int) filter_var($line, FILTER_SANITIZE_NUMBER_INT);
-                } elseif (stripos($line, 'Productos creados:') !== false) {
-                    $nCreados = (int) filter_var($line, FILTER_SANITIZE_NUMBER_INT);
-                } elseif (stripos($line, 'Productos actualizados:') !== false) {
-                    $nActualizados = (int) filter_var($line, FILTER_SANITIZE_NUMBER_INT);
+                $output = Artisan::output();
+                
+                // Asegurar que el output esté en UTF-8 válido
+                if (!mb_check_encoding($output, 'UTF-8')) {
+                    $output = mb_convert_encoding($output, 'UTF-8', 'ISO-8859-1');
                 }
+                $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
+
+                $nProcesados = 0;
+                $nCreados = 0;
+                $nActualizados = 0;
+
+                // Extraer totales desde el output
+                foreach (explode("\n", $output) as $line) {
+                    if (!mb_check_encoding($line, 'UTF-8')) {
+                        $line = mb_convert_encoding($line, 'UTF-8', 'ISO-8859-1');
+                    }
+                    
+                    $line = trim($line);
+                    if (stripos($line, 'Productos procesados:') !== false) {
+                        preg_match('/(\d+)/', $line, $matches);
+                        if (isset($matches[1])) {
+                            $nProcesados = (int)$matches[1];
+                        }
+                    } elseif (stripos($line, 'Productos creados:') !== false) {
+                        preg_match('/(\d+)/', $line, $matches);
+                        if (isset($matches[1])) {
+                            $nCreados = (int)$matches[1];
+                        }
+                    } elseif (stripos($line, 'Productos actualizados:') !== false) {
+                        preg_match('/(\d+)/', $line, $matches);
+                        if (isset($matches[1])) {
+                            $nActualizados = (int)$matches[1];
+                        }
+                    }
+                }
+
+                // Lógica mejorada: continuar si procesamos exactamente el límite (1000)
+                // Si procesamos menos de 1000, puede ser el último lote, pero intentamos uno más para estar seguros
+                // Solo detener cuando procesamos 0 productos
+                if ($nProcesados == 0) {
+                    $hasMore = false; // No hay más productos
+                } elseif ($nProcesados == $limit) {
+                    $hasMore = true; // Procesamos el límite completo, definitivamente hay más
+                } else {
+                    // Procesamos menos de 1000, intentar un lote más para verificar
+                    // Si el siguiente lote devuelve 0, entonces terminamos
+                    $hasMore = true; // Intentar siguiente lote para verificar
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => "Lote {$batch} sincronizado",
+                    'nuevos' => $nCreados,
+                    'actualizados' => $nActualizados,
+                    'procesados' => $nProcesados,
+                    'batch' => $batch,
+                    'offset' => $offset,
+                    'hasMore' => $hasMore,
+                    'nextBatch' => $hasMore ? ($batch + 1) : null,
+                    'syncStock' => !$hasMore // Si terminamos productos, siguiente paso es stock
+                ]);
+            } 
+            // Si batch > 0, continuar con productos
+            else {
+                $limit = 1000;
+                $offset = $batch * $limit;
+
+                Log::info("Iniciando sincronización batch {$batch} - offset: {$offset}, limit: {$limit}");
+
+                Artisan::call('productos:sincronizar', [
+                    '--limit' => $limit,
+                    '--offset' => $offset
+                ]);
+
+                $output = Artisan::output();
+                
+                if (!mb_check_encoding($output, 'UTF-8')) {
+                    $output = mb_convert_encoding($output, 'UTF-8', 'ISO-8859-1');
+                }
+                $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
+
+                $nProcesados = 0;
+                $nCreados = 0;
+                $nActualizados = 0;
+
+                foreach (explode("\n", $output) as $line) {
+                    if (!mb_check_encoding($line, 'UTF-8')) {
+                        $line = mb_convert_encoding($line, 'UTF-8', 'ISO-8859-1');
+                    }
+                    
+                    $line = trim($line);
+                    if (stripos($line, 'Productos procesados:') !== false) {
+                        preg_match('/(\d+)/', $line, $matches);
+                        if (isset($matches[1])) {
+                            $nProcesados = (int)$matches[1];
+                        }
+                    } elseif (stripos($line, 'Productos creados:') !== false) {
+                        preg_match('/(\d+)/', $line, $matches);
+                        if (isset($matches[1])) {
+                            $nCreados = (int)$matches[1];
+                        }
+                    } elseif (stripos($line, 'Productos actualizados:') !== false) {
+                        preg_match('/(\d+)/', $line, $matches);
+                        if (isset($matches[1])) {
+                            $nActualizados = (int)$matches[1];
+                        }
+                    }
+                }
+
+                // Lógica mejorada: continuar si procesamos exactamente el límite (1000)
+                // Si procesamos menos de 1000, puede ser el último lote, pero intentamos uno más para estar seguros
+                // Solo detener cuando procesamos 0 productos
+                if ($nProcesados == 0) {
+                    $hasMore = false; // No hay más productos
+                } elseif ($nProcesados == $limit) {
+                    $hasMore = true; // Procesamos el límite completo, definitivamente hay más
+                } else {
+                    // Procesamos menos de 1000, intentar un lote más para verificar
+                    // Si el siguiente lote devuelve 0, entonces terminamos
+                    $hasMore = true; // Intentar siguiente lote para verificar
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => "Lote {$batch} sincronizado",
+                    'nuevos' => $nCreados,
+                    'actualizados' => $nActualizados,
+                    'procesados' => $nProcesados,
+                    'batch' => $batch,
+                    'offset' => $offset,
+                    'hasMore' => $hasMore,
+                    'nextBatch' => $hasMore ? ($batch + 1) : null,
+                    'syncStock' => !$hasMore // Si terminamos productos, siguiente paso es stock
+                ]);
             }
-
-            // Si se procesaron menos productos que el límite, significa que terminamos
-            $hasMore = $nProcesados >= $limit;
-
-            return response()->json([
-                'success' => true,
-                'message' => "Lote {$batch} sincronizado",
-                'nuevos' => $nCreados,
-                'actualizados' => $nActualizados,
-                'procesados' => $nProcesados,
-                'batch' => $batch,
-                'offset' => $offset,
-                'hasMore' => $hasMore,
-                'nextBatch' => $hasMore ? ($batch + 1) : null
-            ]);
 
         } catch (\Exception $e) {
             Log::error('Error sincronizando productos general: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
             return response()->json([
                 'success' => false,
                 'message' => 'Error al sincronizar productos: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * Sincronizar stock y precios desde bodega LIB (se ejecuta después de sincronizar productos)
+     */
+    public function sincronizarStockProductos(Request $request)
+    {
+        try {
+            $user = auth()->user();
+            if (!$user || (!$user->hasRole('Supervisor') && !$user->hasRole('Super Admin') && !$user->hasRole('Compras'))) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Acceso no autorizado'
+                ], 403);
+            }
+
+            Log::info("Iniciando sincronización de stock y precios desde bodega LIB");
+
+            $stockService = new \App\Services\StockService();
+            $cantidadStock = $stockService->sincronizarStockDesdeSQLServer();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Stock y precios sincronizados correctamente',
+                'stock_actualizado' => $cantidadStock
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error sincronizando stock: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al sincronizar stock: ' . $e->getMessage()
             ], 500);
         }
     }

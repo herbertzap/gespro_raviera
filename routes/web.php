@@ -87,6 +87,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/productos/ver/{codigo}', [App\Http\Controllers\ProductoController::class, 'ver'])->name('productos.ver');
     Route::get('/productos/descargar-informe-compras', [App\Http\Controllers\ProductoController::class, 'descargarInformeCompras'])->name('productos.descargar-informe-compras');
     Route::post('/productos/sincronizar-general', [App\Http\Controllers\ProductoController::class, 'sincronizarProductosGeneral'])->name('productos.sincronizar-general');
+    Route::post('/productos/sincronizar-stock', [App\Http\Controllers\ProductoController::class, 'sincronizarStockProductos'])->name('productos.sincronizar-stock');
     Route::get('/api/productos/buscar', [App\Http\Controllers\ProductoController::class, 'buscar'])->name('productos.buscar');
     Route::post('/api/productos/crear-nvv', [App\Http\Controllers\ProductoController::class, 'crearNVVDesdeProductos'])->name('productos.crear-nvv');
     Route::post('/api/productos/modificar-cantidades', [App\Http\Controllers\ProductoController::class, 'modificarCantidades'])->name('productos.modificar-cantidades');

@@ -382,7 +382,7 @@ class CotizacionController extends Controller
                 });
             }
             
-            $productos = $query->limit(15)->get()
+            $productos = $query->limit(25)->get()
                 ->map(function($producto) use ($listaPrecios) {
                     // Mapear precios según la lista
                     $precio = 0;
@@ -424,13 +424,9 @@ class CotizacionController extends Controller
                         'CANTIDAD_MINIMA' => 1,
                         'MULTIPLO_VENTA' => $producto->multiplo_venta ?? 1,
                         'LISTA_PRECIOS' => $listaPrecios,
-                        'PRECIO_VALIDO' => $precioValido, // Nuevo campo para indicar si se puede agregar
+                        'PRECIO_VALIDO' => $precioValido, // Indica si se puede agregar (precio > 0)
                         'MOTIVO_BLOQUEO' => $precioValido ? null : 'Precio no disponible'
                     ];
-                })
-                ->filter(function($producto) {
-                    // Filtrar productos con precio 0 o menor
-                    return ($producto['PRECIO_UD1'] ?? 0) > 0;
                 })
                 ->values()
                 ->toArray();

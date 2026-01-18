@@ -2167,9 +2167,17 @@ class CobranzaService
             $busqueda = strtoupper(trim($busqueda));
             
             // Búsqueda simple y eficiente usando índices
-            // Filtrar productos descontinuados y con precio mayor a 0
+            // Filtrar productos descontinuados y con precio mayor a 0 o con stock disponible
+            // Considerar POIVPR, precios de listas (precio_01p, precio_02p, precio_03p) o stock disponible
             $productos = \App\Models\Producto::where('TIPR', '!=', 'D')
-                ->where('POIVPR', '>', 0) // Filtrar productos con precio mayor a 0
+                ->where(function($q) {
+                    // Producto tiene precio base, precio en alguna lista, o stock disponible
+                    $q->where('POIVPR', '>', 0)
+                      ->orWhere('precio_01p', '>', 0)
+                      ->orWhere('precio_02p', '>', 0)
+                      ->orWhere('precio_03p', '>', 0)
+                      ->orWhere('stock_disponible', '>', 0);
+                })
                 ->where(function($q) use ($busqueda) {
                     $q->where('KOPR', 'LIKE', $busqueda . '%')
                       ->orWhere('NOKOPR', 'LIKE', $busqueda . '%');
