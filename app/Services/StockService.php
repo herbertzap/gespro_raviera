@@ -114,7 +114,7 @@ class StockService
                     // Calcular stock disponible: STFI1 - (STOCNV1 + stock_nvv_mysql)
                     $stockDisponible = $stockFisico - ($stockComprometidoSQL + $stockComprometidoLocal);
                     
-                    // Limpiar nombre del producto removiendo información adicional como "Múltiplo: X"
+                    // Limpiar nombre del producto removiendo información adicional como "Múltiplo: X" y unidades
                     $nombreProducto = $this->limpiarNombreProducto(trim($fields[1]));
                     
                     $producto = [
@@ -380,7 +380,7 @@ class StockService
     }
     
     /**
-     * Limpiar nombre del producto removiendo información adicional como "Múltiplo: X"
+     * Limpiar nombre del producto removiendo información adicional como "Múltiplo: X" y unidades
      */
     private function limpiarNombreProducto($nombreProducto)
     {
@@ -390,16 +390,32 @@ class StockService
         
         $nombreLimpio = $nombreProducto;
         
+        // Remover patrones entre corchetes como "[30Unid.X.Paq]Múltiplo: 30"
+        $nombreLimpio = preg_replace('/\[[^\]]*\]\s*[Mm][úu]?ltiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        // Remover patrones entre corchetes como "[30Unid.X.Paq]"
+        $nombreLimpio = preg_replace('/\[[^\]]*\]/i', '', $nombreLimpio);
+        
+        // Remover patrones como "KILOMúltiplo: 20" (sin espacio antes de Múltiplo)
+        $nombreLimpio = preg_replace('/[Kk][Ii][Ll][Oo][Mm][úu]?ltiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        
         // Remover patrones como "xxxxxxxmultiplo: X" o "xxxxxmultiplo: X" al final (case insensitive)
         $nombreLimpio = preg_replace('/\s*xxxxxxx?multiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        
         // Remover "Múltiplo: X" o "multiplo: X" al final (con o sin acento, case insensitive)
         $nombreLimpio = preg_replace('/\s*[Mm][úu]ltiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        
         // Remover "MULTIPLO: X" al final
         $nombreLimpio = preg_replace('/\s*MULTIPLO:\s*\d+.*$/i', '', $nombreLimpio);
+        
         // Remover "UN.Múltiplo: X" o "UN.MULTIPLO: X" al final
         $nombreLimpio = preg_replace('/\s*UN\.\s*[Mm][úu]?ltiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        
+        // Remover patrones como "Unidad [30Unid.X.Paq]" o "Unidad [30Unid.X.Paq]Múltiplo: 30"
+        $nombreLimpio = preg_replace('/\s*[Uu]nidad\s*\[[^\]]*\].*$/i', '', $nombreLimpio);
+        
         // Remover la palabra "adicional" si aparece
         $nombreLimpio = preg_replace('/\s*adicional\s*/i', ' ', $nombreLimpio);
+        
         // Limpiar espacios múltiples y recortar
         $nombreLimpio = preg_replace('/\s+/', ' ', trim($nombreLimpio));
         

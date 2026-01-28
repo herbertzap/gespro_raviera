@@ -1162,8 +1162,6 @@ class AprobacionController extends Controller
             }
             
             Log::info('Siguiente ID calculado para MAEEDO: ' . $siguienteId);
-            // OPTIMIZACIÓN: Eliminado loop de verificación (MAX + 1 debería ser único)
-            // Si hay colisión, SQL Server lanzará error de clave primaria y se manejará en el catch
             Log::info("✅ IDMAEEDO asignado: {$siguienteId}");
             
             // Obtener el máximo NUDO de NVV y sumarle 1 (consulta simple y directa)
@@ -1379,7 +1377,74 @@ class AprobacionController extends Controller
             Log::info("=== RESULTADO INSERT MAEEDO ===");
             Log::info("Resultado completo: " . substr($result, 0, 1000));
             
-            if (str_contains($result, 'Msg') || str_contains($result, 'Error') || str_contains($result, 'Violation') || str_contains($result, 'duplicate')) {
+            // Verificar si hay error de duplicado en NUDO
+            $nudoDuplicado = false;
+            if (str_contains($result, 'duplicate') || str_contains($result, 'Violation') || str_contains($result, 'UNIQUE')) {
+                // Verificar si es duplicado de NUDO específicamente
+                $queryVerificarDuplicado = "SELECT COUNT(*) as total FROM MAEEDO WHERE TIDO = 'NVV' AND NUDO = '{$nudoFormateado}'";
+                
+                $tempFileVerificar = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFileVerificar, $queryVerificarDuplicado . "\ngo\nquit");
+                
+                $commandVerificar = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFileVerificar} 2>&1";
+                $resultVerificar = shell_exec($commandVerificar);
+                unlink($tempFileVerificar);
+                
+                $totalDuplicados = 0;
+                if ($resultVerificar) {
+                    if (preg_match('/total\s*\n\s*(\d+)/', $resultVerificar, $matches)) {
+                        $totalDuplicados = (int)$matches[1];
+                    } elseif (preg_match('/\b(\d+)\b/', $resultVerificar, $matches)) {
+                        $totalDuplicados = (int)$matches[1];
+                    }
+                }
+                
+                if ($totalDuplicados > 0) {
+                    $nudoDuplicado = true;
+                    Log::warning("⚠️ NUDO duplicado detectado: {$nudoFormateado} ({$totalDuplicados} registros). Corrigiendo...");
+                    
+                    // Calcular nuevo NUDO sumando 1
+                    $nuevoNudo = (int)$nudoFormateado + 1;
+                    $nuevoNudoFormateado = str_pad($nuevoNudo, 10, '0', STR_PAD_LEFT);
+                    
+                    // Actualizar el NUDO en MAEEDO para este IDMAEEDO
+                    $queryUpdateNudo = "UPDATE MAEEDO SET NUDO = '{$nuevoNudoFormateado}' WHERE IDMAEEDO = {$siguienteId} AND TIDO = 'NVV'";
+                    
+                    $tempFileUpdate = tempnam(sys_get_temp_dir(), 'sql_');
+                    file_put_contents($tempFileUpdate, $queryUpdateNudo . "\ngo\nquit");
+                    
+                    $commandUpdate = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFileUpdate} 2>&1";
+                    $resultUpdate = shell_exec($commandUpdate);
+                    unlink($tempFileUpdate);
+                    
+                    if (str_contains($resultUpdate, 'Msg') && !str_contains($resultUpdate, 'rows affected')) {
+                        Log::error("❌ Error actualizando NUDO: " . $resultUpdate);
+                        throw new \Exception('Error corrigiendo NUDO duplicado: ' . substr($resultUpdate, 0, 500));
+                    }
+                    
+                    // Actualizar también en MAEDDO si existe
+                    $queryUpdateMAEDDO = "UPDATE MAEDDO SET NUDO = '{$nuevoNudoFormateado}' WHERE IDMAEEDO = {$siguienteId} AND TIDO = 'NVV'";
+                    
+                    $tempFileUpdateMAEDDO = tempnam(sys_get_temp_dir(), 'sql_');
+                    file_put_contents($tempFileUpdateMAEDDO, $queryUpdateMAEDDO . "\ngo\nquit");
+                    
+                    $commandUpdateMAEDDO = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFileUpdateMAEDDO} 2>&1";
+                    $resultUpdateMAEDDO = shell_exec($commandUpdateMAEDDO);
+                    unlink($tempFileUpdateMAEDDO);
+                    
+                    // Actualizar variable para usar el nuevo NUDO
+                    $nudoAnterior = $nudoFormateado;
+                    $nudoFormateado = $nuevoNudoFormateado;
+                    
+                    // Actualizar también en MySQL
+                    $cotizacion->numero_nvv = $nuevoNudoFormateado;
+                    $cotizacion->save();
+                    
+                    Log::info("✅ NUDO corregido de {$nudoAnterior} a {$nuevoNudoFormateado} (actualizado en SQL Server y MySQL)");
+                }
+            }
+            
+            if (!$nudoDuplicado && (str_contains($result, 'Msg') || str_contains($result, 'Error'))) {
                 Log::error("❌ ERROR INSERTANDO MAEEDO:");
                 Log::error("IDMAEEDO intentado: {$siguienteId}");
                 Log::error("NUDO: {$nudoFormateado}");
@@ -1387,7 +1452,7 @@ class AprobacionController extends Controller
                 throw new \Exception('Error insertando encabezado: ' . substr($result, 0, 500));
             }
             
-            Log::info('Encabezado MAEEDO insertado correctamente');
+            Log::info('Encabezado MAEEDO insertado correctamente' . ($nudoDuplicado ? ' (NUDO corregido)' : ''));
             
             // OPTIMIZACIÓN: Obtener todos los precios mínimos en una sola consulta
             $codigosProductos = [];

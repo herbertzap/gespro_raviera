@@ -73,9 +73,12 @@ class ProductoController extends Controller
                     // Usar precio_01p como predeterminado
                     $precio = $producto->precio_01p ?? 0;
                     
+                    // Limpiar nombre del producto
+                    $nombreLimpio = $this->limpiarNombreProducto($producto->NOKOPR);
+                    
                     return [
                         'codigo' => $producto->KOPR,
-                        'nombre' => $producto->NOKOPR,
+                        'nombre' => $nombreLimpio,
                         'precio' => $precio,
                         'stock_actual' => $producto->stock_disponible ?? 0,
                         'stock_minimo' => 10, // Valor predeterminado
@@ -88,6 +91,281 @@ class ProductoController extends Controller
         } catch (\Exception $e) {
             Log::error("Error en ProductoController@buscar: " . $e->getMessage());
             return response()->json([]);
+        }
+    }
+    
+    /**
+     * Buscar productos con información de NVV pendientes
+     */
+    public function buscarConNvvPendientes(Request $request)
+    {
+        try {
+            $termino = $request->get('q', '');
+            
+            if (strlen($termino) < 2) {
+                return response()->json([]);
+            }
+            
+            // Buscar productos en MySQL
+            $productosMySQL = \App\Models\Producto::where(function($query) use ($termino) {
+                    $query->where('KOPR', 'LIKE', "%{$termino}%")
+                          ->orWhere('NOKOPR', 'LIKE', "%{$termino}%");
+                })
+                ->where('activo', true)
+                ->where(function($q) {
+                    $q->where('TIPR', '!=', 'OCU')
+                      ->orWhereNull('TIPR');
+                })
+                ->limit(50)
+                ->get();
+            
+            // Obtener códigos de productos para consultar NVV pendientes
+            $codigosProductos = $productosMySQL->pluck('KOPR')->toArray();
+            
+            // Consultar NVV pendientes desde SQL Server para estos productos
+            $nvvPendientes = $this->obtenerNvvPendientesPorProductos($codigosProductos);
+            
+            // Combinar información
+            $productos = $productosMySQL->map(function ($producto) use ($nvvPendientes) {
+                $codigo = $producto->KOPR;
+                $nvvInfo = $nvvPendientes[$codigo] ?? [
+                    'cantidad_pendiente' => 0,
+                    'numero_nvv' => 0,
+                    'detalle_nvv' => []
+                ];
+                
+                // Calcular stock disponible real
+                // IMPORTANTE: El cálculo de stock disponible considera:
+                // 1. Stock Físico: Stock real en bodega (desde SQL Server, tabla MAEST.STFI1)
+                // 2. Stock Comprometido SQL: NVV ya generadas en SQL Server (desde MAEST.STOCNV1)
+                //    Este campo se sincroniza desde SQL Server y representa las NVV que ya están en el sistema principal
+                // 3. Stock Comprometido Local: Cotizaciones pendientes en MySQL (tabla stock_comprometidos)
+                //    Representa las cotizaciones que aún no se han convertido en NVV
+                // 
+                // Fórmula: Stock Disponible = Stock Físico - Stock Comprometido SQL - Stock Comprometido Local
+                // 
+                // NOTA: El stock comprometido SQL (STOCNV1) ya incluye las NVV pendientes de facturación,
+                // por lo que NO debemos sumar las NVV pendientes nuevamente al stock comprometido.
+                // Las NVV pendientes mostradas son solo informativas para ver qué NVV están pendientes.
+                
+                $stockFisico = (float)($producto->stock_fisico ?? 0);
+                $stockComprometidoSQL = (float)($producto->stock_comprometido ?? 0);
+                $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($codigo);
+                
+                // Stock disponible = stock físico - stock comprometido SQL - stock comprometido local
+                $stockDisponible = max(0, $stockFisico - $stockComprometidoSQL - $stockComprometidoLocal);
+                
+                // Limpiar nombre del producto
+                $nombreLimpio = $this->limpiarNombreProducto($producto->NOKOPR);
+                
+                return [
+                    'codigo' => $codigo,
+                    'nombre' => $nombreLimpio,
+                    'precio' => $producto->precio_01p ?? 0,
+                    'stock_fisico' => $stockFisico,
+                    'stock_comprometido_sql' => $stockComprometidoSQL,
+                    'stock_comprometido_local' => $stockComprometidoLocal,
+                    'stock_disponible' => $stockDisponible,
+                    'cantidad_nvv_pendiente' => $nvvInfo['cantidad_pendiente'],
+                    'numero_nvv' => $nvvInfo['numero_nvv'],
+                    'detalle_nvv' => $nvvInfo['detalle_nvv']
+                ];
+            });
+            
+            return response()->json($productos);
+            
+        } catch (\Exception $e) {
+            Log::error("Error en ProductoController@buscarConNvvPendientes: " . $e->getMessage());
+            Log::error("Stack trace: " . $e->getTraceAsString());
+            return response()->json(['error' => 'Error al buscar productos'], 500);
+        }
+    }
+    
+    /**
+     * Obtener NVV pendientes por lista de productos desde SQL Server
+     */
+    private function obtenerNvvPendientesPorProductos($codigosProductos)
+    {
+        if (empty($codigosProductos)) {
+            return [];
+        }
+        
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            // Crear lista de códigos para la consulta
+            $codigosStr = implode("','", array_map(function($codigo) {
+                return substr($codigo, 0, 13); // Limitar a 13 caracteres
+            }, $codigosProductos));
+            
+            // Consultar NVV pendientes directamente desde MAEDDO
+            // NVV pendientes son aquellas que tienen cantidad pendiente > 0 (CAPRCO1 - CAPRAD1 - CAPREX1 > 0)
+            $query = "
+                SELECT 
+                    SUBSTRING(KOPRCT, 1, 13) as KOPRCT,
+                    NOKOPR,
+                    SUM(CAPRCO1 - CAPRAD1 - CAPREX1) as CANTIDAD_PENDIENTE,
+                    COUNT(DISTINCT NUDO) as NUMERO_NVV
+                FROM MAEDDO
+                WHERE TIDO = 'NVV'
+                    AND LILG = 'SI'
+                    AND (CAPRCO1 - CAPRAD1 - CAPREX1) > 0
+                    AND SUBSTRING(KOPRCT, 1, 13) IN ('{$codigosStr}')
+                GROUP BY SUBSTRING(KOPRCT, 1, 13), NOKOPR
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            $nvvPendientes = [];
+            
+            if ($result && !str_contains($result, 'error')) {
+                $lines = explode("\n", $result);
+                $foundHeaders = false;
+                $headerIndexes = [];
+                
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    
+                    if (empty($line) || str_contains($line, 'row') || str_contains($line, '---') || str_contains($line, 'Setting')) {
+                        continue;
+                    }
+                    
+                    // Buscar headers
+                    if (str_contains($line, 'KOPRCT') || str_contains($line, 'CANTIDAD_PENDIENTE')) {
+                        $foundHeaders = true;
+                        $parts = preg_split('/\s+/', $line);
+                        foreach ($parts as $idx => $part) {
+                            $part = trim($part);
+                            if ($part === 'KOPRCT') $headerIndexes['KOPRCT'] = $idx;
+                            if ($part === 'CANTIDAD_PENDIENTE') $headerIndexes['CANTIDAD_PENDIENTE'] = $idx;
+                            if ($part === 'NUMERO_NVV') $headerIndexes['NUMERO_NVV'] = $idx;
+                            if ($part === 'DETALLE_NVV') $headerIndexes['DETALLE_NVV'] = $idx;
+                        }
+                        continue;
+                    }
+                    
+                    // Parsear datos
+                    if ($foundHeaders && !empty($headerIndexes)) {
+                        $values = preg_split('/\s+/', $line);
+                        if (count($values) > max($headerIndexes)) {
+                            $codigo = trim($values[$headerIndexes['KOPRCT']] ?? '');
+                            $cantidadPendiente = (float)($values[$headerIndexes['CANTIDAD_PENDIENTE']] ?? 0);
+                            $numeroNvv = (int)($values[$headerIndexes['NUMERO_NVV']] ?? 0);
+                            
+                            // Consultar detalle de NVV para este producto
+                            $detalleNvv = $this->obtenerDetalleNvvPorProducto($codigo);
+                            
+                            $nvvPendientes[$codigo] = [
+                                'cantidad_pendiente' => $cantidadPendiente,
+                                'numero_nvv' => $numeroNvv,
+                                'detalle_nvv' => $detalleNvv
+                            ];
+                        }
+                    }
+                }
+            }
+            
+            return $nvvPendientes;
+            
+        } catch (\Exception $e) {
+            Log::error("Error obteniendo NVV pendientes: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Obtener detalle de NVV pendientes para un producto específico
+     */
+    private function obtenerDetalleNvvPorProducto($codigoProducto)
+    {
+        try {
+            $host = env('SQLSRV_EXTERNAL_HOST');
+            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            $username = env('SQLSRV_EXTERNAL_USERNAME');
+            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            
+            $codigoLimpiado = substr($codigoProducto, 0, 13);
+            
+            $query = "
+                SELECT 
+                    NUDO,
+                    (CAPRCO1 - CAPRAD1 - CAPREX1) as CANTIDAD_PENDIENTE
+                FROM MAEDDO
+                WHERE TIDO = 'NVV'
+                    AND LILG = 'SI'
+                    AND (CAPRCO1 - CAPRAD1 - CAPREX1) > 0
+                    AND SUBSTRING(KOPRCT, 1, 13) = '{$codigoLimpiado}'
+                ORDER BY NUDO
+            ";
+            
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            
+            unlink($tempFile);
+            
+            $detalleNvv = [];
+            
+            if ($result && !str_contains($result, 'error')) {
+                $lines = explode("\n", $result);
+                $foundHeaders = false;
+                $headerIndexes = [];
+                
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    
+                    if (empty($line) || str_contains($line, 'row') || str_contains($line, '---') || str_contains($line, 'Setting')) {
+                        continue;
+                    }
+                    
+                    // Buscar headers
+                    if (str_contains($line, 'NUDO') || str_contains($line, 'CANTIDAD_PENDIENTE')) {
+                        $foundHeaders = true;
+                        $parts = preg_split('/\s+/', $line);
+                        foreach ($parts as $idx => $part) {
+                            $part = trim($part);
+                            if ($part === 'NUDO') $headerIndexes['NUDO'] = $idx;
+                            if ($part === 'CANTIDAD_PENDIENTE') $headerIndexes['CANTIDAD_PENDIENTE'] = $idx;
+                        }
+                        continue;
+                    }
+                    
+                    // Parsear datos
+                    if ($foundHeaders && !empty($headerIndexes)) {
+                        $values = preg_split('/\s+/', $line);
+                        if (count($values) > max($headerIndexes)) {
+                            $nudo = trim($values[$headerIndexes['NUDO']] ?? '');
+                            $cantidad = (float)($values[$headerIndexes['CANTIDAD_PENDIENTE']] ?? 0);
+                            
+                            if (!empty($nudo) && $cantidad > 0) {
+                                $detalleNvv[] = [
+                                    'nvv' => $nudo,
+                                    'cantidad' => $cantidad
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return $detalleNvv;
+            
+        } catch (\Exception $e) {
+            Log::error("Error obteniendo detalle NVV para producto {$codigoProducto}: " . $e->getMessage());
+            return [];
         }
     }
     
@@ -128,9 +406,12 @@ class ProductoController extends Controller
                     $stockActual = rand(0, 5);
                     $stockMinimo = rand(10, 20);
                     
+                    // Limpiar nombre del producto
+                    $nombreLimpio = $this->limpiarNombreProducto($producto->nombre_producto);
+                    
                     return [
                         'codigo' => $producto->codigo_producto,
-                        'nombre' => $producto->nombre_producto,
+                        'nombre' => $nombreLimpio,
                         'precio' => $producto->precio_unitario,
                         'stock_actual' => $stockActual,
                         'stock_minimo' => $stockMinimo
@@ -162,9 +443,12 @@ class ProductoController extends Controller
                 ->limit($limit)
                 ->get()
                 ->map(function ($producto) {
+                    // Limpiar nombre del producto removiendo información de múltiplos y unidades
+                    $nombreLimpio = $this->limpiarNombreProducto($producto->nombre_producto);
+                    
                     return [
                         'codigo' => $producto->codigo_producto,
-                        'nombre' => $producto->nombre_producto,
+                        'nombre' => $nombreLimpio,
                         'cantidad' => $producto->total_vendido,
                         'total_ventas' => $producto->total_ventas,
                         'precio_promedio' => $producto->precio_promedio
@@ -177,6 +461,49 @@ class ProductoController extends Controller
             Log::error("Error obteniendo productos más vendidos: " . $e->getMessage());
             return [];
         }
+    }
+    
+    /**
+     * Limpiar nombre del producto removiendo información adicional como "Múltiplo: X" y unidades
+     */
+    private function limpiarNombreProducto($nombreProducto)
+    {
+        if (empty($nombreProducto)) {
+            return $nombreProducto;
+        }
+        
+        $nombreLimpio = $nombreProducto;
+        
+        // Remover patrones entre corchetes como "[30Unid.X.Paq]Múltiplo: 30"
+        $nombreLimpio = preg_replace('/\[[^\]]*\]\s*[Mm][úu]?ltiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        // Remover patrones entre corchetes como "[30Unid.X.Paq]"
+        $nombreLimpio = preg_replace('/\[[^\]]*\]/i', '', $nombreLimpio);
+        
+        // Remover patrones como "KILOMúltiplo: 20" (sin espacio antes de Múltiplo)
+        $nombreLimpio = preg_replace('/[Kk][Ii][Ll][Oo][Mm][úu]?ltiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        
+        // Remover patrones como "xxxxxxxmultiplo: X" o "xxxxxmultiplo: X" al final (case insensitive)
+        $nombreLimpio = preg_replace('/\s*xxxxxxx?multiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        
+        // Remover "Múltiplo: X" o "multiplo: X" al final (con o sin acento, case insensitive)
+        $nombreLimpio = preg_replace('/\s*[Mm][úu]ltiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        
+        // Remover "MULTIPLO: X" al final
+        $nombreLimpio = preg_replace('/\s*MULTIPLO:\s*\d+.*$/i', '', $nombreLimpio);
+        
+        // Remover "UN.Múltiplo: X" o "UN.MULTIPLO: X" al final
+        $nombreLimpio = preg_replace('/\s*UN\.\s*[Mm][úu]?ltiplo:\s*\d+.*$/i', '', $nombreLimpio);
+        
+        // Remover patrones como "Unidad [30Unid.X.Paq]" o "Unidad [30Unid.X.Paq]Múltiplo: 30"
+        $nombreLimpio = preg_replace('/\s*[Uu]nidad\s*\[[^\]]*\].*$/i', '', $nombreLimpio);
+        
+        // Remover la palabra "adicional" si aparece
+        $nombreLimpio = preg_replace('/\s*adicional\s*/i', ' ', $nombreLimpio);
+        
+        // Limpiar espacios múltiples y recortar
+        $nombreLimpio = preg_replace('/\s+/', ' ', trim($nombreLimpio));
+        
+        return $nombreLimpio;
     }
     
     private function obtenerStockPorCategorias()

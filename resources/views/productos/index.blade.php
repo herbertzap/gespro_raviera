@@ -32,6 +32,55 @@
             </div>
         </div>
 
+        <!-- Buscador de Productos con NVV Pendientes -->
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header card-header-info">
+                        <h4 class="card-title">
+                            <i class="material-icons">search</i> Buscar Productos con NVV Pendientes
+                        </h4>
+                        <p class="card-category">Información de stock y cantidades pendientes en NVV</p>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="form-group">
+                                    <label>Buscar producto (código o nombre)</label>
+                                    <input type="text" id="buscarProductoInput" class="form-control" 
+                                           placeholder="Ej: SINS001500000 o nombre del producto..." 
+                                           onkeyup="buscarProductosConNvv(this.value)">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="resultadosBusqueda" style="display:none;">
+                            <hr>
+                            <h5>Resultados de la búsqueda</h5>
+                            <div class="table-responsive">
+                                <table class="table table-hover" id="tablaResultadosBusqueda">
+                                    <thead class="text-info">
+                                        <tr>
+                                            <th>Código</th>
+                                            <th>Nombre</th>
+                                            <th>Stock Físico</th>
+                                            <th>Stock Comprometido (SQL)</th>
+                                            <th>Stock Comprometido (Local)</th>
+                                            <th>Stock Disponible</th>
+                                            <th>Cantidad NVV Pendiente</th>
+                                            <th>N° NVV</th>
+                                            <th>Detalle NVV</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbodyResultadosBusqueda">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Tarjetas de Resumen -->
         <div class="row">
             <!-- Productos con Bajo Stock -->
@@ -382,6 +431,85 @@
 function crearNVVConProducto() {
     // Aquí implementarías la lógica para crear una nueva NVV
     alert('Funcionalidad de crear NVV con producto - Por implementar');
+}
+
+// Función para buscar productos con información de NVV pendientes
+let timeoutBusqueda = null;
+function buscarProductosConNvv(termino) {
+    // Limpiar timeout anterior
+    if (timeoutBusqueda) {
+        clearTimeout(timeoutBusqueda);
+    }
+    
+    // Si el término es muy corto, ocultar resultados
+    if (termino.length < 2) {
+        $('#resultadosBusqueda').hide();
+        return;
+    }
+    
+    // Esperar 500ms antes de buscar (debounce)
+    timeoutBusqueda = setTimeout(function() {
+        $.ajax({
+            url: '{{ route("productos.buscar-nvv") }}',
+            method: 'GET',
+            data: {
+                q: termino
+            },
+            beforeSend: function() {
+                $('#tbodyResultadosBusqueda').html('<tr><td colspan="9" class="text-center"><i class="material-icons">hourglass_empty</i> Buscando...</td></tr>');
+                $('#resultadosBusqueda').show();
+            },
+            success: function(response) {
+                if (response.length === 0) {
+                    $('#tbodyResultadosBusqueda').html('<tr><td colspan="9" class="text-center text-muted">No se encontraron productos</td></tr>');
+                    return;
+                }
+                
+                let html = '';
+                response.forEach(function(producto) {
+                    // Determinar clase de stock disponible
+                    let stockClass = 'text-success';
+                    if (producto.stock_disponible <= 0) {
+                        stockClass = 'text-danger';
+                    } else if (producto.stock_disponible < 10) {
+                        stockClass = 'text-warning';
+                    }
+                    
+                    // Formatear detalle de NVV
+                    let detalleNvvHtml = '';
+                    if (producto.detalle_nvv && producto.detalle_nvv.length > 0) {
+                        detalleNvvHtml = '<ul class="list-unstyled mb-0">';
+                        producto.detalle_nvv.forEach(function(nvv) {
+                            detalleNvvHtml += `<li><small>NVV ${nvv.nvv}: ${nvv.cantidad.toLocaleString()}</small></li>`;
+                        });
+                        detalleNvvHtml += '</ul>';
+                    } else {
+                        detalleNvvHtml = '<span class="text-muted">-</span>';
+                    }
+                    
+                    html += `
+                        <tr>
+                            <td><strong>${producto.codigo}</strong></td>
+                            <td>${producto.nombre}</td>
+                            <td>${producto.stock_fisico.toLocaleString()}</td>
+                            <td class="text-warning">${producto.stock_comprometido_sql.toLocaleString()}</td>
+                            <td class="text-info">${producto.stock_comprometido_local.toLocaleString()}</td>
+                            <td class="${stockClass}"><strong>${producto.stock_disponible.toLocaleString()}</strong></td>
+                            <td class="text-danger">${producto.cantidad_nvv_pendiente.toLocaleString()}</td>
+                            <td>${producto.numero_nvv}</td>
+                            <td>${detalleNvvHtml}</td>
+                        </tr>
+                    `;
+                });
+                
+                $('#tbodyResultadosBusqueda').html(html);
+            },
+            error: function(xhr) {
+                console.error('Error buscando productos:', xhr);
+                $('#tbodyResultadosBusqueda').html('<tr><td colspan="9" class="text-center text-danger">Error al buscar productos</td></tr>');
+            }
+        });
+    }, 500);
 }
 
 // Variables globales para la sincronización
