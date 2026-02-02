@@ -93,11 +93,6 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/api/productos/crear-nvv', [App\Http\Controllers\ProductoController::class, 'crearNVVDesdeProductos'])->name('productos.crear-nvv');
     Route::post('/api/productos/modificar-cantidades', [App\Http\Controllers\ProductoController::class, 'modificarCantidades'])->name('productos.modificar-cantidades');
 
-    Route::get('/manejo-stock', [App\Http\Controllers\ManejoStockController::class, 'seleccionar'])->name('manejo-stock.select');
-    Route::get('/manejo-stock/contabilidad', [App\Http\Controllers\ManejoStockController::class, 'contabilidad'])->name('manejo-stock.contabilidad');
-    Route::get('/manejo-stock/historial', [App\Http\Controllers\ManejoStockController::class, 'historial'])->name('manejo-stock.historial');
-    Route::get('/manejo-stock/reporte', [App\Http\Controllers\ManejoStockController::class, 'reporte'])->name('manejo-stock.reporte');
-    
     // Mantenedor (Solo Super Admin)
     Route::get('/mantenedor/bodegas', [App\Http\Controllers\MantenedorController::class, 'bodegas'])->name('mantenedor.bodegas');
     Route::post('/mantenedor/bodegas/crear', [App\Http\Controllers\MantenedorController::class, 'crearBodega'])->name('mantenedor.bodegas.crear');
@@ -106,27 +101,6 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/mantenedor/ubicaciones/crear', [App\Http\Controllers\MantenedorController::class, 'crearUbicacion'])->name('mantenedor.ubicaciones.crear');
     Route::put('/mantenedor/ubicaciones/{id}', [App\Http\Controllers\MantenedorController::class, 'actualizarUbicacion'])->name('mantenedor.ubicaciones.actualizar');
     Route::delete('/mantenedor/ubicaciones/{id}', [App\Http\Controllers\MantenedorController::class, 'eliminarUbicacion'])->name('mantenedor.ubicaciones.eliminar');
-    Route::post('/mantenedor/ubicaciones/carga-masiva', [App\Http\Controllers\MantenedorController::class, 'cargaMasivaUbicaciones'])->name('mantenedor.ubicaciones.carga-masiva');
-    Route::get('/mantenedor/ubicaciones/descargar-plantilla', [App\Http\Controllers\MantenedorController::class, 'descargarPlantilla'])->name('mantenedor.ubicaciones.descargar-plantilla');
-    Route::post('/manejo-stock/contabilidad/guardar', [App\Http\Controllers\ManejoStockController::class, 'guardarCaptura'])->name('manejo-stock.contabilidad.guardar');
-    Route::post('/manejo-stock/maeedo/insertar', [App\Http\Controllers\ManejoStockController::class, 'confirmarInsertMAEEDO'])->name('manejo-stock.maeedo.insertar');
-    Route::get('/manejo-stock/asociar', [App\Http\Controllers\BarcodeLinkController::class, 'create'])->name('manejo-stock.asociar');
-    Route::post('/manejo-stock/asociar', [App\Http\Controllers\BarcodeLinkController::class, 'store'])->name('manejo-stock.asociar.store');
-    Route::get('/manejo-stock/asociar-barrido', [App\Http\Controllers\BarcodeLinkController::class, 'create'])->name('manejo-stock.asociar-barrido');
-    Route::post('/manejo-stock/asociar-barrido', [App\Http\Controllers\BarcodeLinkController::class, 'storeBarrido'])->name('manejo-stock.asociar-barrido.store');
-    Route::get('/manejo-stock/api/barcode', [App\Http\Controllers\ManejoStockController::class, 'buscarCodigoBarras'])->name('manejo-stock.barcode');
-    Route::get('/manejo-stock/api/producto', [App\Http\Controllers\ManejoStockController::class, 'producto'])->name('manejo-stock.producto');
-    Route::get('/manejo-stock/api/ubicaciones', [App\Http\Controllers\ManejoStockController::class, 'buscarUbicaciones'])->name('manejo-stock.ubicaciones');
-    
-    // Aplicación de Barrido (TINVENTARIO)
-    Route::get('/manejo-stock/barrido-select', [App\Http\Controllers\ManejoStockController::class, 'barridoSelect'])->name('manejo-stock.barrido.select');
-    Route::get('/manejo-stock/barrido', [App\Http\Controllers\ManejoStockController::class, 'barrido'])->name('manejo-stock.barrido');
-    Route::post('/manejo-stock/barrido/guardar', [App\Http\Controllers\ManejoStockController::class, 'guardarBarrido'])->name('manejo-stock.barrido.guardar');
-    Route::get('/manejo-stock/reporte-inventario', [App\Http\Controllers\ManejoStockController::class, 'reporteInventario'])->name('manejo-stock.reporte-inventario');
-    Route::get('/manejo-stock/exportar-inventario', [App\Http\Controllers\ManejoStockController::class, 'exportarInventario'])->name('manejo-stock.exportar-inventario');
-    
-    // Barrido Simplificado (Solo para rol Barrido)
-    Route::get('/manejo-stock/barrido-simplificado', [App\Http\Controllers\ManejoStockController::class, 'barridoSimplificado'])->name('manejo-stock.barrido-simplificado');
 });
 
 // Rutas de Aprobaciones
@@ -357,6 +331,37 @@ Route::middleware(['auth', 'handle.errors'])->group(function () {
         Route::get('/stock/bajo-stock', [App\Http\Controllers\StockController::class, 'productosBajoStock'])->name('stock.bajo-stock');
     });
 
+    // **Manejo Stock**
+    Route::middleware('permission:ver_manejo_stock')->group(function () {
+        Route::get('/manejo-stock', [App\Http\Controllers\ManejoStockController::class, 'seleccionar'])->name('manejo-stock.select');
+        Route::get('/manejo-stock/contabilidad', [App\Http\Controllers\ManejoStockController::class, 'contabilidad'])->name('manejo-stock.contabilidad');
+        Route::get('/manejo-stock/historial', [App\Http\Controllers\ManejoStockController::class, 'historial'])->name('manejo-stock.historial');
+        Route::get('/manejo-stock/reporte', [App\Http\Controllers\ManejoStockController::class, 'reporte'])->name('manejo-stock.reporte');
+        Route::get('/manejo-stock/barrido-select', [App\Http\Controllers\ManejoStockController::class, 'barridoSelect'])->name('manejo-stock.barrido.select');
+        Route::get('/manejo-stock/barrido', [App\Http\Controllers\ManejoStockController::class, 'barrido'])->name('manejo-stock.barrido');
+        Route::post('/manejo-stock/barrido/guardar', [App\Http\Controllers\ManejoStockController::class, 'guardarBarrido'])->name('manejo-stock.barrido.guardar');
+        Route::get('/manejo-stock/reporte-inventario', [App\Http\Controllers\ManejoStockController::class, 'reporteInventario'])->name('manejo-stock.reporte-inventario');
+        Route::get('/manejo-stock/exportar-inventario', [App\Http\Controllers\ManejoStockController::class, 'exportarInventario'])->name('manejo-stock.exportar-inventario');
+        Route::post('/manejo-stock/contabilidad/guardar', [App\Http\Controllers\ManejoStockController::class, 'guardarCaptura'])->name('manejo-stock.contabilidad.guardar');
+        Route::post('/manejo-stock/maeedo/insertar', [App\Http\Controllers\ManejoStockController::class, 'confirmarInsertMAEEDO'])->name('manejo-stock.maeedo.insertar');
+        Route::get('/manejo-stock/asociar', [App\Http\Controllers\BarcodeLinkController::class, 'create'])->name('manejo-stock.asociar');
+        Route::post('/manejo-stock/asociar', [App\Http\Controllers\BarcodeLinkController::class, 'store'])->name('manejo-stock.asociar.store');
+        Route::get('/manejo-stock/api/barcode', [App\Http\Controllers\ManejoStockController::class, 'buscarCodigoBarras'])->name('manejo-stock.barcode');
+        Route::get('/manejo-stock/api/producto', [App\Http\Controllers\ManejoStockController::class, 'producto'])->name('manejo-stock.producto');
+        Route::get('/manejo-stock/api/ubicaciones', [App\Http\Controllers\ManejoStockController::class, 'buscarUbicaciones'])->name('manejo-stock.ubicaciones');
+    });
+
+    // **Mantenedor**
+    Route::middleware('permission:ver_mantenedor')->group(function () {
+        Route::get('/mantenedor/bodegas', [App\Http\Controllers\MantenedorController::class, 'bodegas'])->name('mantenedor.bodegas');
+        Route::post('/mantenedor/bodegas/crear', [App\Http\Controllers\MantenedorController::class, 'crearBodega'])->name('mantenedor.bodegas.crear');
+        Route::put('/mantenedor/bodegas/{id}', [App\Http\Controllers\MantenedorController::class, 'actualizarBodega'])->name('mantenedor.bodegas.actualizar');
+        Route::delete('/mantenedor/bodegas/{id}', [App\Http\Controllers\MantenedorController::class, 'eliminarBodega'])->name('mantenedor.bodegas.eliminar');
+        Route::post('/mantenedor/ubicaciones/crear', [App\Http\Controllers\MantenedorController::class, 'crearUbicacion'])->name('mantenedor.ubicaciones.crear');
+        Route::put('/mantenedor/ubicaciones/{id}', [App\Http\Controllers\MantenedorController::class, 'actualizarUbicacion'])->name('mantenedor.ubicaciones.actualizar');
+        Route::delete('/mantenedor/ubicaciones/{id}', [App\Http\Controllers\MantenedorController::class, 'eliminarUbicacion'])->name('mantenedor.ubicaciones.eliminar');
+    });
+
 });
 
 // Rutas de Administración de Usuarios
@@ -389,6 +394,13 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::post('/productos/multiplos/cargar', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'cargarExcel'])->name('productos.multiplos.cargar');
     Route::put('/productos/multiplos/{id}', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'actualizar'])->name('productos.multiplos.actualizar');
     Route::post('/productos/multiplos/{id}/restablecer', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'restablecer'])->name('productos.multiplos.restablecer');
+
+    // Gestión de Roles y Permisos (Solo Super Admin)
+    Route::get('/roles', [App\Http\Controllers\Admin\RoleManagementController::class, 'index'])->name('roles.index');
+    Route::post('/roles', [App\Http\Controllers\Admin\RoleManagementController::class, 'store'])->name('roles.store');
+    Route::get('/roles/{role}/edit', [App\Http\Controllers\Admin\RoleManagementController::class, 'edit'])->name('roles.edit');
+    Route::put('/roles/{role}', [App\Http\Controllers\Admin\RoleManagementController::class, 'update'])->name('roles.update');
+    Route::delete('/roles/{role}', [App\Http\Controllers\Admin\RoleManagementController::class, 'destroy'])->name('roles.destroy');
 });
 
 // Webhook para despliegue automático desde GitHub

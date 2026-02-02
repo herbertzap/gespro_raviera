@@ -55,10 +55,9 @@
                             
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="rut" class="bmd-label-floating">RUT ({{ __('Opcional') }})</label>
+                                    <label for="rut" class="bmd-label-floating">RUT</label>
                                     <input type="text" name="rut" id="rut" class="form-control @error('rut') is-invalid @enderror" 
-                                           value="{{ old('rut', $user->rut) }}" placeholder="12345678-9" maxlength="12">
-                                    <small class="form-text text-muted">{{ __('Formato') }}: 12345678-9</small>
+                                           value="{{ old('rut', $user->rut) }}" placeholder="0000000-0" maxlength="10">
                                     @error('rut')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -69,10 +68,9 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="codigo_vendedor" class="bmd-label-floating">Código de Usuario *</label>
+                                    <label for="codigo_vendedor" class="bmd-label-floating">Código Vendedor</label>
                                     <input type="text" name="codigo_vendedor" id="codigo_vendedor" class="form-control @error('codigo_vendedor') is-invalid @enderror" 
-                                           value="{{ old('codigo_vendedor', $user->codigo_vendedor) }}" required>
-                                    <small class="form-text text-muted">Obligatorio. Usar el código del empleado.</small>
+                                           value="{{ old('codigo_vendedor', $user->codigo_vendedor) }}">
                                     @error('codigo_vendedor')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -81,14 +79,13 @@
                             
                             <div class="col-md-6">
                                 <div class="form-group">
-                                        <div class="form-check">
-                                            <input type="checkbox" name="es_vendedor" id="es_vendedor" class="form-check-input" 
-                                                   value="1" {{ old('es_vendedor', $user->es_vendedor) ? 'checked' : '' }}>
-                                            <label for="es_vendedor" class="form-check-label">
-                                                Es Vendedor
-                                            </label>
-                                            <small class="form-text text-muted">Marca si debe comportarse como vendedor en el flujo (asigna flag adicional al rol).</small>
-                                        </div>
+                                    <div class="form-check">
+                                        <input type="checkbox" name="es_vendedor" id="es_vendedor" class="form-check-input" 
+                                               value="1" {{ old('es_vendedor', $user->es_vendedor) ? 'checked' : '' }}>
+                                        <label for="es_vendedor" class="form-check-label">
+                                            Es Vendedor
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -99,10 +96,6 @@
                                     <label class="bmd-label-floating">Roles *</label>
                                     <div class="row">
                                         @foreach($roles as $role)
-                                            {{-- Solo mostrar rol "Super Admin" si el usuario actual es Super Admin --}}
-                                            @if($role->name === 'Super Admin' && !auth()->user()->hasRole('Super Admin'))
-                                                @continue
-                                            @endif
                                         <div class="col-md-3">
                                             <div class="form-check">
                                                 <input type="checkbox" name="roles[]" value="{{ $role->id }}" 
@@ -140,43 +133,49 @@
                     <hr>
                     <div class="row">
                         <div class="col-md-12">
-                            <h5>{{ __('Cambiar Contraseña') }}</h5>
-                            <form action="{{ route('admin.users.change-password', $user) }}" method="POST" id="formChangePassword">
+                            <h5>Cambiar Contraseña</h5>
+                            <form action="{{ route('admin.users.change-password', $user) }}" method="POST" id="changePasswordForm">
                                 @csrf
                                 <div class="row">
                                     <div class="col-md-4">
                                         <div class="form-group">
-                                            <label for="new_password" class="bmd-label-floating">{{ __('Nueva Contraseña') }} *</label>
+                                            <label for="new_password" class="bmd-label-floating">Nueva Contraseña *</label>
                                             <div class="input-group">
-                                                <input type="password" name="password" id="new_password" class="form-control" required minlength="8" aria-label="Nueva contraseña">
+                                                <input type="password" name="password" id="new_password" class="form-control @error('password') is-invalid @enderror" required minlength="8">
                                                 <div class="input-group-append">
-                                                    <button class="btn btn-outline-secondary" type="button" id="togglePassword" aria-label="Mostrar u ocultar contraseña" onclick="togglePasswordVisibility('new_password', 'iconPassword')">
-                                                        <i class="material-icons" id="iconPassword">visibility_off</i>
+                                                    <button class="btn btn-outline-secondary" type="button" id="toggleNewPassword" onclick="togglePasswordVisibility('new_password', 'toggleNewPassword')">
+                                                        <i class="tim-icons icon-single-02" id="iconNewPassword"></i>
                                                     </button>
                                                 </div>
                                             </div>
-                                            <small class="form-text text-muted">{{ __('Mínimo 8 caracteres') }}</small>
+                                            @error('password')
+                                                <div class="text-danger small">{{ $message }}</div>
+                                            @enderror
                                         </div>
                                     </div>
                                     <div class="col-md-4">
                                         <div class="form-group">
-                                            <label for="password_confirmation" class="bmd-label-floating">{{ __('Confirmar Contraseña') }} *</label>
+                                            <label for="password_confirmation" class="bmd-label-floating">Confirmar Contraseña *</label>
                                             <div class="input-group">
-                                                <input type="password" name="password_confirmation" id="password_confirmation" class="form-control" required minlength="8" aria-label="Confirmar contraseña">
+                                                <input type="password" name="password_confirmation" id="password_confirmation" class="form-control @error('password_confirmation') is-invalid @enderror" required minlength="8">
                                                 <div class="input-group-append">
-                                                    <button class="btn btn-outline-secondary" type="button" id="togglePasswordConfirmation" aria-label="Mostrar u ocultar contraseña" onclick="togglePasswordVisibility('password_confirmation', 'iconPasswordConfirmation')">
-                                                        <i class="material-icons" id="iconPasswordConfirmation">visibility_off</i>
+                                                    <button class="btn btn-outline-secondary" type="button" id="togglePasswordConfirmation" onclick="togglePasswordVisibility('password_confirmation', 'togglePasswordConfirmation')">
+                                                        <i class="tim-icons icon-single-02" id="iconPasswordConfirmation"></i>
                                                     </button>
                                                 </div>
                                             </div>
+                                            @error('password_confirmation')
+                                                <div class="text-danger small">{{ $message }}</div>
+                                            @enderror
                                             <small id="passwordMatchMessage" class="form-text" style="display: none;"></small>
                                         </div>
                                     </div>
                                     <div class="col-md-4">
                                         <div class="form-group">
-                                            <button type="submit" class="btn btn-warning">
+                                            <label class="bmd-label-floating">&nbsp;</label>
+                                            <button type="submit" class="btn btn-warning btn-block">
                                                 <i class="material-icons">lock</i>
-                                                {{ __('Cambiar Contraseña') }}
+                                                Cambiar Contraseña
                                             </button>
                                         </div>
                                     </div>
@@ -189,51 +188,48 @@
         </div>
     </div>
 </div>
+@endsection
 
-<!-- Modal de Cambio de Contraseña -->
-<div class="modal fade" id="modalPasswordChange" tabindex="-1" role="dialog" aria-labelledby="modalPasswordChangeLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered" role="document">
-        <div class="modal-content">
-            <div class="modal-header" id="modalPasswordChangeHeader">
-                <h5 class="modal-title" id="modalPasswordChangeLabel">
-                    <i class="material-icons" id="modalPasswordChangeIcon"></i>
-                    <span id="modalPasswordChangeTitle"></span>
-                </h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-            </div>
-            <div class="modal-body" id="modalPasswordChangeBody">
-                <p id="modalPasswordChangeMessage"></p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cerrar</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-@push('js')
+@section('scripts')
 <script>
+// Función para mostrar/ocultar contraseña - debe estar en el alcance global
+function togglePasswordVisibility(inputId, buttonId) {
+    const input = document.getElementById(inputId);
+    if (!input) {
+        console.error('Input no encontrado:', inputId);
+        return;
+    }
+
+    let iconId;
+    if (inputId === 'new_password') {
+        iconId = 'iconNewPassword';
+    } else if (inputId === 'password_confirmation') {
+        iconId = 'iconPasswordConfirmation';
+    } else {
+        console.error('InputId no reconocido:', inputId);
+        return;
+    }
+
+    const icon = document.getElementById(iconId);
+    if (!icon) {
+        console.error('Icono no encontrado:', iconId);
+        return;
+    }
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'tim-icons icon-lock-circle';
+    } else {
+        input.type = 'password';
+        icon.className = 'tim-icons icon-single-02';
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
-    // Mostrar modal de cambio de contraseña si hay mensaje de sesión
-    @if(session('success'))
-        mostrarModalPasswordChange('success', '{{ session('success') }}');
-        // Limpiar campos del formulario
-        document.getElementById('new_password').value = '';
-        document.getElementById('password_confirmation').value = '';
-    @endif
-
-    @if(session('error') || $errors->has('password'))
-        mostrarModalPasswordChange('error', '{{ session('error', $errors->first('password')) }}');
-    @endif
-
-    @if($errors->has('password_confirmation'))
-        mostrarModalPasswordChange('error', '{{ $errors->first('password_confirmation') }}');
-    @endif
-    // Formatear RUT (mismo formato que profile)
     const rutInput = document.getElementById('rut');
+    
     if (rutInput) {
+        // Formatear RUT mientras se escribe
         rutInput.addEventListener('input', function(e) {
             // Limpiar: solo números, K y guiones
             let value = e.target.value.replace(/[^0-9kK-]/g, '');
@@ -335,59 +331,6 @@ document.addEventListener('DOMContentLoaded', function() {
         passwordConfirmationInput.addEventListener('input', validatePasswordMatch);
     }
 });
-
-// Función para mostrar/ocultar contraseña (material icons)
-function togglePasswordVisibility(inputId, iconId) {
-    const input = document.getElementById(inputId);
-    if (!input) return;
-
-    // Obtener el icono correcto según el inputId
-    let icon;
-    if (inputId === 'new_password') {
-        icon = document.getElementById('iconPassword');
-    } else if (inputId === 'password_confirmation') {
-        icon = document.getElementById('iconPasswordConfirmation');
-    } else {
-        icon = document.getElementById(iconId);
-    }
-    
-    if (!icon) return;
-
-    // Cambiar el tipo de input y el icono
-    if (input.type === 'password') {
-        input.type = 'text';
-        icon.textContent = 'visibility';
-    } else {
-        input.type = 'password';
-        icon.textContent = 'visibility_off';
-    }
-}
-
-// Función para mostrar el modal de cambio de contraseña
-function mostrarModalPasswordChange(tipo, mensaje) {
-    const modal = document.getElementById('modalPasswordChange');
-    const header = document.getElementById('modalPasswordChangeHeader');
-    const icon = document.getElementById('modalPasswordChangeIcon');
-    const title = document.getElementById('modalPasswordChangeTitle');
-    const message = document.getElementById('modalPasswordChangeMessage');
-    
-    if (tipo === 'success') {
-        header.className = 'modal-header bg-success text-white';
-        icon.textContent = 'check_circle';
-        icon.className = 'material-icons';
-        title.textContent = 'Contraseña Actualizada';
-        message.textContent = mensaje || 'La contraseña se ha actualizado exitosamente.';
-    } else {
-        header.className = 'modal-header bg-danger text-white';
-        icon.textContent = 'error';
-        icon.className = 'material-icons';
-        title.textContent = 'Error al Cambiar Contraseña';
-        message.textContent = mensaje || 'Hubo un error al actualizar la contraseña. Por favor, intente nuevamente.';
-    }
-    
-    // Mostrar el modal usando jQuery (Bootstrap)
-    $(modal).modal('show');
-}
 </script>
 
 <style>
@@ -420,6 +363,4 @@ function mostrarModalPasswordChange(tipo, mensaje) {
     box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
 }
 </style>
-@endpush
-
 @endsection

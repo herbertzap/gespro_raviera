@@ -14,11 +14,10 @@ class FacturasEmitidasController extends Controller
     {
         $this->cobranzaService = $cobranzaService;
         
-        // Restringir acceso solo a Super Admin, Supervisor, Compras, Picking y Vendedor
+        // Restringir acceso por permisos
         $this->middleware(function ($request, $next) {
-            $user = auth()->user();
-            if (!$user->hasRole('Super Admin') && !$user->hasRole('Supervisor') && !$user->hasRole('Compras') && !$user->hasRole('Picking') && !$user->hasRole('Vendedor')) {
-                abort(403, 'Acceso denegado. Solo Super Admin, Supervisor, Compras, Picking y Vendedor pueden acceder a esta vista.');
+            if (!auth()->user()->can('ver_facturas_emitidas')) {
+                abort(403, 'No tienes permisos para acceder a esta vista.');
             }
             return $next($request);
         });
@@ -85,9 +84,9 @@ class FacturasEmitidasController extends Controller
         // Agregar parámetros de filtro a la paginación
         $pagination->appends($filtros);
         
-        // Obtener vendedores para el filtro (solo para supervisor)
+        // Obtener vendedores para el filtro (solo para usuarios con permiso de ver todos los vendedores)
         $vendedores = [];
-        if ($user->hasRole('Super Admin') || $user->hasRole('Supervisor')) {
+        if ($user->can('ver_todos_vendedores') || $user->hasRole('Super Admin')) {
             $vendedores = $this->cobranzaService->getVendedores();
         }
 

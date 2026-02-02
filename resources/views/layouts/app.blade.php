@@ -153,6 +153,10 @@
     <body class="{{ $class ?? '' }}">
 
         @auth()
+            @php
+                // Limpiar caché de permisos para asegurar que se evalúen correctamente
+                app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+            @endphp
             <div class="wrapper">
                     @include('layouts.navbars.sidebar')
                 <div class="main-panel">

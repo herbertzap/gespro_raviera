@@ -6,12 +6,8 @@
         <div class="col-md-8 offset-md-2">
             <div class="card">
                 <div class="card-header">
-                    <h4 class="card-title">
-                        <i class="tim-icons icon-notes"></i> Contabilidad - Seleccionar Bodega
-                    </h4>
-                    <p class="category mb-0">
-                        Elige la bodega y, opcionalmente, la ubicación donde realizarás el conteo.
-                    </p>
+                    <h4 class="card-title">Seleccionar Bodega</h4>
+                    <p class="category mb-0">Elige la bodega y, opcionalmente, la ubicación donde realizarás el conteo.</p>
                 </div>
                 <div class="card-body">
                     <form action="{{ route('manejo-stock.contabilidad') }}" method="GET" id="formSeleccionBodega">
@@ -36,9 +32,7 @@
                         </div>
 
                         <div class="text-right">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="tim-icons icon-notes"></i> Continuar
-                            </button>
+                            <button type="submit" class="btn btn-primary">Continuar</button>
                         </div>
                     </form>
                 </div>
@@ -58,7 +52,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const option = bodegaSelect.options[bodegaSelect.selectedIndex];
         const ubicaciones = option.dataset.ubicaciones ? JSON.parse(option.dataset.ubicaciones) : [];
 
-        ubicacionSelect.innerHTML = '<option value="">Todas las ubicaciones</option>';
+        ubicacionSelect.innerHTML = '<option value=\"\">Todas las ubicaciones</option>';
 
         if (ubicaciones.length === 0) {
             ubicacionSelect.disabled = true;
@@ -77,3 +71,4 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 @endpush
+

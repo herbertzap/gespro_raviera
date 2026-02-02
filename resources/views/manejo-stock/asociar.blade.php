@@ -18,11 +18,7 @@
                             @endif
                         </small>
                     </div>
-                    @if(auth()->user()->hasRole('Barrido') && !auth()->user()->hasRole('Super Admin'))
-                        <a href="{{ route('manejo-stock.barrido-simplificado') }}" class="btn btn-link">Volver a barrido</a>
-                    @else
-                        <a href="{{ route('manejo-stock.contabilidad', ['bodega_id' => $bodega->id, 'ubicacion_id' => $ubicacion->id ?? null]) }}" class="btn btn-link">Volver a contabilidad</a>
-                    @endif
+                    <a href="{{ route('manejo-stock.contabilidad', ['bodega_id' => $bodega->id, 'ubicacion_id' => $ubicacion->id ?? null]) }}" class="btn btn-link">Volver a contabilidad</a>
                 </div>
                 <div class="card-body">
                     <div class="alert alert-info">
@@ -42,7 +38,6 @@
                         <input type="hidden" name="sku" id="inputSkuSeleccionado" value="{{ old('sku') }}">
                         <input type="hidden" name="existing_barcode" id="inputExistingBarcode" value="{{ old('existing_barcode') }}">
                         <input type="hidden" name="accion_codigo" id="inputAccionCodigo" value="{{ old('accion_codigo', 'insert') }}">
-                        <input type="hidden" name="origen" value="{{ request()->query('origen', '') }}">
 
                         <div class="form-group">
                             <label for="inputBarcode">Código de barras</label>

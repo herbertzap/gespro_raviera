@@ -14,12 +14,10 @@ class NvvPendientesController extends Controller
     {
         $this->cobranzaService = $cobranzaService;
         
-        // Restringir acceso solo a Super Admin, Supervisor, Compras, Picking, Picking Operativo y Vendedor
+        // Restringir acceso por permisos
         $this->middleware(function ($request, $next) {
-            $user = auth()->user();
-            if (!$user->hasRole('Super Admin') && !$user->hasRole('Supervisor') && !$user->hasRole('Compras') && 
-                !$user->hasRole('Picking') && !$user->hasRole('Picking Operativo') && !$user->hasRole('Vendedor')) {
-                abort(403, 'Acceso denegado. Solo Super Admin, Supervisor, Compras, Picking, Picking Operativo y Vendedor pueden acceder a esta vista.');
+            if (!auth()->user()->can('ver_nvv_pendientes')) {
+                abort(403, 'No tienes permisos para acceder a esta vista.');
             }
             return $next($request);
         });
@@ -49,9 +47,6 @@ class NvvPendientesController extends Controller
         // Obtener datos de NVV pendientes
         $nvvPendientes = $this->cobranzaService->getNvvPendientesDetalle($codigoVendedor, 1000);
         
-        // Obtener lista de clientes únicos para el select (antes de filtrar)
-        $clientes = $this->obtenerClientesUnicos($nvvPendientes);
-        
         // Aplicar filtros
         $nvvFiltrados = $this->aplicarFiltrosNvv($nvvPendientes, $filtros);
         
@@ -75,7 +70,6 @@ class NvvPendientesController extends Controller
             'nvvPendientes' => $nvvPaginated,
             'resumen' => $resumen,
             'filtros' => $filtros,
-            'clientes' => $clientes,
             'tipoUsuario' => $user->hasRole('Vendedor') ? 'Vendedor' : 'Administrador',
             'pageSlug' => 'nvv-pendientes'
         ]);
@@ -100,9 +94,8 @@ class NvvPendientesController extends Controller
         $user = Auth::user();
         
         // Verificar permisos
-        if (!$user->hasRole('Super Admin') && !$user->hasRole('Supervisor') && !$user->hasRole('Compras') && 
-            !$user->hasRole('Picking') && !$user->hasRole('Picking Operativo') && !$user->hasRole('Vendedor')) {
-            abort(403, 'Acceso denegado.');
+        if (!$user->can('ver_nvv_pendientes')) {
+            abort(403, 'No tienes permisos para acceder a esta vista.');
         }
         
         // Si es vendedor, verificar que la NVV pertenezca a su código
@@ -158,9 +151,7 @@ class NvvPendientesController extends Controller
             'buscar' => $request->get('buscar', ''),
             'rango_dias' => $request->get('rango_dias', ''),
             'cliente' => $request->get('cliente', ''),
-            'producto' => $request->get('producto', ''),
-            'ordenar_por' => $request->get('ordenar_por', 'DIAS'),
-            'orden' => $request->get('orden', 'desc')
+            'producto' => $request->get('producto', '')
         ];
         
         $nvvFiltrados = $this->aplicarFiltrosNvv($nvvPendientes, $filtros);
@@ -168,117 +159,12 @@ class NvvPendientesController extends Controller
         // Generar archivo Excel
         $filename = 'nvv_pendientes_' . date('Y-m-d_H-i-s') . '.xlsx';
         
-        return $this->generarExcel($nvvFiltrados, $filename);
-    }
-
-    private function generarExcel($nvvPendientes, $filename)
-    {
-        // Crear archivo Excel usando PhpSpreadsheet
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-        
-        // Título del reporte
-        $sheet->setCellValue('A1', 'REPORTE DE NVV PENDIENTES');
-        $sheet->setCellValue('A2', 'Generado el: ' . date('d/m/Y H:i:s'));
-        $sheet->setCellValue('A3', 'Total de registros: ' . count($nvvPendientes));
-        
-        // Estilo para el título
-        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
-        $sheet->getStyle('A2:A3')->getFont()->setSize(10);
-        
-        // Encabezados de la tabla
-        $row = 5;
-        $headers = [
-            'A' . $row => 'Número NVV',
-            'B' . $row => 'Cliente',
-            'C' . $row => 'Productos',
-            'D' . $row => 'Pendiente (Unidades)',
-            'E' . $row => 'Valor Pendiente',
-            'F' . $row => 'Días',
-            'G' . $row => 'Rango'
-        ];
-        
-        foreach ($headers as $cell => $value) {
-            $sheet->setCellValue($cell, $value);
-        }
-        
-        // Estilo para los encabezados
-        $sheet->getStyle('A5:G5')->getFont()->setBold(true);
-        $sheet->getStyle('A5:G5')->getFill()
-            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
-            ->getStartColor()->setRGB('E0E0E0');
-        
-        // Datos de las NVV
-        $row = 6;
-        $totalPendiente = 0;
-        $totalValorPendiente = 0;
-        
-        foreach ($nvvPendientes as $nvv) {
-            $numeroNvv = ($nvv['TD'] ?? '') . '-' . ($nvv['NUM'] ?? '');
-            $cliente = $nvv['CLIE'] ?? '';
-            $cantidadProductos = $nvv['CANTIDAD_PRODUCTOS'] ?? 0;
-            $totalPend = $nvv['TOTAL_PENDIENTE'] ?? 0;
-            $valorPend = $nvv['TOTAL_VALOR_PENDIENTE'] ?? 0;
-            $dias = $nvv['DIAS'] ?? 0;
-            
-            // Determinar rango
-            $rango = '';
-            if ($dias >= 1 && $dias <= 7) {
-                $rango = '1-7 días';
-            } elseif ($dias >= 8 && $dias <= 30) {
-                $rango = '8-30 días';
-            } elseif ($dias >= 31 && $dias <= 60) {
-                $rango = '31-60 días';
-            } elseif ($dias > 60) {
-                $rango = 'Más de 60 días';
-            }
-            
-            $sheet->setCellValue('A' . $row, $numeroNvv);
-            $sheet->setCellValue('B' . $row, $cliente);
-            $sheet->setCellValue('C' . $row, $cantidadProductos);
-            $sheet->setCellValue('D' . $row, $totalPend);
-            $sheet->setCellValue('E' . $row, $valorPend);
-            $sheet->setCellValue('F' . $row, $dias);
-            $sheet->setCellValue('G' . $row, $rango);
-            
-            // Formato numérico para valores
-            $sheet->getStyle('D' . $row)->getNumberFormat()->setFormatCode('#,##0');
-            $sheet->getStyle('E' . $row)->getNumberFormat()->setFormatCode('#,##0');
-            $sheet->getStyle('F' . $row)->getNumberFormat()->setFormatCode('#,##0');
-            
-            $totalPendiente += $totalPend;
-            $totalValorPendiente += $valorPend;
-            
-            $row++;
-        }
-        
-        // Totales
-        $row++;
-        $sheet->setCellValue('C' . $row, 'TOTALES:');
-        $sheet->setCellValue('D' . $row, $totalPendiente);
-        $sheet->setCellValue('E' . $row, $totalValorPendiente);
-        
-        // Estilo para totales
-        $sheet->getStyle('C' . $row . ':E' . $row)->getFont()->setBold(true);
-        $sheet->getStyle('D' . $row)->getNumberFormat()->setFormatCode('#,##0');
-        $sheet->getStyle('E' . $row)->getNumberFormat()->setFormatCode('#,##0');
-        
-        // Autoajustar columnas
-        foreach (range('A', 'G') as $column) {
-            $sheet->getColumnDimension($column)->setAutoSize(true);
-        }
-        
-        // Bordes para la tabla principal
-        $lastDataRow = 5 + count($nvvPendientes) + 1; // +1 para la fila de totales
-        $sheet->getStyle('A5:G' . $lastDataRow)->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
-        
-        // Generar archivo
-        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-        
-        $tempFile = tempnam(sys_get_temp_dir(), 'nvv_pendientes_');
-        $writer->save($tempFile);
-        
-        return response()->download($tempFile, $filename)->deleteFileAfterSend(true);
+        return response()->json([
+            'success' => true,
+            'message' => 'Exportación completada',
+            'filename' => $filename,
+            'total_registros' => count($nvvFiltrados)
+        ]);
     }
 
     private function aplicarFiltrosNvv($nvvPendientes, $filtros)
@@ -312,12 +198,11 @@ class NvvPendientesController extends Controller
             });
         }
 
-        // Filtrar por cliente (código exacto del select)
+        // Filtrar por cliente
         if (!empty($filtros['cliente'])) {
-            $clienteCodigo = strtolower($filtros['cliente']);
-            $nvvPendientes = array_filter($nvvPendientes, function($nvv) use ($clienteCodigo) {
-                $codigoFactura = strtolower($nvv['COD_CLI'] ?? '');
-                return $codigoFactura === $clienteCodigo;
+            $cliente = strtolower($filtros['cliente']);
+            $nvvPendientes = array_filter($nvvPendientes, function($nvv) use ($cliente) {
+                return strpos(strtolower($nvv['CLIE'] ?? ''), $cliente) !== false;
             });
         }
 
@@ -347,34 +232,5 @@ class NvvPendientesController extends Controller
         });
 
         return array_values($nvvPendientes);
-    }
-
-    /**
-     * Obtener lista de clientes únicos para el select
-     */
-    private function obtenerClientesUnicos($nvvPendientes)
-    {
-        $clientes = [];
-        $clientesMap = [];
-        
-        foreach ($nvvPendientes as $nvv) {
-            $codigo = $nvv['COD_CLI'] ?? '';
-            $nombre = $nvv['CLIE'] ?? '';
-            
-            if (!empty($codigo) && !isset($clientesMap[$codigo])) {
-                $clientesMap[$codigo] = true;
-                $clientes[] = [
-                    'codigo' => $codigo,
-                    'nombre' => $nombre
-                ];
-            }
-        }
-        
-        // Ordenar por nombre
-        usort($clientes, function($a, $b) {
-            return strcmp($a['nombre'], $b['nombre']);
-        });
-        
-        return $clientes;
     }
 }

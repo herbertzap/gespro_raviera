@@ -22,6 +22,27 @@ class DashboardController extends Controller
         $this->cobranzaService = $cobranzaService;
     }
 
+    /**
+     * Determina si el usuario debe ver datos filtrados por su código de vendedor
+     * @param User $user
+     * @return string|null Código de vendedor si debe filtrar, null si debe ver datos generales
+     */
+    private function getCodigoVendedorFiltro($user)
+    {
+        // Si tiene el permiso de filtrar por código Y tiene código de vendedor, filtrar
+        if ($user->can('dashboard_filtrar_por_codigo') && $user->codigo_vendedor) {
+            return $user->codigo_vendedor;
+        }
+        
+        // Si es Super Admin, nunca filtrar
+        if ($user->hasRole('Super Admin')) {
+            return null;
+        }
+        
+        // Por defecto, no filtrar (mostrar datos generales)
+        return null;
+    }
+
     public function index()
     {
         $user = auth()->user();

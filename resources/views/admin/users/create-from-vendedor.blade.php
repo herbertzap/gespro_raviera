@@ -41,7 +41,7 @@
                         </div>
                     @endif
 
-                    <form action="{{ route('admin.users.store-from-vendedor') }}" method="POST" id="createUserForm">
+                    <form action="{{ route('admin.users.store-from-vendedor') }}" method="POST">
                         @csrf
                         
                         <div class="row">
@@ -72,19 +72,6 @@
                             
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label for="codigo_vendedor" class="bmd-label-floating">Código de Usuario *</label>
-                                    <input type="text" name="codigo_vendedor" id="codigo_vendedor" class="form-control @error('codigo_vendedor') is-invalid @enderror" required readonly>
-                                    <small class="form-text text-muted">Se obtiene automáticamente del empleado seleccionado</small>
-                                    @error('codigo_vendedor')
-                                        <div class="invalid-feedback">{{ $message }}</div>
-                                    @enderror
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="form-group">
                                     <label for="email" class="bmd-label-floating">Email del Sistema *</label>
                                     <input type="email" name="email" id="email" class="form-control @error('email') is-invalid @enderror" required>
                                     @error('email')
@@ -92,7 +79,9 @@
                                     @enderror
                                 </div>
                             </div>
-                            
+                        </div>
+
+                        <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
                                     <label for="email_alternativo" class="bmd-label-floating">Email Alternativo</label>
@@ -102,9 +91,7 @@
                                     @enderror
                                 </div>
                             </div>
-                        </div>
-
-                        <div class="row">
+                            
                             <div class="col-md-6">
                                 <div class="form-group">
                                     <label for="rut" class="bmd-label-floating">RUT (Opcional)</label>
@@ -118,21 +105,37 @@
                         </div>
 
                         <div class="row">
-                            <div class="col-md-12">
+                            <div class="col-md-6">
                                 <div class="form-group">
                                     <label for="password" class="bmd-label-floating">Contraseña Temporal *</label>
                                     <div class="input-group">
-                                        <input type="password" name="password" id="password" class="form-control @error('password') is-invalid @enderror" required minlength="8" aria-label="Contraseña temporal">
+                                        <input type="password" name="password" id="password" class="form-control @error('password') is-invalid @enderror" required minlength="8">
                                         <div class="input-group-append">
-                                            <button class="btn btn-outline-secondary" type="button" id="togglePasswordBtn" aria-label="Mostrar u ocultar contraseña" onclick="togglePasswordVisibility('password', 'togglePasswordIcon')">
-                                                <i class="material-icons" id="togglePasswordIcon">visibility_off</i>
+                                            <button class="btn btn-outline-secondary" type="button" id="togglePassword" onclick="togglePasswordVisibility('password', 'togglePassword')">
+                                                <i class="tim-icons icon-single-02" id="iconPassword"></i>
                                             </button>
                                         </div>
                                     </div>
                                     @error('password')
-                                        <div class="invalid-feedback">{{ $message }}</div>
+                                        <div class="text-danger small">{{ $message }}</div>
                                     @enderror
-                                    <small class="form-text text-muted">Mínimo 8 caracteres</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="password_confirmation" class="bmd-label-floating">Confirmar Contraseña *</label>
+                                    <div class="input-group">
+                                        <input type="password" name="password_confirmation" id="password_confirmation" class="form-control @error('password_confirmation') is-invalid @enderror" required minlength="8">
+                                        <div class="input-group-append">
+                                            <button class="btn btn-outline-secondary" type="button" id="togglePasswordConfirmation" onclick="togglePasswordVisibility('password_confirmation', 'togglePasswordConfirmation')">
+                                                <i class="tim-icons icon-single-02" id="iconPasswordConfirmation"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    @error('password_confirmation')
+                                        <div class="text-danger small">{{ $message }}</div>
+                                    @enderror
+                                    <small id="passwordMatchMessage" class="form-text" style="display: none;"></small>
                                 </div>
                             </div>
                         </div>
@@ -143,10 +146,6 @@
                                     <label class="bmd-label-floating">Roles *</label>
                                     <div class="row">
                                         @foreach($roles as $role)
-                                            {{-- Solo mostrar rol "Super Admin" si el usuario actual es Super Admin --}}
-                                            @if($role->name === 'Super Admin' && !auth()->user()->hasRole('Super Admin'))
-                                                @continue
-                                            @endif
                                         <div class="col-md-3">
                                             <div class="form-check">
                                                 <input type="checkbox" name="roles[]" value="{{ $role->id }}" 
@@ -201,13 +200,6 @@
 
 @push('js')
 <style>
-/* Estilos para campos readonly/disabled */
-.form-control[disabled], .form-control[readonly], fieldset[disabled] .form-control {
-    background-color: #1d253b !important;
-    color: #000 !important;
-    cursor: not-allowed;
-}
-
 /* FORZAR estilos específicos para el select - sobrescribir CSS global */
 #vendedor_id.form-control {
     color: #333 !important;
@@ -269,18 +261,14 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('✅ DOM cargado, inicializando script...');
     const vendedorSelect = document.getElementById('vendedor_id');
     const infoDiv = document.getElementById('vendedor-info');
-    const codigoVendedorField = document.getElementById('codigo_vendedor');
     const emailField = document.getElementById('email');
     const rutField = document.getElementById('rut');
-    const passwordField = document.getElementById('password');
     
     console.log('Elementos encontrados:', {
         vendedorSelect: !!vendedorSelect,
         infoDiv: !!infoDiv,
-        codigoVendedorField: !!codigoVendedorField,
         emailField: !!emailField,
-        rutField: !!rutField,
-        passwordField: !!passwordField
+        rutField: !!rutField
     });
     
     // Función AJAX para obtener datos del vendedor
@@ -291,7 +279,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (infoDiv) {
                 infoDiv.innerHTML = '<p>Seleccione un empleado para ver su información</p>';
             }
-            if (codigoVendedorField) codigoVendedorField.value = '';
             if (emailField) emailField.value = '';
             if (rutField) rutField.value = '';
             return;
@@ -334,26 +321,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Mostrar información del empleado
                 if (infoDiv) {
                     infoDiv.innerHTML = `
-                        <p><strong>Código:</strong> ${vendedor.kofu || 'No especificado'}</p>
                         <p><strong>Nombre:</strong> ${vendedor.nombre || 'No especificado'}</p>
                         <p><strong>Email:</strong> ${vendedor.email || 'No especificado'}</p>
                         <p><strong>RUT:</strong> ${vendedor.rut || 'No especificado'}</p>
                     `;
-                }
-                
-                // Pre-llenar código de usuario (siempre debe tener valor)
-                if (codigoVendedorField && vendedor.kofu) {
-                    codigoVendedorField.value = vendedor.kofu.trim();
-                    codigoVendedorField.classList.remove('is-invalid');
-                    // Resaltar visualmente
-                    codigoVendedorField.style.backgroundColor = '#e8f5e8';
-                    codigoVendedorField.style.color = '#000';
-                    setTimeout(() => {
-                        codigoVendedorField.style.backgroundColor = '';
-                        codigoVendedorField.style.color = '';
-                    }, 2000);
-                } else if (codigoVendedorField) {
-                    codigoVendedorField.value = '';
                 }
                 
                 // Pre-llenar email si existe
@@ -396,7 +367,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (infoDiv) {
                     infoDiv.innerHTML = `<p class="text-danger"><i class="material-icons">error</i> ${data.message || 'Error al cargar información del empleado'}</p>`;
                 }
-                if (codigoVendedorField) codigoVendedorField.value = '';
                 if (emailField) emailField.value = '';
                 if (rutField) rutField.value = '';
             }
@@ -406,7 +376,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (infoDiv) {
                 infoDiv.innerHTML = '<p class="text-danger"><i class="material-icons">error</i> Error al cargar información del empleado. Por favor, intente nuevamente.</p>';
             }
-            if (codigoVendedorField) codigoVendedorField.value = '';
             if (emailField) emailField.value = '';
             if (rutField) rutField.value = '';
         });
@@ -486,132 +455,103 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Toggle de visibilidad de contraseña
-    window.togglePasswordVisibility = function(fieldId, iconId) {
-        const field = document.getElementById(fieldId);
-        const icon = document.getElementById(iconId);
-        if (!field || !icon) return;
-        if (field.type === 'password') {
-            field.type = 'text';
-            icon.textContent = 'visibility';
-        } else {
-            field.type = 'password';
-            icon.textContent = 'visibility_off';
-        }
-    };
+    // Validar que las contraseñas coincidan
+    const passwordInput = document.getElementById('password');
+    const passwordConfirmationInput = document.getElementById('password_confirmation');
+    const passwordMatchMessage = document.getElementById('passwordMatchMessage');
 
-    // Función para validar email con dominio completo
-    function validarEmailConDominio(email) {
-        if (!email || email.trim() === '') {
-            return true; // Permitir vacío si es nullable
+    function validatePasswordMatch() {
+        if (!passwordInput || !passwordConfirmationInput || !passwordMatchMessage) {
+            return;
         }
-        
-        // Validar formato básico de email
-        if (!filter_var(email, FILTER_VALIDATE_EMAIL)) {
-            return false;
+
+        const password = passwordInput.value;
+        const passwordConfirmation = passwordConfirmationInput.value;
+
+        if (passwordConfirmation.length === 0) {
+            passwordMatchMessage.style.display = 'none';
+            passwordConfirmationInput.classList.remove('is-valid', 'is-invalid');
+            return;
         }
-        
-        // Validar que tenga dominio completo
-        const parts = email.split('@');
-        if (parts.length !== 2) {
-            return false;
+
+        if (password === passwordConfirmation && password.length >= 8) {
+            passwordMatchMessage.style.display = 'block';
+            passwordMatchMessage.className = 'form-text text-success';
+            passwordMatchMessage.textContent = '✓ Las contraseñas coinciden';
+            passwordConfirmationInput.classList.remove('is-invalid');
+            passwordConfirmationInput.classList.add('is-valid');
+        } else if (password.length > 0 && passwordConfirmation.length > 0) {
+            passwordMatchMessage.style.display = 'block';
+            passwordMatchMessage.className = 'form-text text-danger';
+            passwordMatchMessage.textContent = '✗ Las contraseñas no coinciden';
+            passwordConfirmationInput.classList.remove('is-valid');
+            if (password !== passwordConfirmation) {
+                passwordConfirmationInput.classList.add('is-invalid');
+            }
         }
-        
-        const domain = parts[1];
-        // El dominio debe tener al menos un punto
-        if (domain.indexOf('.') === -1) {
-            return false;
-        }
-        
-        // Verificar que el TLD tenga al menos 2 caracteres
-        const domainParts = domain.split('.');
-        const tld = domainParts[domainParts.length - 1];
-        if (tld.length < 2) {
-            return false;
-        }
-        
-        return true;
     }
 
-    // Validación en tiempo real de los campos de email
-    if (emailField) {
-        emailField.addEventListener('blur', function() {
-            const email = this.value.trim();
-            if (email && !validarEmailConDominio(email)) {
-                this.classList.add('is-invalid');
-                if (!this.nextElementSibling || !this.nextElementSibling.classList.contains('invalid-feedback')) {
-                    const errorDiv = document.createElement('div');
-                    errorDiv.className = 'invalid-feedback';
-                    errorDiv.textContent = 'El email debe tener un dominio completo válido (ejemplo: usuario@dominio.com o usuario@dominio.cl)';
-                    this.parentElement.appendChild(errorDiv);
-                }
-            } else {
-                this.classList.remove('is-invalid');
-                const errorDiv = this.parentElement.querySelector('.invalid-feedback');
-                if (errorDiv) {
-                    errorDiv.remove();
-                }
-            }
-        });
-    }
-
-    const emailAlternativoField = document.getElementById('email_alternativo');
-    if (emailAlternativoField) {
-        emailAlternativoField.addEventListener('blur', function() {
-            const email = this.value.trim();
-            if (email && !validarEmailConDominio(email)) {
-                this.classList.add('is-invalid');
-                if (!this.nextElementSibling || !this.nextElementSibling.classList.contains('invalid-feedback')) {
-                    const errorDiv = document.createElement('div');
-                    errorDiv.className = 'invalid-feedback';
-                    errorDiv.textContent = 'El email alternativo debe tener un dominio completo válido (ejemplo: usuario@dominio.com o usuario@dominio.cl)';
-                    this.parentElement.appendChild(errorDiv);
-                }
-            } else {
-                this.classList.remove('is-invalid');
-                const errorDiv = this.parentElement.querySelector('.invalid-feedback');
-                if (errorDiv) {
-                    errorDiv.remove();
-                }
-            }
-        });
-    }
-
-    // Validación antes de enviar el formulario
-    const form = document.getElementById('createUserForm');
-    if (form) {
-        form.addEventListener('submit', function(e) {
-            let isValid = true;
-            
-            // Validar email principal
-            const email = emailField ? emailField.value.trim() : '';
-            if (email && !validarEmailConDominio(email)) {
-                isValid = false;
-                if (emailField) {
-                    emailField.classList.add('is-invalid');
-                    emailField.focus();
-                }
-            }
-            
-            // Validar email alternativo
-            const emailAlt = emailAlternativoField ? emailAlternativoField.value.trim() : '';
-            if (emailAlt && !validarEmailConDominio(emailAlt)) {
-                isValid = false;
-                if (emailAlternativoField) {
-                    emailAlternativoField.classList.add('is-invalid');
-                    if (isValid) {
-                        emailAlternativoField.focus();
-                    }
-                }
-            }
-            
-            if (!isValid) {
-                e.preventDefault();
-                alert('Por favor, corrija los campos de email. Deben tener un dominio completo válido (ejemplo: usuario@dominio.com o usuario@dominio.cl)');
-                return false;
-            }
-        });
+    if (passwordInput && passwordConfirmationInput) {
+        passwordInput.addEventListener('input', validatePasswordMatch);
+        passwordConfirmationInput.addEventListener('input', validatePasswordMatch);
     }
 });
+
+// Función para mostrar/ocultar contraseña
+function togglePasswordVisibility(inputId, buttonId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    let iconId;
+    if (inputId === 'password') {
+        iconId = 'iconPassword';
+    } else if (inputId === 'password_confirmation') {
+        iconId = 'iconPasswordConfirmation';
+    } else {
+        return;
+    }
+
+    const icon = document.getElementById(iconId);
+    if (!icon) return;
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'tim-icons icon-lock-circle';
+    } else {
+        input.type = 'password';
+        icon.className = 'tim-icons icon-single-02';
+    }
+}
 </script>
+
+<style>
+.input-group-append .btn {
+    border-left: 0;
+    border-radius: 0 0.25rem 0.25rem 0;
+    cursor: pointer;
+}
+
+.input-group-append .btn:focus {
+    box-shadow: none;
+    outline: none;
+}
+
+.input-group .form-control.is-valid {
+    border-color: #28a745;
+}
+
+.input-group .form-control.is-valid:focus {
+    border-color: #28a745;
+    box-shadow: 0 0 0 0.2rem rgba(40, 167, 69, 0.25);
+}
+
+.input-group .form-control.is-invalid {
+    border-color: #dc3545;
+}
+
+.input-group .form-control.is-invalid:focus {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+}
+</style>
 @endpush

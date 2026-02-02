@@ -14,7 +14,7 @@ class BarcodeLinkController extends Controller
 {
     public function __construct()
     {
-        $this->middleware(['auth', 'role:Manejo Stock|Super Admin|Barrido']);
+        $this->middleware(['auth', 'permission:ver_manejo_stock']);
     }
 
     public function create(Request $request)
@@ -23,39 +23,13 @@ class BarcodeLinkController extends Controller
         $bodegaId = $request->query('bodega_id');
         $ubicacionId = $request->query('ubicacion_id');
 
-        // Si es rol Barrido, permitir sin bodega_id (se usará la primera disponible)
-        if (!$barcode) {
-            if ($request->user()->hasRole('Barrido') && !$request->user()->hasRole('Super Admin')) {
-                return redirect()->route('manejo-stock.barrido-simplificado')
-                    ->with('error', 'Debe escanear un código de barras primero.');
-            }
+        if (!$barcode || !$bodegaId) {
             return redirect()->route('manejo-stock.select')->with('error', 'Debe escanear un código de barras primero.');
-        }
-
-        // Si no hay bodega_id y es rol Barrido, obtener la primera bodega
-        if (!$bodegaId && $request->user()->hasRole('Barrido') && !$request->user()->hasRole('Super Admin')) {
-            $bodegaDefault = Bodega::orderBy('nombre_bodega')->first();
-            if ($bodegaDefault) {
-                $bodegaId = $bodegaDefault->id;
-            }
-        }
-
-        if (!$bodegaId) {
-            if ($request->user()->hasRole('Barrido') && !$request->user()->hasRole('Super Admin')) {
-                return redirect()->route('manejo-stock.barrido-simplificado')
-                    ->with('error', 'No hay bodegas configuradas.');
-            }
-            return redirect()->route('manejo-stock.select')->with('error', 'Debe seleccionar una bodega.');
         }
 
         $bodegaSeleccionada = Bodega::with('ubicaciones')->find($bodegaId);
 
         if (!$bodegaSeleccionada) {
-            // Si es rol Barrido, redirigir a barrido simplificado
-            if ($request->user()->hasRole('Barrido') && !$request->user()->hasRole('Super Admin')) {
-                return redirect()->route('manejo-stock.barrido-simplificado')
-                    ->with('error', 'La bodega seleccionada no es válida.');
-            }
             return redirect()->route('manejo-stock.select')->with('error', 'La bodega seleccionada no es válida.');
         }
 
@@ -64,196 +38,11 @@ class BarcodeLinkController extends Controller
             $ubicacionSeleccionada = $bodegaSeleccionada->ubicaciones->firstWhere('id', (int) $ubicacionId);
         }
 
-        // Si viene de barrido simplificado, usar la vista específica
-        $origen = $request->query('origen', '');
-        $vieneDeBarridoSimplificado = $origen === 'barrido-simplificado' 
-            || ($request->user()->hasRole('Barrido') && !$request->user()->hasRole('Super Admin'));
-
-        if ($vieneDeBarridoSimplificado) {
-            return view('manejo-stock.asociar-barrido', [
-                'barcode' => trim($barcode),
-                'bodega' => $bodegaSeleccionada,
-                'ubicacion' => $ubicacionSeleccionada,
-            ]);
-        }
-
         return view('manejo-stock.asociar', [
             'barcode' => trim($barcode),
             'bodega' => $bodegaSeleccionada,
             'ubicacion' => $ubicacionSeleccionada,
         ]);
-    }
-
-    /**
-     * Store para asociación desde barrido simplificado
-     * Siempre reemplaza si hay código existente
-     */
-    public function storeBarrido(Request $request)
-    {
-        $data = $request->validate([
-            'barcode' => ['required', 'string', 'max:60'],
-            'sku' => ['required', 'string', 'max:50'],
-            'bodega_id' => ['nullable', 'exists:bodegas,id'],
-            'ubicacion_id' => ['nullable', 'exists:ubicaciones,id'],
-            'existing_barcode' => ['nullable', 'string', 'max:60'],
-        ]);
-
-        $barcode = trim($data['barcode']);
-        $sku = trim($data['sku']);
-        $bodega = null;
-        $ubicacion = null;
-        if (!empty($data['bodega_id'])) {
-            $bodega = Bodega::find($data['bodega_id']);
-        }
-        if (!empty($data['ubicacion_id'])) {
-            $ubicacion = Ubicacion::find($data['ubicacion_id']);
-        }
-
-        try {
-            // Verificar si debemos usar tsql
-            $encrypt = env('SQLSRV_EXTERNAL_ENCRYPT', 'yes');
-            $usarTSQL = ($encrypt === 'no' || $encrypt === false || $encrypt === 'false');
-            
-            if ($usarTSQL) {
-                $producto = $this->obtenerProductoTSQL($sku);
-            } else {
-                $producto = DB::connection('sqlsrv_external')
-                    ->table('MAEPR')
-                    ->select('KOPR', 'NOKOPR')
-                    ->where('KOPR', $sku)
-                    ->first();
-            }
-
-            if (!$producto) {
-                return back()->with('error', 'El SKU indicado no existe en MAEPR.')->withInput();
-            }
-
-            if (!$usarTSQL) {
-                DB::connection('sqlsrv_external')->beginTransaction();
-            }
-
-            $existingBarcode = isset($data['existing_barcode']) ? trim($data['existing_barcode']) : null;
-            $barcodeSanitized = Str::upper(Str::limit($barcode, 21, ''));
-            $existingSanitized = $existingBarcode ? Str::upper(Str::limit($existingBarcode, 21, '')) : null;
-            $skuSanitized = Str::upper(Str::limit($sku, 13, ''));
-            $nombreSanitizado = Str::limit(trim($producto->NOKOPR ?? ''), 50, '');
-
-            $valoresBase = [
-                'KOPR' => $skuSanitized,
-                'NOKOPRAL' => $nombreSanitizado,
-                'KOEN' => 'BLANCO',
-                'NMARCA' => ' ',
-                'CANTMINCOM' => 0,
-                'MULTDECOM' => 0,
-                'KOPRAL2' => 'BLANCO',
-                'KOPRAL3' => 'BLANCO',
-                'KOPRAL4' => 'BLANCO',
-                'KOPRAL5' => 'BLANCO',
-                'AUX01' => 'BLANCO',
-                'AUX02' => 'BLANCO',
-                'AUX03' => 'BLANCO',
-                'AUX04' => 'BLANCO',
-                'AUX05' => 'BLANCO',
-                'AUX06' => 'BLANCO',
-                'CONMULTI' => 0,
-                'UNIMULTI' => 2,
-                'MULTIPLO' => 0,
-                'TXTMULTI' => 'BLANCO',
-            ];
-
-            // Para barrido simplificado: siempre reemplazar todos los códigos del SKU por el nuevo
-            // IMPORTANTE: Obtener el código anterior ANTES de eliminarlo
-            $codigoAnteriorReal = null;
-            
-            if (!$usarTSQL) {
-                // Buscar todos los códigos de barras que tiene este SKU (ANTES de eliminarlos)
-                $codigosAnteriores = DB::connection('sqlsrv_external')
-                    ->table('TABCODAL')
-                    ->where('KOPR', $skuSanitized)
-                    ->where('KOPRAL', '!=', $barcodeSanitized)
-                    ->orderBy('KOPRAL')
-                    ->pluck('KOPRAL')
-                    ->toArray();
-                
-                // Usar el código anterior que viene del producto o el primero encontrado
-                if ($existingSanitized && in_array($existingSanitized, $codigosAnteriores)) {
-                    $codigoAnteriorReal = $existingSanitized;
-                } elseif (!empty($codigosAnteriores)) {
-                    $codigoAnteriorReal = $codigosAnteriores[0];
-                } elseif ($existingSanitized) {
-                    $codigoAnteriorReal = $existingSanitized;
-                }
-                
-                // Eliminar todos los códigos de barras que tenga este SKU (excepto el nuevo)
-                DB::connection('sqlsrv_external')
-                    ->table('TABCODAL')
-                    ->where('KOPR', $skuSanitized)
-                    ->where('KOPRAL', '!=', $barcodeSanitized)
-                    ->delete();
-                
-                // Luego insertar o actualizar el nuevo código
-                DB::connection('sqlsrv_external')
-                    ->table('TABCODAL')
-                    ->updateOrInsert(
-                        ['KOPRAL' => $barcodeSanitized],
-                        $valoresBase
-                    );
-            } else {
-                // Para tsql, intentar reemplazar si hay código anterior
-                if ($existingSanitized && strcasecmp($existingSanitized, $barcodeSanitized) !== 0) {
-                    $actualizado = $this->actualizarCodigoBarraTSQL($skuSanitized, $existingSanitized, $barcodeSanitized, $valoresBase);
-                    if ($actualizado) {
-                        $codigoAnteriorReal = $existingSanitized;
-                    }
-                }
-                
-                // Asegurar que el nuevo código esté insertado/actualizado
-                $this->insertarOActualizarCodigoBarraTSQL($barcodeSanitized, $valoresBase);
-                
-                // Si no se encontró el código anterior, usar el que viene del producto
-                if (!$codigoAnteriorReal && $existingSanitized) {
-                    $codigoAnteriorReal = $existingSanitized;
-                }
-            }
-
-            // Guardar en el log con el código anterior si se reemplazó
-            CodigoBarraLog::create([
-                'barcode' => $barcodeSanitized,
-                'barcode_anterior' => $codigoAnteriorReal,
-                'sku' => $skuSanitized,
-                'user_id' => $request->user()->id,
-                'bodega_id' => $bodega?->id,
-            ]);
-
-            if (!$usarTSQL) {
-                DB::connection('sqlsrv_external')->commit();
-            }
-
-            $mensaje = ($codigoAnteriorReal || $existingSanitized)
-                ? "Código {$barcodeSanitized} reemplazó a " . ($codigoAnteriorReal ?: $existingSanitized) . ". Vuelve a escanear para verificar."
-                : "Código {$barcodeSanitized} asociado correctamente a {$skuSanitized}. Vuelve a escanear para verificar.";
-
-            return redirect()->route('manejo-stock.barrido-simplificado')
-                ->with('success', $mensaje);
-        } catch (\Throwable $e) {
-            $encrypt = env('SQLSRV_EXTERNAL_ENCRYPT', 'yes');
-            $usarTSQL = ($encrypt === 'no' || $encrypt === false || $encrypt === 'false');
-            if (!$usarTSQL) {
-                DB::connection('sqlsrv_external')->rollBack();
-            }
-            
-            Log::error('Error asociando código de barras desde barrido', [
-                'exception' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return redirect()->route('manejo-stock.asociar-barrido', [
-                'barcode' => $barcode,
-                'bodega_id' => $bodega?->id,
-                'ubicacion_id' => $ubicacion?->id,
-                'origen' => 'barrido-simplificado',
-            ])->with('error', 'Error al asociar código: ' . $e->getMessage())->withInput();
-        }
     }
 
     public function store(Request $request)
@@ -265,7 +54,6 @@ class BarcodeLinkController extends Controller
             'ubicacion_id' => ['nullable', 'exists:ubicaciones,id'],
             'existing_barcode' => ['nullable', 'string', 'max:60'],
             'accion_codigo' => ['nullable', 'in:insert,replace'],
-            'origen' => ['nullable', 'string', 'max:50'], // Para saber desde dónde viene
         ]);
 
         $barcode = trim($data['barcode']);
@@ -280,30 +68,17 @@ class BarcodeLinkController extends Controller
         }
 
         try {
-            // Verificar si debemos usar tsql
-            $encrypt = env('SQLSRV_EXTERNAL_ENCRYPT', 'yes');
-            $usarTSQL = ($encrypt === 'no' || $encrypt === false || $encrypt === 'false');
-            
-            if ($usarTSQL) {
-                // Usar tsql para consultar producto
-                $producto = $this->obtenerProductoTSQL($sku);
-            } else {
-                // Usar conexión Laravel normal
-                $producto = DB::connection('sqlsrv_external')
-                    ->table('MAEPR')
-                    ->select('KOPR', 'NOKOPR')
-                    ->where('KOPR', $sku)
-                    ->first();
-            }
+            $producto = DB::connection('sqlsrv_external')
+                ->table('MAEPR')
+                ->select('KOPR', 'NOKOPR')
+                ->where('KOPR', $sku)
+                ->first();
 
             if (!$producto) {
                 return back()->with('error', 'El SKU indicado no existe en MAEPR.')->withInput();
             }
 
-            // Las transacciones no funcionan con tsql, así que manejamos errores manualmente
-            if (!$usarTSQL) {
-                DB::connection('sqlsrv_external')->beginTransaction();
-            }
+            DB::connection('sqlsrv_external')->beginTransaction();
 
             $accion = $data['accion_codigo'] ?? 'insert';
             $existingBarcode = isset($data['existing_barcode']) ? trim($data['existing_barcode']) : null;
@@ -338,44 +113,24 @@ class BarcodeLinkController extends Controller
 
             if ($accion === 'replace' && $existingSanitized) {
                 if (strcasecmp($existingSanitized, $barcodeSanitized) === 0) {
-                    if (!$usarTSQL) {
-                        DB::connection('sqlsrv_external')->rollBack();
-                    }
-                    // Determinar a dónde redirigir según el origen
-                    $origen = $request->input('origen', '');
-                    $referer = $request->header('referer', '');
-                    $vieneDeBarridoSimplificado = $origen === 'barrido-simplificado' 
-                        || str_contains($referer, 'barrido-simplificado')
-                        || ($request->user()->hasRole('Barrido') && !$request->user()->hasRole('Super Admin'));
-
-                    if ($vieneDeBarridoSimplificado) {
-                        return redirect()->route('manejo-stock.barrido-simplificado')
-                            ->with('success', 'El código indicado ya coincide con el registrado. No fue necesario actualizar.');
-                    }
-
+                    DB::connection('sqlsrv_external')->rollBack();
                     return redirect()->route('manejo-stock.contabilidad', [
                         'bodega_id' => $bodega?->id,
                         'ubicacion_id' => $ubicacion?->id,
                     ])->with('success', 'El código indicado ya coincide con el registrado. No fue necesario actualizar.');
                 }
 
-                if ($usarTSQL) {
-                    $actualizado = $this->actualizarCodigoBarraTSQL($skuSanitized, $existingSanitized, $barcodeSanitized, $valoresBase);
-                } else {
-                    $actualizado = DB::connection('sqlsrv_external')
-                        ->table('TABCODAL')
-                        ->where('KOPR', $skuSanitized)
-                        ->where('KOPRAL', $existingSanitized)
-                        ->update([
-                            'KOPRAL' => $barcodeSanitized,
-                            ...$valoresBase,
-                        ]);
-                }
+                $actualizado = DB::connection('sqlsrv_external')
+                    ->table('TABCODAL')
+                    ->where('KOPR', $skuSanitized)
+                    ->where('KOPRAL', $existingSanitized)
+                    ->update([
+                        'KOPRAL' => $barcodeSanitized,
+                        ...$valoresBase,
+                    ]);
 
                 if (!$actualizado) {
-                    if (!$usarTSQL) {
-                        DB::connection('sqlsrv_external')->rollBack();
-                    }
+                    DB::connection('sqlsrv_external')->rollBack();
                     return redirect()->route('manejo-stock.asociar', [
                         'barcode' => $barcode,
                         'bodega_id' => $bodega?->id,
@@ -383,58 +138,33 @@ class BarcodeLinkController extends Controller
                     ])->with('error', 'No se encontró el código actual para reemplazar.')->withInput();
                 }
             } else {
-                if ($usarTSQL) {
-                    $this->insertarOActualizarCodigoBarraTSQL($barcodeSanitized, $valoresBase);
-                } else {
-                    DB::connection('sqlsrv_external')
-                        ->table('TABCODAL')
-                        ->updateOrInsert(
-                            ['KOPRAL' => $barcodeSanitized],
-                            $valoresBase
-                        );
-                }
+                DB::connection('sqlsrv_external')
+                    ->table('TABCODAL')
+                    ->updateOrInsert(
+                        ['KOPRAL' => $barcodeSanitized],
+                        $valoresBase
+                    );
             }
 
-            // Guardar en el log con el código anterior si se reemplazó
             CodigoBarraLog::create([
                 'barcode' => $barcodeSanitized,
-                'barcode_anterior' => ($accion === 'replace' && $existingSanitized) ? $existingSanitized : null,
                 'sku' => $skuSanitized,
                 'user_id' => $request->user()->id,
                 'bodega_id' => $bodega?->id,
             ]);
 
-            if (!$usarTSQL) {
-                DB::connection('sqlsrv_external')->commit();
-            }
+            DB::connection('sqlsrv_external')->commit();
 
             $mensaje = $accion === 'replace'
                 ? "Código {$barcodeSanitized} reemplazó a {$existingSanitized}. Vuelve a escanear para verificar."
                 : "Código {$barcodeSanitized} asociado correctamente a {$skuSanitized}. Vuelve a escanear para verificar.";
-
-            // Determinar a dónde redirigir según el origen
-            $origen = $request->input('origen', '');
-            $referer = $request->header('referer', '');
-            
-            // Si viene de barrido simplificado (por parámetro o referer)
-            $vieneDeBarridoSimplificado = $origen === 'barrido-simplificado' 
-                || str_contains($referer, 'barrido-simplificado')
-                || ($request->user()->hasRole('Barrido') && !$request->user()->hasRole('Super Admin'));
-
-            if ($vieneDeBarridoSimplificado) {
-                return redirect()->route('manejo-stock.barrido-simplificado')
-                    ->with('success', $mensaje);
-            }
 
             return redirect()->route('manejo-stock.contabilidad', [
                 'bodega_id' => $bodega?->id,
                 'ubicacion_id' => $ubicacion?->id,
             ])->with('success', $mensaje);
         } catch (\Throwable $e) {
-            $encrypt = env('SQLSRV_EXTERNAL_ENCRYPT', 'yes');
-            $usarTSQL = ($encrypt === 'no' || $encrypt === false || $encrypt === 'false');
-            
-            if (!$usarTSQL && DB::connection('sqlsrv_external')->transactionLevel() > 0) {
+            if (DB::connection('sqlsrv_external')->transactionLevel() > 0) {
                 DB::connection('sqlsrv_external')->rollBack();
             }
 
@@ -453,212 +183,5 @@ class BarcodeLinkController extends Controller
                 'ubicacion_id' => $ubicacion?->id,
             ])->with('error', 'Error guardando la asociación: ' . $e->getMessage())->withInput();
         }
-    }
-
-    /**
-     * Obtener producto usando tsql (para SQL Server 2012 sin TLS)
-     */
-    private function obtenerProductoTSQL(string $sku): ?object
-    {
-        $host = env('SQLSRV_EXTERNAL_HOST');
-        $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-        $database = env('SQLSRV_EXTERNAL_DATABASE');
-        $username = env('SQLSRV_EXTERNAL_USERNAME');
-        $password = env('SQLSRV_EXTERNAL_PASSWORD');
-
-        $skuEscapado = str_replace("'", "''", trim($sku));
-        $query = "SELECT TOP 1 CAST(KOPR AS VARCHAR(30)) + '|' + CAST(NOKOPR AS VARCHAR(200)) AS DATOS FROM MAEPR WHERE KOPR = '{$skuEscapado}'";
-
-        $tempFile = tempnam(sys_get_temp_dir(), 'sql_producto_');
-        file_put_contents($tempFile, $query . "\ngo\nquit");
-        
-        $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-        $output = shell_exec($command);
-        unlink($tempFile);
-
-        if (!$output || str_contains(strtolower($output), 'error')) {
-            Log::error("Error tsql en obtenerProductoTSQL: " . $output);
-            return null;
-        }
-
-        // Procesar output
-        $lines = explode("\n", $output);
-        $encontradoHeader = false;
-
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if (empty($line) || strpos($line, 'locale') !== false || strpos($line, 'Setting') !== false || 
-                preg_match('/^\d+>$/', $line) || strpos($line, 'rows affected') !== false) {
-                continue;
-            }
-            if (strpos($line, 'DATOS') !== false && strpos($line, '|') === false) {
-                $encontradoHeader = true;
-                continue;
-            }
-            if ($encontradoHeader && strpos($line, '|') !== false) {
-                if (preg_match('/^(\d+)\s*\|(.+)$/', $line, $matches)) {
-                    return (object)[
-                        'KOPR' => $matches[1],
-                        'NOKOPR' => trim($matches[2]),
-                    ];
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Actualizar código de barra usando tsql
-     */
-    private function actualizarCodigoBarraTSQL(string $sku, string $existingBarcode, string $newBarcode, array $valoresBase): bool
-    {
-        $host = env('SQLSRV_EXTERNAL_HOST');
-        $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-        $database = env('SQLSRV_EXTERNAL_DATABASE');
-        $username = env('SQLSRV_EXTERNAL_USERNAME');
-        $password = env('SQLSRV_EXTERNAL_PASSWORD');
-
-        // Escapar valores
-        $skuEscapado = str_replace("'", "''", $sku);
-        $existingEscapado = str_replace("'", "''", $existingBarcode);
-        $newEscapado = str_replace("'", "''", $newBarcode);
-        $nombreEscapado = str_replace("'", "''", $valoresBase['NOKOPRAL'] ?? '');
-
-        $query = "
-            UPDATE TABCODAL 
-            SET KOPRAL = '{$newEscapado}',
-                KOPR = '{$skuEscapado}',
-                NOKOPRAL = '{$nombreEscapado}',
-                KOEN = 'BLANCO',
-                NMARCA = ' ',
-                CANTMINCOM = 0,
-                MULTDECOM = 0,
-                KOPRAL2 = 'BLANCO',
-                KOPRAL3 = 'BLANCO',
-                KOPRAL4 = 'BLANCO',
-                KOPRAL5 = 'BLANCO',
-                AUX01 = 'BLANCO',
-                AUX02 = 'BLANCO',
-                AUX03 = 'BLANCO',
-                AUX04 = 'BLANCO',
-                AUX05 = 'BLANCO',
-                AUX06 = 'BLANCO',
-                CONMULTI = 0,
-                UNIMULTI = 2,
-                MULTIPLO = 0,
-                TXTMULTI = 'BLANCO'
-            WHERE KOPR = '{$skuEscapado}' AND KOPRAL = '{$existingEscapado}'
-        ";
-
-        $tempFile = tempnam(sys_get_temp_dir(), 'sql_update_');
-        file_put_contents($tempFile, $query . "\ngo\nquit");
-        
-        $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-        $output = shell_exec($command);
-        unlink($tempFile);
-
-        if (str_contains(strtolower($output), 'error') || str_contains($output, 'Msg ')) {
-            Log::error("Error tsql en actualizarCodigoBarraTSQL: " . $output);
-            return false;
-        }
-
-        // Verificar si se actualizó al menos una fila
-        return str_contains($output, 'rows affected') && !str_contains($output, '(0 rows affected)');
-    }
-
-    /**
-     * Insertar o actualizar código de barra usando tsql
-     */
-    private function insertarOActualizarCodigoBarraTSQL(string $barcode, array $valoresBase): bool
-    {
-        $host = env('SQLSRV_EXTERNAL_HOST');
-        $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-        $database = env('SQLSRV_EXTERNAL_DATABASE');
-        $username = env('SQLSRV_EXTERNAL_USERNAME');
-        $password = env('SQLSRV_EXTERNAL_PASSWORD');
-
-        // Escapar valores
-        $barcodeEscapado = str_replace("'", "''", $barcode);
-        $skuEscapado = str_replace("'", "''", $valoresBase['KOPR'] ?? '');
-        $nombreEscapado = str_replace("'", "''", $valoresBase['NOKOPRAL'] ?? '');
-
-        // Primero verificar si existe
-        $checkQuery = "SELECT COUNT(*) AS cnt FROM TABCODAL WHERE KOPRAL = '{$barcodeEscapado}'";
-        $tempFile = tempnam(sys_get_temp_dir(), 'sql_check_');
-        file_put_contents($tempFile, $checkQuery . "\ngo\nquit");
-        
-        $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-        $output = shell_exec($command);
-        unlink($tempFile);
-
-        $existe = false;
-        if (strpos($output, 'cnt') !== false) {
-            $lines = explode("\n", $output);
-            foreach ($lines as $line) {
-                $line = trim($line);
-                if (preg_match('/^\d+$/', $line)) {
-                    $existe = ((int)$line) > 0;
-                    break;
-                }
-            }
-        }
-
-        if ($existe) {
-            // UPDATE
-            $query = "
-                UPDATE TABCODAL 
-                SET KOPR = '{$skuEscapado}',
-                    NOKOPRAL = '{$nombreEscapado}',
-                    KOEN = 'BLANCO',
-                    NMARCA = ' ',
-                    CANTMINCOM = 0,
-                    MULTDECOM = 0,
-                    KOPRAL2 = 'BLANCO',
-                    KOPRAL3 = 'BLANCO',
-                    KOPRAL4 = 'BLANCO',
-                    KOPRAL5 = 'BLANCO',
-                    AUX01 = 'BLANCO',
-                    AUX02 = 'BLANCO',
-                    AUX03 = 'BLANCO',
-                    AUX04 = 'BLANCO',
-                    AUX05 = 'BLANCO',
-                    AUX06 = 'BLANCO',
-                    CONMULTI = 0,
-                    UNIMULTI = 2,
-                    MULTIPLO = 0,
-                    TXTMULTI = 'BLANCO'
-                WHERE KOPRAL = '{$barcodeEscapado}'
-            ";
-        } else {
-            // INSERT
-            $query = "
-                INSERT INTO TABCODAL (
-                    KOPRAL, KOPR, NOKOPRAL, KOEN, NMARCA, CANTMINCOM, MULTDECOM,
-                    KOPRAL2, KOPRAL3, KOPRAL4, KOPRAL5,
-                    AUX01, AUX02, AUX03, AUX04, AUX05, AUX06,
-                    CONMULTI, UNIMULTI, MULTIPLO, TXTMULTI
-                ) VALUES (
-                    '{$barcodeEscapado}', '{$skuEscapado}', '{$nombreEscapado}', 'BLANCO', ' ', 0, 0,
-                    'BLANCO', 'BLANCO', 'BLANCO', 'BLANCO',
-                    'BLANCO', 'BLANCO', 'BLANCO', 'BLANCO', 'BLANCO', 'BLANCO',
-                    0, 2, 0, 'BLANCO'
-                )
-            ";
-        }
-
-        $tempFile = tempnam(sys_get_temp_dir(), 'sql_insert_update_');
-        file_put_contents($tempFile, $query . "\ngo\nquit");
-        
-        $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-        $output = shell_exec($command);
-        unlink($tempFile);
-
-        if (str_contains(strtolower($output), 'error') || str_contains($output, 'Msg ')) {
-            Log::error("Error tsql en insertarOActualizarCodigoBarraTSQL: " . $output);
-            return false;
-        }
-
-        return true;
     }
 }

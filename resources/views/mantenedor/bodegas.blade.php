@@ -53,14 +53,9 @@
                                     
                                     <div class="d-flex justify-content-between align-items-center mb-3">
                                         <h6 class="mb-0">Ubicaciones</h6>
-                                        <div>
-                                            <button type="button" class="btn btn-sm btn-primary" onclick="crearUbicacion({{ $bodega->id }})">
-                                                <i class="tim-icons icon-simple-add"></i> Nueva Ubicación
-                                            </button>
-                                            <button type="button" class="btn btn-sm btn-success" onclick="cargaMasivaUbicaciones({{ $bodega->id }}, '{{ $bodega->kobo }}')">
-                                                <i class="tim-icons icon-upload"></i> Carga Masiva
-                                            </button>
-                                        </div>
+                                        <button type="button" class="btn btn-sm btn-primary" onclick="crearUbicacion({{ $bodega->id }})">
+                                            <i class="tim-icons icon-simple-add"></i> Nueva Ubicación
+                                        </button>
                                     </div>
                                     
                                     <div class="table-responsive">
@@ -183,59 +178,6 @@
         </div>
     </div>
 </div>
-
-<!-- Modal Carga Masiva de Ubicaciones -->
-<div class="modal fade" id="modalCargaMasiva" tabindex="-1" role="dialog" aria-labelledby="modalCargaMasivaLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg" role="document">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="modalCargaMasivaLabel">Carga Masiva de Ubicaciones</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-            </div>
-            <form id="formCargaMasiva" enctype="multipart/form-data">
-                <div class="modal-body">
-                    <input type="hidden" id="carga_masiva_bodega_id" name="bodega_id">
-                    <input type="hidden" id="carga_masiva_kobo" name="kobo">
-                    
-                    <div class="alert alert-info">
-                        <strong>Instrucciones:</strong>
-                        <ul class="mb-0">
-                            <li>El archivo Excel debe tener las siguientes columnas: <strong>KOBO</strong>, <strong>UBICACION</strong> (código), <strong>DESCRIPCION</strong></li>
-                            <li>El KOBO debe ser igual a: <strong id="kobo_bodega_seleccionada"></strong></li>
-                            <li>Las ubicaciones que ya existan serán omitidas automáticamente</li>
-                            <li>La primera fila debe contener los encabezados</li>
-                        </ul>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="archivo_excel">Archivo Excel (.xlsx, .xls) *</label>
-                        <input type="file" class="form-control-file" id="archivo_excel" name="archivo_excel" accept=".xlsx,.xls" required>
-                        <small class="form-text text-muted">Tamaño máximo: 10MB</small>
-                    </div>
-                    
-                    <div class="form-group">
-                        <a href="#" id="descargarPlantilla" class="btn btn-sm btn-outline-primary">
-                            <i class="tim-icons icon-download"></i> Descargar Plantilla Excel
-                        </a>
-                    </div>
-                    
-                    <div id="resultadoCarga" style="display: none;">
-                        <hr>
-                        <div id="mensajeResultado"></div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-success" id="btnProcesarCarga">
-                        <i class="tim-icons icon-upload"></i> Procesar Archivo
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
 @endsection
 
 @push('js')
@@ -246,8 +188,6 @@
     const crearUbicacionUrl = "{{ route('mantenedor.ubicaciones.crear') }}";
     const actualizarUbicacionUrl = "{{ route('mantenedor.ubicaciones.actualizar', ':id') }}";
     const eliminarUbicacionUrl = "{{ route('mantenedor.ubicaciones.eliminar', ':id') }}";
-    const cargaMasivaUbicacionesUrl = "{{ route('mantenedor.ubicaciones.carga-masiva') }}";
-    const descargarPlantillaUrl = "{{ route('mantenedor.ubicaciones.descargar-plantilla') }}";
 
     const bodegas = @json($bodegas);
 
@@ -418,103 +358,6 @@
         });
     }
 
-    function cargaMasivaUbicaciones(bodegaId, kobo) {
-        document.getElementById('carga_masiva_bodega_id').value = bodegaId;
-        document.getElementById('carga_masiva_kobo').value = kobo;
-        document.getElementById('kobo_bodega_seleccionada').textContent = kobo;
-        document.getElementById('archivo_excel').value = '';
-        document.getElementById('resultadoCarga').style.display = 'none';
-        document.getElementById('mensajeResultado').innerHTML = '';
-        $('#modalCargaMasiva').modal('show');
-    }
-
-    // Formulario de Carga Masiva
-    document.getElementById('formCargaMasiva').addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        const formData = new FormData(this);
-        formData.append('_token', '{{ csrf_token() }}');
-        
-        const btnProcesar = document.getElementById('btnProcesarCarga');
-        btnProcesar.disabled = true;
-        btnProcesar.innerHTML = '<i class="tim-icons icon-refresh-02"></i> Procesando...';
-        
-        fetch(cargaMasivaUbicacionesUrl, {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            btnProcesar.disabled = false;
-            btnProcesar.innerHTML = '<i class="tim-icons icon-upload"></i> Procesar Archivo';
-            
-            const resultadoDiv = document.getElementById('resultadoCarga');
-            const mensajeDiv = document.getElementById('mensajeResultado');
-            resultadoDiv.style.display = 'block';
-            
-            if (data.success) {
-                let mensaje = '<div class="alert alert-success"><h6><i class="tim-icons icon-check-2"></i> Proceso completado con éxito</h6>';
-                mensaje += '<p><strong>Ubicaciones creadas:</strong> ' + data.creadas + '</p>';
-                
-                if (data.omitidas && data.omitidas.length > 0) {
-                    mensaje += '<p><strong>Ubicaciones omitidas (ya existían):</strong> ' + data.omitidas.length + '</p>';
-                    mensaje += '<ul class="mb-0">';
-                    data.omitidas.slice(0, 10).forEach(function(codigo) {
-                        mensaje += '<li>Ubicación <strong>' + codigo + '</strong> ya está ingresada, se omitió</li>';
-                    });
-                    if (data.omitidas.length > 10) {
-                        mensaje += '<li>... y ' + (data.omitidas.length - 10) + ' más</li>';
-                    }
-                    mensaje += '</ul>';
-                }
-                
-                if (data.errores && data.errores.length > 0) {
-                    mensaje += '<p class="mt-2"><strong>Errores:</strong> ' + data.errores.length + '</p>';
-                    mensaje += '<ul class="mb-0">';
-                    data.errores.slice(0, 5).forEach(function(error) {
-                        mensaje += '<li class="text-danger">' + error + '</li>';
-                    });
-                    if (data.errores.length > 5) {
-                        mensaje += '<li>... y ' + (data.errores.length - 5) + ' más</li>';
-                    }
-                    mensaje += '</ul>';
-                }
-                
-                mensaje += '</div>';
-                mensajeDiv.innerHTML = mensaje;
-                
-                // Recargar la página después de 3 segundos si todo salió bien
-                if (data.creadas > 0) {
-                    setTimeout(function() {
-                        window.location.reload();
-                    }, 3000);
-                }
-            } else {
-                mensajeDiv.innerHTML = '<div class="alert alert-danger"><h6><i class="tim-icons icon-alert-circle"></i> Error al procesar el archivo</h6><p>' + data.message + '</p></div>';
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            btnProcesar.disabled = false;
-            btnProcesar.innerHTML = '<i class="tim-icons icon-upload"></i> Procesar Archivo';
-            
-            const resultadoDiv = document.getElementById('resultadoCarga');
-            const mensajeDiv = document.getElementById('mensajeResultado');
-            resultadoDiv.style.display = 'block';
-            mensajeDiv.innerHTML = '<div class="alert alert-danger"><h6><i class="tim-icons icon-alert-circle"></i> Error</h6><p>Error al procesar el archivo. Por favor, intente nuevamente.</p></div>';
-        });
-    });
-
-    // Descargar plantilla
-    document.getElementById('descargarPlantilla').addEventListener('click', function(e) {
-        e.preventDefault();
-        window.location.href = descargarPlantillaUrl;
-    });
-
     // Limpiar formulario al cerrar modal
     $('#modalCrearBodega').on('hidden.bs.modal', function () {
         document.getElementById('formBodega').reset();
@@ -526,12 +369,6 @@
         document.getElementById('formUbicacion').reset();
         document.getElementById('ubicacion_id').value = '';
         document.getElementById('modalCrearUbicacionLabel').textContent = 'Nueva Ubicación';
-    });
-
-    $('#modalCargaMasiva').on('hidden.bs.modal', function () {
-        document.getElementById('formCargaMasiva').reset();
-        document.getElementById('resultadoCarga').style.display = 'none';
-        document.getElementById('mensajeResultado').innerHTML = '';
     });
 </script>
 @endpush

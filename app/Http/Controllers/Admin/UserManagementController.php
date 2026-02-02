@@ -45,123 +45,35 @@ class UserManagementController extends Controller
     {
         \Log::info('🔍 Cargando vendedores disponibles desde SQL Server');
         
-        $encrypt = env('SQLSRV_EXTERNAL_ENCRYPT', 'yes');
-        $usarTSQL = ($encrypt === 'no' || $encrypt === false || $encrypt === 'false');
-        
         try {
-            $empleados = collect();
+            // Usar conexión directa de Laravel
+            $vendedoresRaw = DB::connection('sqlsrv_external')
+                ->select("SELECT KOFU, NOKOFU, EMAIL, RTFU FROM TABFU WHERE KOFU IS NOT NULL ORDER BY NOKOFU");
             
-            if ($usarTSQL) {
-                \Log::info('📡 Usando tsql para consultar TABFU');
-                
-                // Usar tsql para consultar SQL Server
-                $host = env('SQLSRV_EXTERNAL_HOST');
-                $username = env('SQLSRV_EXTERNAL_USERNAME');
-                $password = env('SQLSRV_EXTERNAL_PASSWORD');
-                $database = env('SQLSRV_EXTERNAL_DATABASE');
-                $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-                
-                if (!$host || !$database || !$username || !$password) {
-                    throw new \Exception('Credenciales SQL Server no configuradas');
-                }
-                
-                // Consulta con separador | para facilitar parsing
-                $query = "
-                    SELECT 
-                        CAST(KOFU AS VARCHAR(10)) + '|' +
-                        CAST(ISNULL(NOKOFU, '') AS VARCHAR(100)) + '|' +
-                        CAST(ISNULL(EMAIL, '') AS VARCHAR(100)) + '|' +
-                        CAST(ISNULL(RTFU, '') AS VARCHAR(20)) AS DATOS
-                    FROM TABFU 
-                    WHERE KOFU IS NOT NULL
-                    ORDER BY NOKOFU
-                ";
-                
-                // Usar archivo temporal
-                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $query . "\ngo\nquit");
-                
-                $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-                $output = shell_exec($command);
-                
-                unlink($tempFile);
-                
-                if (!$output || str_contains(strtolower($output), 'error')) {
-                    throw new \Exception('Error ejecutando tsql: ' . substr($output, 0, 200));
-                }
-                
-                // Parsear el resultado
-                $lines = explode("\n", $output);
-                foreach ($lines as $line) {
-                    $line = trim($line);
-                    
-                    // Filtrar líneas vacías, de configuración y cabeceras
-                    if (empty($line) || 
-                        strpos($line, 'locale') !== false || 
-                        strpos($line, 'Setting') !== false || 
-                        strpos($line, 'Msg ') !== false || 
-                        strpos($line, 'rows affected') !== false ||
-                        strpos($line, 'DATOS') !== false ||
-                        preg_match('/^\d+>$/', $line)) {
-                        continue;
-                    }
-                    
-                    // Separar por | (formato: KOFU|NOKOFU|EMAIL|RTFU)
-                    if (strpos($line, '|') !== false) {
-                        $parts = explode('|', $line);
-                        if (count($parts) >= 4) {
-                            $kofu = trim($parts[0]);
-                            $nombre = trim($parts[1]);
-                            $email = trim($parts[2]);
-                            $rut = trim($parts[3]);
-                            
-                            // Asegurar codificación UTF-8
-                            $nombre = mb_convert_encoding($nombre, 'UTF-8', 'auto');
-                            
-                            $empleados->push((object)[
-                                'KOFU' => $kofu,
-                                'NOKOFU' => $nombre,
-                                'EMAIL' => $email,
-                                'RTFU' => $rut
-                            ]);
-                        }
-                    }
-                }
-            } else {
-                \Log::info('📡 Usando conexión directa Laravel para consultar TABFU');
-                
-                // Consultar directamente usando la conexión de Laravel
-                $empleados = DB::connection('sqlsrv_external')
-                    ->table('TABFU')
-                    ->select('KOFU', 'NOKOFU', 'EMAIL', 'RTFU')
-                    ->whereNotNull('KOFU')
-                    ->orderBy('NOKOFU')
-                    ->get();
-            }
+            \Log::info('📊 Vendedores obtenidos desde SQL Server:', ['count' => count($vendedoresRaw)]);
             
-            \Log::info('📊 Empleados encontrados:', ['count' => $empleados->count()]);
-            
-            // Obtener usuarios existentes para marcar los que ya tienen cuenta
+            // Obtener usuarios existentes para verificar cuáles ya tienen usuario
             $usuariosExistentes = User::whereNotNull('codigo_vendedor')
                 ->pluck('codigo_vendedor')
                 ->toArray();
             
-            $vendedores = $empleados->map(function($empleado) use ($usuariosExistentes) {
-                return (object)[
-                    'id' => trim($empleado->KOFU),
-                    'KOFU' => trim($empleado->KOFU),
-                    'NOKOFU' => trim($empleado->NOKOFU ?? ''),
-                    'EMAIL' => trim($empleado->EMAIL ?? ''),
-                    'RTFU' => trim($empleado->RTFU ?? ''),
-                    'tiene_usuario' => in_array(trim($empleado->KOFU), $usuariosExistentes)
-                ];
-            });
+            $vendedores = collect();
+            
+            foreach ($vendedoresRaw as $vendedor) {
+                $vendedores->push((object)[
+                    'id' => $vendedor->KOFU,
+                    'KOFU' => $vendedor->KOFU,
+                    'NOKOFU' => $vendedor->NOKOFU ?? '',
+                    'EMAIL' => $vendedor->EMAIL ?? '',
+                    'RTFU' => $vendedor->RTFU ?? '',
+                    'tiene_usuario' => in_array($vendedor->KOFU, $usuariosExistentes)
+                ]);
+            }
             
             \Log::info('✅ Vendedores procesados:', ['count' => $vendedores->count()]);
             
         } catch (\Exception $e) {
-            \Log::error('❌ Error consultando empleados: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            \Log::error('❌ Error al cargar vendedores:', ['error' => $e->getMessage()]);
             $vendedores = collect();
         }
         
@@ -182,127 +94,34 @@ class UserManagementController extends Controller
             'email' => ['required', new \App\Rules\ValidEmailWithDomain(), 'unique:users,email'],
             'email_alternativo' => ['nullable', new \App\Rules\ValidEmailWithDomain(), 'unique:users,email_alternativo'],
             'rut' => ['nullable', new \App\Rules\ValidRut(), 'unique:users,rut'],
-            'password' => 'required|min:8',
+            'password' => 'required|min:8|confirmed',
+            'password_confirmation' => 'required|same:password',
             'roles' => 'required|array',
             'roles.*' => 'exists:roles,id'
         ]);
 
-        // Obtener datos del empleado desde SQL Server
-        $encrypt = env('SQLSRV_EXTERNAL_ENCRYPT', 'yes');
-        $usarTSQL = ($encrypt === 'no' || $encrypt === false || $encrypt === 'false');
-        
+        // Obtener datos del empleado desde SQL Server usando conexión directa
         try {
-            $empleado = null;
+            $vendedorRaw = DB::connection('sqlsrv_external')
+                ->selectOne("SELECT KOFU, NOKOFU, EMAIL, RTFU FROM TABFU WHERE KOFU = ?", [$request->vendedor_id]);
             
-            if ($usarTSQL) {
-                \Log::info('📡 Usando tsql para consultar vendedor específico');
-                
-                // Usar tsql para consultar SQL Server
-                $host = env('SQLSRV_EXTERNAL_HOST');
-                $username = env('SQLSRV_EXTERNAL_USERNAME');
-                $password = env('SQLSRV_EXTERNAL_PASSWORD');
-                $database = env('SQLSRV_EXTERNAL_DATABASE');
-                $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-                
-                if (!$host || !$database || !$username || !$password) {
-                    throw new \Exception('Credenciales SQL Server no configuradas');
-                }
-                
-                // Escapar el código de vendedor para prevenir SQL injection
-                $vendedorIdEscapado = str_replace("'", "''", trim($request->vendedor_id));
-                
-                // Consulta con separador | para facilitar parsing
-                $query = "
-                    SELECT 
-                        CAST(KOFU AS VARCHAR(10)) + '|' +
-                        CAST(ISNULL(NOKOFU, '') AS VARCHAR(100)) + '|' +
-                        CAST(ISNULL(EMAIL, '') AS VARCHAR(100)) + '|' +
-                        CAST(ISNULL(RTFU, '') AS VARCHAR(20)) AS DATOS
-                    FROM TABFU 
-                    WHERE KOFU = '{$vendedorIdEscapado}'
-                ";
-                
-                // Usar archivo temporal
-                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                file_put_contents($tempFile, $query . "\ngo\nquit");
-                
-                $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-                $output = shell_exec($command);
-                
-                unlink($tempFile);
-                
-                if (!$output || str_contains(strtolower($output), 'error')) {
-                    throw new \Exception('Error ejecutando tsql: ' . substr($output, 0, 200));
-                }
-                
-                // Parsear el resultado
-                $lines = explode("\n", $output);
-                foreach ($lines as $line) {
-                    $line = trim($line);
-                    
-                    // Filtrar líneas vacías, de configuración y cabeceras
-                    if (empty($line) || 
-                        strpos($line, 'locale') !== false || 
-                        strpos($line, 'Setting') !== false || 
-                        strpos($line, 'Msg ') !== false || 
-                        strpos($line, 'rows affected') !== false ||
-                        strpos($line, 'DATOS') !== false ||
-                        preg_match('/^\d+>$/', $line)) {
-                        continue;
-                    }
-                    
-                    // Separar por | (formato: KOFU|NOKOFU|EMAIL|RTFU)
-                    if (strpos($line, '|') !== false) {
-                        $parts = explode('|', $line);
-                        if (count($parts) >= 4) {
-                            $kofu = trim($parts[0]);
-                            $nombre = trim($parts[1]);
-                            $email = trim($parts[2]);
-                            $rut = trim($parts[3]);
-                            
-                            // Asegurar codificación UTF-8
-                            $nombre = mb_convert_encoding($nombre, 'UTF-8', 'auto');
-                            
-                            $empleado = (object)[
-                                'KOFU' => $kofu,
-                                'NOKOFU' => $nombre,
-                                'EMAIL' => $email,
-                                'RTFU' => $rut
-                            ];
-                            break;
-                        }
-                    }
-                }
-            } else {
-                \Log::info('📡 Usando conexión directa Laravel para consultar vendedor específico');
-                
-                $empleado = DB::connection('sqlsrv_external')
-                    ->table('TABFU')
-                    ->select('KOFU', 'NOKOFU', 'EMAIL', 'RTFU')
-                    ->where('KOFU', $request->vendedor_id)
-                    ->first();
+            if (!$vendedorRaw) {
+                return back()->withErrors(['vendedor_id' => 'No se encontró información del empleado seleccionado.'])->withInput();
             }
             
-            \Log::info('🔍 Consultando vendedor específico:', ['vendedor_id' => $request->vendedor_id, 'encontrado' => !is_null($empleado)]);
+            $vendedorData = (object)[
+                'KOFU' => $vendedorRaw->KOFU,
+                'NOKOFU' => $vendedorRaw->NOKOFU ?? '',
+                'EMAIL' => $vendedorRaw->EMAIL ?? '',
+                'RTFU' => $vendedorRaw->RTFU ?? ''
+            ];
+            
+            \Log::info("✅ Datos del vendedor encontrados:", ['kofu' => $vendedorData->KOFU, 'nombre' => $vendedorData->NOKOFU]);
             
         } catch (\Exception $e) {
-            \Log::error('❌ Error consultando empleado: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
-            return back()->withErrors(['vendedor_id' => 'Error de conexión al consultar el empleado.'])->withInput();
+            \Log::error('❌ Error al obtener datos del vendedor:', ['error' => $e->getMessage()]);
+            return back()->withErrors(['vendedor_id' => 'Error al obtener la información del empleado: ' . $e->getMessage()])->withInput();
         }
-        
-        if (!$empleado) {
-            return back()->withErrors(['vendedor_id' => 'No se encontró información del empleado seleccionado.'])->withInput();
-        }
-        
-        $vendedorData = (object)[
-            'KOFU' => trim($empleado->KOFU),
-            'NOKOFU' => trim($empleado->NOKOFU ?? ''),
-            'EMAIL' => trim($empleado->EMAIL ?? ''),
-            'RTFU' => trim($empleado->RTFU ?? '')
-        ];
-        
-        \Log::info("✅ Datos del vendedor encontrados:", ['kofu' => $vendedorData->KOFU, 'nombre' => $vendedorData->NOKOFU]);
 
         try {
             DB::beginTransaction();
@@ -495,10 +314,10 @@ class UserManagementController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => ['required', new \App\Rules\ValidEmailWithDomain(), Rule::unique('users')->ignore($user->id)],
-            'email_alternativo' => ['nullable', new \App\Rules\ValidEmailWithDomain(), Rule::unique('users')->ignore($user->id)],
-            'rut' => 'nullable|string|max:20',
-            'codigo_vendedor' => 'required|string|max:10',
+            'email' => ['required', 'email', Rule::unique('users')->ignore($user->id)],
+            'email_alternativo' => ['nullable', 'email', Rule::unique('users')->ignore($user->id)],
+            'rut' => ['nullable', new \App\Rules\ValidRut(), Rule::unique('users')->ignore($user->id)],
+            'codigo_vendedor' => 'nullable|string|max:10',
             'es_vendedor' => 'boolean',
             'roles' => 'required|array',
             'roles.*' => 'exists:roles,id'
@@ -545,15 +364,12 @@ class UserManagementController extends Controller
      */
     public function changePassword(Request $request, User $user)
     {
-        try {
-            $request->validate([
-                'password' => 'required|min:8|confirmed'
-            ], [
-                'password.required' => 'La contraseña es obligatoria.',
-                'password.min' => 'La contraseña debe tener al menos 8 caracteres.',
-                'password.confirmed' => 'Las contraseñas no coinciden.'
-            ]);
+        $request->validate([
+            'password' => 'required|min:8|confirmed',
+            'password_confirmation' => 'required|same:password'
+        ]);
 
+        try {
             \Log::info('Cambiando contraseña para usuario', [
                 'user_id' => $user->id,
                 'email' => $user->email,
