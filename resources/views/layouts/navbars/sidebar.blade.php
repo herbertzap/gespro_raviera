@@ -134,6 +134,14 @@
                             </a>
                         </li>
                         @endcan
+                        @can('ver_barrido_stock')
+                        <li @if ($pageSlug == 'manejo-stock-barrido-simplificado') class="active " @endif>
+                            <a href="{{ route('manejo-stock.barrido-simplificado') }}">
+                                <i class="material-icons">qr_code</i>
+                                <p>{{ __('Captura Código de Barra') }}</p>
+                            </a>
+                        </li>
+                        @endcan
                         @can('ver_historial_stock')
                         <li @if ($pageSlug == 'manejo-stock-historial') class="active " @endif>
                             <a href="{{ route('manejo-stock.historial') }}">

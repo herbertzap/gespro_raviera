@@ -1959,6 +1959,7 @@ class ManejoStockController extends Controller
         return view('manejo-stock.barrido-simplificado', [
             'bodega' => $bodega,
             'ubicacion' => $ubicacion,
+            'pageSlug' => 'manejo-stock-barrido-simplificado',
         ]);
     }
 }
