@@ -17,10 +17,10 @@
             </div>
         </div>
 
-        <!-- Tarjetas de Resumen - Primera Fila (máximo 4 cards) -->
+        <!-- Tarjetas de Resumen -->
         <div class="row">
-            @if($tipoUsuario == 'Super Admin')
-                <!-- Super Admin - Resumen General -->
+            @can('ver_dashboard_card_total_usuarios')
+                <!-- Total Usuarios -->
                 <div class="col-lg-3 col-md-6 col-sm-6">
                     <div class="card card-stats">
                         <div class="card-header card-header-primary card-header-icon">
@@ -38,9 +38,9 @@
                         </div>
                     </div>
                 </div>
-            @endif
+            @endcan
 
-            @if(in_array($tipoUsuario, ['Vendedor', 'Supervisor', 'Super Admin']))
+            @can('ver_dashboard_card_total_documentos_pendientes')
                 <!-- Resumen de Cobranza -->
                 <div class="col-lg-3 col-md-6 col-sm-6">
                     <div class="card card-stats">
@@ -59,7 +59,9 @@
                         </div>
                     </div>
                 </div>
+            @endcan
 
+            @can('ver_dashboard_card_total_notas_venta_aprobacion')
                 <div class="col-lg-3 col-md-6 col-sm-6">
                     <div class="card card-stats">
                         <div class="card-header card-header-primary card-header-icon">
@@ -77,7 +79,9 @@
                         </div>
                     </div>
                 </div>
+            @endcan
 
+            @can('ver_dashboard_card_total_documentos_vencidos')
                 <div class="col-lg-3 col-md-6 col-sm-6">
                     <div class="card card-stats">
                         <div class="card-header card-header-danger card-header-icon">
@@ -95,12 +99,9 @@
                         </div>
                     </div>
                 </div>
-            @endif
-        </div>
+            @endcan
 
-        <!-- Segunda Fila (máximo 4 cards) -->
-        <div class="row">
-            @if(in_array($tipoUsuario, ['Vendedor', 'Supervisor', 'Super Admin']))
+            @can('ver_dashboard_card_cheques_cartera')
                 <div class="col-lg-3 col-md-6 col-sm-6">
                     <div class="card card-stats">
                         <div class="card-header card-header-info card-header-icon">
@@ -118,7 +119,9 @@
                         </div>
                     </div>
                 </div>
+            @endcan
 
+            @can('ver_dashboard_card_cheques_protestados')
                 <div class="col-lg-3 col-md-6 col-sm-6">
                     <div class="card card-stats">
                         <div class="card-header card-header-danger card-header-icon">
@@ -136,318 +139,267 @@
                         </div>
                     </div>
                 </div>
+            @endcan
 
-                @if(in_array($tipoUsuario, ['Supervisor', 'Compras', 'Picking', 'Super Admin']))
-                    <!-- NVV Pendientes -->
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-warning card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">pending_actions</i>
-                                </div>
-                                <p class="card-category">NVV Pendientes</p>
-                                <h3 class="card-title">{{ $resumenNvvPendientes['total_nvv'] ?? 0 }}</h3>
+            @can('ver_dashboard_card_nvv_pendientes')
+                <!-- NVV Pendientes -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-warning card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">pending_actions</i>
                             </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-warning">schedule</i>
-                                    Por facturar
-                                </div>
+                            <p class="card-category">NVV Pendientes</p>
+                            <h3 class="card-title">{{ $resumenNvvPendientes['total_nvv'] ?? 0 }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-warning">schedule</i>
+                                Por facturar
                             </div>
                         </div>
                     </div>
+                </div>
+            @endcan
 
-                    <!-- Valor NVV Pendientes -->
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-rose card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">attach_money</i>
-                                </div>
-                                <p class="card-category">Valor NVV Pend.</p>
-                                <h3 class="card-title">${{ number_format($resumenNvvPendientes['total_valor_pendiente'] ?? 0, 0) }}</h3>
+            @can('ver_dashboard_card_valor_nvv_pendientes')
+                <!-- Valor NVV Pendientes -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-rose card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">attach_money</i>
                             </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-rose">trending_up</i>
-                                    Por facturar
-                                </div>
+                            <p class="card-category">Valor NVV Pend.</p>
+                            <h3 class="card-title">${{ number_format($resumenNvvPendientes['total_valor_pendiente'] ?? 0, 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-rose">trending_up</i>
+                                Por facturar
                             </div>
                         </div>
                     </div>
-                @endif
+                </div>
+            @endcan
+
+            @can('ver_dashboard_card_productos_bajo_stock')
+                <!-- Productos Bajo Stock -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-warning card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">warning</i>
+                            </div>
+                            <p class="card-category">Productos Bajo Stock</p>
+                            <h3 class="card-title">{{ number_format($resumenCompras['productos_bajo_stock'] ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-warning">inventory_2</i>
+                                Requieren reposición
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endcan
+
+            @if($tipoUsuario == 'Supervisor')
+                <!-- Supervisor - Reorganizado según solicitud -->
+                <!-- Primera fila: Cards principales -->
+                <div class="row">
+                <!-- 1. NVV Por Validar -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-warning card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">pending_actions</i>
+                            </div>
+                            <p class="card-category">NVV Por Validar</p>
+                            <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_NOTAS_PENDIENTES_VALIDAR'] ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-warning">pending_actions</i>
+                                <a href="{{ route('aprobaciones.index') }}" class="text-warning">Ver aprobaciones</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. NVV en Sistema Este Mes -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-info card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">storage</i>
+                            </div>
+                            <p class="card-category">NVV en Sistema Este Mes</p>
+                            <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_NOTAS_VENTA_MES_ACTUAL'] ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-info">date_range</i>
+                                {{ date('M Y') }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Facturas Este Mes -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-danger card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">receipt</i>
+                            </div>
+                            <p class="card-category">Facturas Este Mes</p>
+                            <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_FACTURAS_MES_ACTUAL'] ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-danger">date_range</i>
+                                {{ date('M Y') }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            
+            <!-- Segunda fila: Cards informativos -->
+            <div class="row">
+                <!-- 4. Cheques en Cartera (Informativo) -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-success card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">account_balance</i>
+                            </div>
+                            <p class="card-category">Cheques en Cartera</p>
+                            <h3 class="card-title">${{ number_format($resumenCobranza['CHEQUES_EN_CARTERA'] ?? 0, 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-success">account_balance_wallet</i>
+                                En cartera
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 5. Cheques Protestados (Informativo) -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-danger card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">warning</i>
+                            </div>
+                            <p class="card-category">Cheques Protestados</p>
+                            <h3 class="card-title">${{ number_format($resumenCobranza['CHEQUES_PROTESTADOS'] ?? 0, 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-danger">block</i>
+                                Requieren atención
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            @endif
+
+            @can('ver_dashboard_card_compras_mes')
+                <!-- Compras del Mes -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-info card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">shopping_cart</i>
+                            </div>
+                            <p class="card-category">Compras del Mes</p>
+                            <h3 class="card-title">{{ number_format($resumenCompras['total_compras_mes'] ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-info">date_range</i>
+                                {{ $resumenCompras['mes_actual'] ?? date('Y-m') }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endcan
+
+            @can('ver_dashboard_card_productos_bajo_stock')
+                <!-- Productos Bajo Stock -->
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-warning card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">warning</i>
+                            </div>
+                            <p class="card-category">Productos Bajo Stock</p>
+                            <h3 class="card-title">{{ number_format($resumenCompras['productos_bajo_stock'] ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-warning">inventory_2</i>
+                                Requieren reposición
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endcan
+
+            @if($tipoUsuario == 'Compras')
+
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-success card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">receipt</i>
+                            </div>
+                            <p class="card-category">NVV Pendientes</p>
+                            <h3 class="card-title">{{ count($nvvPendientes ?? []) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-success">pending_actions</i>
+                                Por aprobar
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-3 col-md-6 col-sm-6">
+                    <div class="card card-stats">
+                        <div class="card-header card-header-primary card-header-icon">
+                            <div class="card-icon">
+                                <i class="material-icons">pending</i>
+                            </div>
+                            <p class="card-category">Compras Pendientes</p>
+                            <h3 class="card-title">{{ number_format($resumenCompras['compras_pendientes'] ?? 0) }}</h3>
+                        </div>
+                        <div class="card-footer">
+                            <div class="stats">
+                                <i class="material-icons text-primary">schedule</i>
+                                En proceso
+                            </div>
+                        </div>
+                    </div>
+                </div>
             @endif
         </div>
 
-        @if(in_array($tipoUsuario, ['Supervisor', 'Super Admin']))
-            <!-- Supervisor - Primera fila: 4 cards máximo -->
-            <div class="row">
-                    <!-- 1. NVV Por Validar -->
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-warning card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">pending_actions</i>
-                                </div>
-                                <p class="card-category">NVV Por Validar</p>
-                                <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_NOTAS_PENDIENTES_VALIDAR'] ?? 0) }}</h3>
-                            </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-warning">pending_actions</i>
-                                    <a href="{{ route('aprobaciones.index') }}" class="text-warning">Ver aprobaciones</a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 2. NVV en Sistema Este Mes -->
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-info card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">storage</i>
-                                </div>
-                                <p class="card-category">NVV en Sistema Este Mes</p>
-                                <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_NOTAS_VENTA_MES_ACTUAL'] ?? 0) }}</h3>
-                            </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-info">date_range</i>
-                                    {{ date('M Y') }}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 3. Facturas Este Mes -->
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-danger card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">receipt</i>
-                                </div>
-                                <p class="card-category">Facturas Este Mes</p>
-                                <h3 class="card-title">{{ number_format($resumenCobranza['TOTAL_FACTURAS_MES_ACTUAL'] ?? 0) }}</h3>
-                            </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-danger">date_range</i>
-                                    {{ date('M Y') }}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 4. Valor Total Facturas Mensuales No Pagadas -->
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-danger card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">attach_money</i>
-                                </div>
-                                <p class="card-category">Fact. Mensuales No Pagadas</p>
-                                <h3 class="card-title">${{ number_format($resumenCobranza['VALOR_TOTAL_FACTURAS_MES_ACTUAL'] ?? 0, 0) }}</h3>
-                            </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-danger">trending_up</i>
-                                    Mes actual
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    @if($tipoUsuario == 'Super Admin')
-                    <!-- 5. Compras del Mes (si es Super Admin) -->
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-info card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">shopping_cart</i>
-                                </div>
-                                <p class="card-category">Compras del Mes</p>
-                                <h3 class="card-title">{{ number_format($resumenCompras['total_compras_mes'] ?? 0) }}</h3>
-                            </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-info">date_range</i>
-                                    {{ $resumenCompras['mes_actual'] ?? date('Y-m') }}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    @endif
-                </div>
-                
-                <!-- Segunda fila: Cards informativos (máximo 4) -->
-                <div class="row">
-                    <!-- 1. Cheques en Cartera -->
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-success card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">account_balance</i>
-                                </div>
-                                <p class="card-category">Cheques en Cartera</p>
-                                <h3 class="card-title">${{ number_format($resumenCobranza['CHEQUES_EN_CARTERA'] ?? 0, 0) }}</h3>
-                            </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-success">account_balance_wallet</i>
-                                    En cartera
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 2. Cheques Protestados -->
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-danger card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">warning</i>
-                                </div>
-                                <p class="card-category">Cheques Protestados</p>
-                                <h3 class="card-title">${{ number_format($resumenCobranza['CHEQUES_PROTESTADOS'] ?? 0, 0) }}</h3>
-                            </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-danger">block</i>
-                                    Requieren atención
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    @if($tipoUsuario == 'Super Admin')
-                    <!-- 3. Productos Bajo Stock -->
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-warning card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">warning</i>
-                                </div>
-                                <p class="card-category">Productos Bajo Stock</p>
-                                <h3 class="card-title">{{ number_format($resumenCompras['productos_bajo_stock'] ?? 0) }}</h3>
-                            </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-warning">inventory_2</i>
-                                    Requieren reposición
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 4. Compras Pendientes -->
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-primary card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">pending</i>
-                                </div>
-                                <p class="card-category">Compras Pendientes</p>
-                                <h3 class="card-title">{{ number_format($resumenCompras['compras_pendientes'] ?? 0) }}</h3>
-                            </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-primary">schedule</i>
-                                    En proceso
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    @endif
-                </div>
-        @endif
-
-        @if($tipoUsuario == 'Compras')
-            <!-- Compras - Resumen (solo para rol Compras) -->
-            <div class="row">
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-info card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">shopping_cart</i>
-                                </div>
-                                <p class="card-category">Compras del Mes</p>
-                                <h3 class="card-title">{{ number_format($resumenCompras['total_compras_mes'] ?? 0) }}</h3>
-                            </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-info">date_range</i>
-                                    {{ $resumenCompras['mes_actual'] ?? date('Y-m') }}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-warning card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">warning</i>
-                                </div>
-                                <p class="card-category">Productos Bajo Stock</p>
-                                <h3 class="card-title">{{ number_format($resumenCompras['productos_bajo_stock'] ?? 0) }}</h3>
-                            </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-warning">inventory_2</i>
-                                    Requieren reposición
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-success card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">receipt</i>
-                                </div>
-                                <p class="card-category">NVV Pendientes</p>
-                                <h3 class="card-title">{{ count($nvvPendientes ?? []) }}</h3>
-                            </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-success">pending_actions</i>
-                                    Por aprobar
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="col-lg-3 col-md-6 col-sm-6">
-                        <div class="card card-stats">
-                            <div class="card-header card-header-primary card-header-icon">
-                                <div class="card-icon">
-                                    <i class="material-icons">pending</i>
-                                </div>
-                                <p class="card-category">Compras Pendientes</p>
-                                <h3 class="card-title">{{ number_format($resumenCompras['compras_pendientes'] ?? 0) }}</h3>
-                            </div>
-                            <div class="card-footer">
-                                <div class="stats">
-                                    <i class="material-icons text-primary">schedule</i>
-                                    En proceso
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-        @endif
-
         <!-- Contenido Específico por Rol -->
         <div class="row">
-            @if($tipoUsuario == 'Super Admin')
-                <!-- Super Admin - Usuarios por Rol (Solo Manejo Stock) -->
-                <div class="col-md-12">
+            @can('ver_dashboard_tabla_usuarios_rol')
+                <!-- Usuarios por Rol -->
+                <div class="col-md-6">
                     <div class="card">
                         <div class="card-header card-header-primary">
                             <h4 class="card-title">Usuarios por Rol</h4>
-                            <p class="card-category">Distribución de usuarios - Manejo Stock</p>
+                            <p class="card-category">Distribución de usuarios</p>
                         </div>
                         <div class="card-body">
                             <div class="table-responsive">
@@ -473,7 +425,7 @@
                         </div>
                     </div>
                 </div>
-            @endif
+            @endcan
 
             @if($tipoUsuario == 'Vendedor')
                 <!-- Vendedor - Mis Clientes -->
@@ -748,11 +700,11 @@
                 @endif
             @endif
 
-            @if(in_array($tipoUsuario, ['Supervisor', 'Super Admin']))
+            @if($tipoUsuario == 'Supervisor')
                 <!-- Supervisor - Tablas de Información -->
                 
-                <!-- Notas de Venta Pendientes (col-12) -->
-                <div class="col-md-12">
+                <!-- Notas de Venta Pendientes (col-6) -->
+                <div class="col-md-6">
                     <div class="card">
                         <div class="card-header card-header-warning">
                             <h4 class="card-title">Notas de Venta Pendientes</h4>
@@ -764,7 +716,6 @@
                                     <thead class="text-warning">
                                         <tr>
                                             <th>Número</th>
-                                            <th>Fecha Ingreso</th>
                                             <th>Vendedor</th>
                                             <th>Cliente</th>
                                             <th>Total</th>
@@ -775,30 +726,14 @@
                                     <tbody>
                                         @forelse($notasPendientes ?? [] as $nota)
                                         <tr>
-                                            <td>
-                                                <strong>#{{ $nota->id ?? 'N/A' }}</strong>
-                                                @if($nota->numero_cotizacion)
-                                                    <br><small class="text-muted">{{ $nota->numero_cotizacion }}</small>
-                                                @endif
-                                            </td>
-                                            <td>
-                                                <small>{{ $nota->created_at ? $nota->created_at->format('d/m/Y') : ($nota->fecha ? $nota->fecha->format('d/m/Y') : 'N/A') }}</small>
-                                            </td>
+                                            <td>{{ $nota->numero_nota_venta ?? 'N/A' }}</td>
                                             <td>{{ $nota->user->name ?? 'N/A' }}</td>
-                                            <td>
-                                                <strong>{{ $nota->cliente_codigo ?? 'N/A' }}</strong>
-                                                @if($nota->cliente_nombre)
-                                                    <br><small class="text-muted">{{ $nota->cliente_nombre }}</small>
-                                                @elseif($nota->cliente && $nota->cliente->nombre_cliente)
-                                                    <br><small class="text-muted">{{ $nota->cliente->nombre_cliente }}</small>
-                                                @endif
-                                            </td>
+                                            <td>{{ $nota->cliente->nombre ?? $nota->nombre_cliente ?? 'N/A' }}</td>
                                             <td>${{ number_format($nota->total ?? 0, 2) }}</td>
                                             <td>
                                                 <span class="badge badge-{{ 
-                                                    $nota->estado_aprobacion == 'pendiente' ? 'warning' : 
-                                                    ($nota->estado_aprobacion == 'pendiente_picking' ? 'info' : 
-                                                    ($nota->estado_aprobacion == 'aprobada_supervisor' ? 'success' : 'primary'))
+                                                    $nota->estado_aprobacion == 'pendiente_supervisor' ? 'warning' : 
+                                                    ($nota->estado_aprobacion == 'pendiente_compras' ? 'info' : 'primary')
                                                 }}">
                                                     {{ ucfirst(str_replace('_', ' ', $nota->estado_aprobacion ?? 'pendiente')) }}
                                                 </span>
@@ -811,23 +746,18 @@
                                         </tr>
                                         @empty
                                         <tr>
-                                            <td colspan="7" class="text-center">No hay notas de venta pendientes</td>
+                                            <td colspan="6" class="text-center">No hay notas de venta pendientes</td>
                                         </tr>
                                         @endforelse
                                     </tbody>
                                 </table>
                             </div>
-                            <div class="card-footer text-center">
-                                <a href="{{ route('aprobaciones.index') }}" class="btn btn-warning btn-lg">
-                                    <i class="material-icons">visibility</i> Ver Todas
-                                </a>
-                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Notas de Venta en Sistema SQL (col-12) -->
-                <div class="col-md-12" id="notas-sql">
+                <!-- Notas de Venta en Sistema SQL (col-6) -->
+                <div class="col-md-6" id="notas-sql">
                     <div class="card">
                         <div class="card-header card-header-info">
                             <h4 class="card-title">Notas de Venta en Sistema</h4>
@@ -849,12 +779,12 @@
                                     <tbody>
                                         @forelse($notasVentaSQL ?? [] as $nota)
                                         <tr>
-                                            <td><span class="badge badge-info">{{ $nota['TIPO_DOCTO'] ?? 'NVV' }}</span></td>
-                                            <td>{{ $nota['NRO_DOCTO'] ?? '' }}</td>
-                                            <td>{{ $nota['CLIENTE'] ?? $nota['NOMBRE_CLIENTE'] ?? '' }}</td>
-                                            <td>{{ $nota['VENDEDOR'] ?? $nota['NOMBRE_VENDEDOR'] ?? '' }}</td>
-                                            <td>${{ number_format($nota['VALOR_PENDIENTE'] ?? $nota['VALOR_DOCUMENTO'] ?? 0, 0) }}</td>
-                                            <td>{{ isset($nota['FECHA_EMISION']) ? \Carbon\Carbon::parse($nota['FECHA_EMISION'])->format('d/m/Y') : '' }}</td>
+                                            <td><span class="badge badge-info">{{ $nota['TIPO_DOCTO'] }}</span></td>
+                                            <td>{{ $nota['NRO_DOCTO'] }}</td>
+                                            <td>{{ $nota['NOMBRE_CLIENTE'] }}</td>
+                                            <td>{{ $nota['NOMBRE_VENDEDOR'] }}</td>
+                                            <td>${{ number_format($nota['VALOR_DOCUMENTO'], 0) }}</td>
+                                            <td>{{ \Carbon\Carbon::parse($nota['FECHA_EMISION'])->format('d/m/Y') }}</td>
                                         </tr>
                                         @empty
                                         <tr>
@@ -863,11 +793,6 @@
                                         @endforelse
                                     </tbody>
                                 </table>
-                            </div>
-                            <div class="card-footer text-center">
-                                <a href="{{ route('nvv-pendientes.index') }}" class="btn btn-info btn-lg">
-                                    <i class="material-icons">visibility</i> Ver Todas
-                                </a>
                             </div>
                         </div>
                     </div>
@@ -900,37 +825,37 @@
                                     <tbody>
                                         @forelse($facturasPendientes ?? [] as $factura)
                                         <tr>
-                                            <td><span class="badge badge-danger">{{ $factura['TIPO_DOCTO'] ?? '' }}</span></td>
-                                            <td>{{ $factura['NRO_DOCTO'] ?? '' }}</td>
-                                            <td>{{ $factura['CLIENTE'] ?? '' }}</td>
-                                            <td>{{ $factura['VENDEDOR'] ?? '' }}</td>
-                                            <td>${{ number_format($factura['VALOR'] ?? 0, 0) }}</td>
-                                            <td>${{ number_format($factura['ABONOS'] ?? 0, 0) }}</td>
+                                            <td><span class="badge badge-danger">{{ $factura['TIPO_DOCTO'] }}</span></td>
+                                            <td>{{ $factura['NRO_DOCTO'] }}</td>
+                                            <td>{{ $factura['NOMBRE_CLIENTE'] }}</td>
+                                            <td>{{ $factura['NOMBRE_VENDEDOR'] }}</td>
+                                            <td>${{ number_format($factura['VALOR_DOCUMENTO'], 0) }}</td>
+                                            <td>${{ number_format($factura['ABONOS'], 0) }}</td>
                                             <td>
-                                                <span class="badge badge-{{ ($factura['SALDO'] ?? 0) > 0 ? 'warning' : 'success' }}">
-                                                    ${{ number_format($factura['SALDO'] ?? 0, 0) }}
+                                                <span class="badge badge-{{ $factura['SALDO'] > 0 ? 'warning' : 'success' }}">
+                                                    ${{ number_format($factura['SALDO'], 0) }}
                                                 </span>
                                             </td>
                                             <td>
                                                 <span class="badge badge-{{ 
-                                                    ($factura['DIAS'] ?? 0) < 8 ? 'success' : 
-                                                    (($factura['DIAS'] ?? 0) < 31 ? 'warning' : 
-                                                    (($factura['DIAS'] ?? 0) < 61 ? 'danger' : 'dark')) 
+                                                    $factura['DIAS'] < 8 ? 'success' : 
+                                                    ($factura['DIAS'] < 31 ? 'warning' : 
+                                                    ($factura['DIAS'] < 61 ? 'danger' : 'dark')) 
                                                 }}">
-                                                    {{ $factura['DIAS'] ?? 0 }}
+                                                    {{ $factura['DIAS'] }}
                                                 </span>
                                             </td>
                                             <td>
                                                 <span class="badge badge-{{ 
-                                                    ($factura['ESTADO'] ?? '') == 'VIGENTE' ? 'success' : 
-                                                    (($factura['ESTADO'] ?? '') == 'POR VENCER' ? 'warning' : 
-                                                    (($factura['ESTADO'] ?? '') == 'VENCIDO' ? 'danger' : 'dark')) 
+                                                    $factura['ESTADO'] == 'VIGENTE' ? 'success' : 
+                                                    ($factura['ESTADO'] == 'POR VENCER' ? 'warning' : 
+                                                    ($factura['ESTADO'] == 'VENCIDO' ? 'danger' : 'dark')) 
                                                 }}">
-                                                    {{ $factura['ESTADO'] ?? '' }}
+                                                    {{ $factura['ESTADO'] }}
                                                 </span>
                                             </td>
                                             <td>
-                                                <a href="{{ route('facturas-pendientes.ver', [$factura['TIPO_DOCTO'] ?? '', $factura['NRO_DOCTO'] ?? '']) }}" class="btn btn-sm btn-primary">
+                                                <a href="{{ route('facturas-pendientes.ver', [$factura['TIPO_DOCTO'], $factura['NRO_DOCTO']]) }}" class="btn btn-sm btn-primary">
                                                     <i class="material-icons">visibility</i> Ver
                                                 </a>
                                             </td>
@@ -946,123 +871,9 @@
                         </div>
                     </div>
                 </div>
-
-                <!-- Cheques Asociados al Cliente (col-12) -->
-                <div class="col-md-12">
-                    <div class="card">
-                        <div class="card-header card-header-primary">
-                            <h4 class="card-title">Cheques Asociados al Cliente</h4>
-                            <p class="card-category">Cheques en cartera y cheques protestados</p>
-                        </div>
-                        <div class="card-body">
-                            <!-- Tabs -->
-                            <ul class="nav nav-tabs" role="tablist">
-                                <li class="nav-item">
-                                    <a class="nav-link active" data-toggle="tab" href="#chequesCartera" role="tab">
-                                        <i class="material-icons">account_balance</i> Cheques en Cartera
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link" data-toggle="tab" href="#chequesProtestados" role="tab">
-                                        <i class="material-icons">warning</i> Cheques Protestados
-                                    </a>
-                                </li>
-                            </ul>
-                            
-                            <!-- Tab Content -->
-                            <div class="tab-content">
-                                <!-- Tab: Cheques en Cartera -->
-                                <div class="tab-pane fade show active" id="chequesCartera" role="tabpanel">
-                                    <div class="table-responsive mt-3">
-                                        <table class="table">
-                                            <thead class="text-primary">
-                                                <tr>
-                                                    <th>Número</th>
-                                                    <th>Cliente</th>
-                                                    <th>Vendedor</th>
-                                                    <th>Valor</th>
-                                                    <th>Fecha Vencimiento</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                @forelse($chequesEnCarteraDetalle ?? [] as $cheque)
-                                                <tr>
-                                                    <td><strong>{{ $cheque['numero'] ?? '' }}</strong></td>
-                                                    <td>
-                                                        <strong>{{ $cheque['codigo_cliente'] ?? '' }}</strong>
-                                                        @if($cheque['cliente'])
-                                                            <br><small class="text-muted">{{ $cheque['cliente'] }}</small>
-                                                        @endif
-                                                    </td>
-                                                    <td>{{ $cheque['vendedor'] ?? '' }}</td>
-                                                    <td>${{ number_format($cheque['valor'] ?? 0, 0) }}</td>
-                                                    <td>
-                                                        @if($cheque['fecha_vencimiento'])
-                                                            {{ \Carbon\Carbon::parse($cheque['fecha_vencimiento'])->format('d/m/Y') }}
-                                                        @else
-                                                            N/A
-                                                        @endif
-                                                    </td>
-                                                </tr>
-                                                @empty
-                                                <tr>
-                                                    <td colspan="5" class="text-center">No hay cheques en cartera</td>
-                                                </tr>
-                                                @endforelse
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                                
-                                <!-- Tab: Cheques Protestados -->
-                                <div class="tab-pane fade" id="chequesProtestados" role="tabpanel">
-                                    <div class="table-responsive mt-3">
-                                        <table class="table">
-                                            <thead class="text-danger">
-                                                <tr>
-                                                    <th>Número</th>
-                                                    <th>Cliente</th>
-                                                    <th>Vendedor</th>
-                                                    <th>Valor</th>
-                                                    <th>Fecha Vencimiento</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                @forelse($chequesProtestadosDetalle ?? [] as $cheque)
-                                                <tr>
-                                                    <td><strong>{{ $cheque['numero'] ?? '' }}</strong></td>
-                                                    <td>
-                                                        <strong>{{ $cheque['codigo_cliente'] ?? '' }}</strong>
-                                                        @if($cheque['cliente'])
-                                                            <br><small class="text-muted">{{ $cheque['cliente'] }}</small>
-                                                        @endif
-                                                    </td>
-                                                    <td>{{ $cheque['vendedor'] ?? '' }}</td>
-                                                    <td>${{ number_format($cheque['valor'] ?? 0, 0) }}</td>
-                                                    <td>
-                                                        @if($cheque['fecha_vencimiento'])
-                                                            {{ \Carbon\Carbon::parse($cheque['fecha_vencimiento'])->format('d/m/Y') }}
-                                                        @else
-                                                            N/A
-                                                        @endif
-                                                    </td>
-                                                </tr>
-                                                @empty
-                                                <tr>
-                                                    <td colspan="5" class="text-center">No hay cheques protestados</td>
-                                                </tr>
-                                                @endforelse
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             @endif
 
-            @if(auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Super Admin'))
+            @if(auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Supervisor'))
                 <!-- NVV Pendientes Detalle -->
                 <div class="col-md-6">
                     <div class="card">
@@ -1093,27 +904,27 @@
                                         @forelse($nvvPendientes ?? [] as $nvv)
                                         <tr>
                                             <td>
-                                                <span class="badge badge-warning">{{ $nvv['TD'] ?? '' }}-{{ $nvv['NUM'] ?? '' }}</span>
+                                                <span class="badge badge-warning">{{ $nvv['TD'] }}-{{ $nvv['NUM'] }}</span>
                                             </td>
-                                            <td>{{ $nvv['CLIE'] ?? '' }}</td>
-                                            <td>{{ $nvv['CANTIDAD_PRODUCTOS'] ?? 0 }} productos</td>
-                                            <td>{{ number_format($nvv['TOTAL_PENDIENTE'] ?? 0, 0) }}</td>
+                                            <td>{{ $nvv['CLIE'] }}</td>
+                                            <td>{{ $nvv['NOKOPR'] }}</td>
+                                            <td>{{ number_format($nvv['PEND'], 0) }}</td>
                                             <td>
                                                 <span class="badge badge-{{ 
-                                                    ($nvv['DIAS'] ?? 0) < 8 ? 'success' : 
-                                                    (($nvv['DIAS'] ?? 0) < 31 ? 'warning' : 
-                                                    (($nvv['DIAS'] ?? 0) < 61 ? 'danger' : 'dark')) 
+                                                    $nvv['DIAS'] < 8 ? 'success' : 
+                                                    ($nvv['DIAS'] < 31 ? 'warning' : 
+                                                    ($nvv['DIAS'] < 61 ? 'danger' : 'dark')) 
                                                 }}">
-                                                    {{ $nvv['DIAS'] ?? 0 }}
+                                                    {{ $nvv['DIAS'] }}
                                                 </span>
                                             </td>
                                             <td>
                                                 <span class="badge badge-{{ 
-                                                    ($nvv['Rango'] ?? '') == 'Entre 1 y 7 días' ? 'success' : 
-                                                    (($nvv['Rango'] ?? '') == 'Entre 8 y 30 Días' ? 'warning' : 
-                                                    (($nvv['Rango'] ?? '') == 'Entre 31 y 60 Días' ? 'danger' : 'dark')) 
+                                                    $nvv['Rango'] == 'Entre 1 y 7 días' ? 'success' : 
+                                                    ($nvv['Rango'] == 'Entre 8 y 30 Días' ? 'warning' : 
+                                                    ($nvv['Rango'] == 'Entre 31 y 60 Días' ? 'danger' : 'dark')) 
                                                 }}">
-                                                    {{ $nvv['Rango'] ?? '' }}
+                                                    {{ $nvv['Rango'] }}
                                                 </span>
                                             </td>
                                         </tr>
@@ -1132,19 +943,19 @@
                                 <div class="row">
                                     <div class="col-md-3">
                                         <div class="text-center">
-                                            <h5 class="text-warning">{{ $resumenNvvPendientes['total_nvv'] ?? 0 }}</h5>
+                                            <h5 class="text-warning">{{ $resumenNvvPendientes['total_nvv'] }}</h5>
                                             <small>Total NVV</small>
                                         </div>
                                     </div>
                                     <div class="col-md-3">
                                         <div class="text-center">
-                                            <h5 class="text-info">{{ number_format($resumenNvvPendientes['total_pendiente'] ?? 0, 0) }}</h5>
+                                            <h5 class="text-info">{{ number_format($resumenNvvPendientes['total_pendiente'], 0) }}</h5>
                                             <small>Unidades Pend.</small>
                                         </div>
                                     </div>
                                     <div class="col-md-3">
                                         <div class="text-center">
-                                            <h5 class="text-success">${{ number_format($resumenNvvPendientes['total_valor_pendiente'] ?? 0, 0) }}</h5>
+                                            <h5 class="text-success">${{ number_format($resumenNvvPendientes['total_valor_pendiente'], 0) }}</h5>
                                             <small>Valor Pend.</small>
                                         </div>
                                     </div>
@@ -1162,7 +973,7 @@
                     </div>
                 </div>
 
-                <!-- Facturas Pendientes (visible solo Supervisor) -->
+                <!-- Facturas Pendientes (visible solo Supervisor/Super Admin) -->
                 <div class="col-md-6">
                     <div class="card">
                         <div class="card-header card-header-danger">
@@ -1187,22 +998,22 @@
                                         <tr>
                                             <td>
                                                 <span class="badge badge-{{ 
-                                                    ($factura['TIPO_DOCTO'] ?? '') == 'FCV' ? 'success' : 
-                                                    (($factura['TIPO_DOCTO'] ?? '') == 'FDV' ? 'info' : 'warning') 
+                                                    $factura['TIPO_DOCTO'] == 'FCV' ? 'success' : 
+                                                    ($factura['TIPO_DOCTO'] == 'FDV' ? 'info' : 'warning') 
                                                 }}">
-                                                    {{ $factura['TIPO_DOCTO'] ?? '' }}
+                                                    {{ $factura['TIPO_DOCTO'] }}
                                                 </span>
                                             </td>
-                                            <td>{{ $factura['NRO_DOCTO'] ?? '' }}</td>
-                                            <td>{{ $factura['CLIENTE'] ?? '' }}</td>
-                                            <td>${{ number_format($factura['SALDO'] ?? 0, 0) }}</td>
+                                            <td>{{ $factura['NRO_DOCTO'] }}</td>
+                                            <td>{{ $factura['CLIENTE'] }}</td>
+                                            <td>${{ number_format($factura['SALDO'], 0) }}</td>
                                             <td>
                                                 <span class="badge badge-{{ 
-                                                    ($factura['DIAS'] ?? 0) < 0 ? 'success' : 
-                                                    (($factura['DIAS'] ?? 0) < 8 ? 'warning' : 
-                                                    (($factura['DIAS'] ?? 0) < 31 ? 'danger' : 'dark')) 
+                                                    $factura['DIAS'] < 0 ? 'success' : 
+                                                    ($factura['DIAS'] < 8 ? 'warning' : 
+                                                    ($factura['DIAS'] < 31 ? 'danger' : 'dark')) 
                                                 }}">
-                                                    {{ $factura['DIAS'] ?? 0 }}
+                                                    {{ $factura['DIAS'] }}
                                                 </span>
                                             </td>
                                             <td>
@@ -1231,13 +1042,13 @@
                                 <div class="row">
                                     <div class="col-md-3">
                                         <div class="text-center">
-                                            <h5 class="text-danger">{{ $resumenFacturasPendientes['total_facturas'] ?? 0 }}</h5>
+                                            <h5 class="text-danger">{{ $resumenFacturasPendientes['total_facturas'] }}</h5>
                                             <small>Total Facturas</small>
                                         </div>
                                     </div>
                                     <div class="col-md-3">
                                         <div class="text-center">
-                                            <h5 class="text-success">${{ number_format($resumenFacturasPendientes['total_saldo'] ?? 0, 0) }}</h5>
+                                            <h5 class="text-success">${{ number_format($resumenFacturasPendientes['total_saldo'], 0) }}</h5>
                                             <small>Saldo Total</small>
                                         </div>
                                     </div>
@@ -1298,7 +1109,11 @@
                                     </a>
                                 </div>
                             @elseif(in_array($tipoUsuario, ['Super Admin', 'Vendedor']))
-                                
+                                <div class="col-md-3">
+                                    <a href="{{ route('cobranza.index') }}" class="btn btn-success btn-block">
+                                        <i class="material-icons">receipt</i> Ver Cobranza
+                                    </a>
+                                </div>
                             @endif
 
                             @if($tipoUsuario == 'Vendedor')
@@ -1323,7 +1138,7 @@
         </div>
 
         <!-- Sección específica para Compras -->
-        @if(in_array($tipoUsuario, ['Compras', 'Super Admin']))
+        @if($tipoUsuario == 'Compras')
         <div class="row">
             <!-- NVV Pendientes de Aprobación -->
             <div class="col-md-8">
@@ -1336,7 +1151,7 @@
                         <p class="card-category">NVV que requieren aprobación de Compras</p>
                     </div>
                     <div class="card-body">
-                        @if(isset($notasPendientes) && count($notasPendientes) > 0)
+                        @if(isset($nvvPendientes) && count($nvvPendientes) > 0)
                             <div class="table-responsive">
                                 <table class="table table-hover">
                                     <thead>
@@ -1351,40 +1166,37 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        @foreach($notasPendientes as $nota)
+                                        @foreach($nvvPendientes as $nvv)
                                         <tr>
                                             <td>
-                                                <strong>#{{ $nota->id ?? '' }}</strong>
+                                                <strong>#{{ $nvv['id'] }}</strong>
                                             </td>
                                             <td>
                                                 <div>
-                                                    <strong>{{ $nota->cliente->codigo_cliente ?? '' }}</strong><br>
-                                                    <small class="text-muted">{{ $nota->cliente->nombre ?? '' }}</small>
+                                                    <strong>{{ $nvv['cliente_codigo'] }}</strong><br>
+                                                    <small class="text-muted">{{ $nvv['cliente_nombre'] }}</small>
                                                 </div>
                                             </td>
-                                            <td>{{ $nota->user->name ?? '' }}</td>
+                                            <td>{{ $nvv['vendedor'] }}</td>
                                             <td>
-                                                <strong>${{ number_format($nota->total ?? 0, 0) }}</strong>
+                                                <strong>${{ number_format($nvv['total'], 0) }}</strong>
                                             </td>
                                             <td>
-                                                <small>{{ $nota->created_at ? $nota->created_at->format('d/m/Y') : '' }}</small>
+                                                <small>{{ \Carbon\Carbon::parse($nvv['fecha_creacion'])->format('d/m/Y') }}</small>
                                             </td>
                                             <td>
-                                                @php
-                                                    $estado = $nota->estado_aprobacion ?? 'pendiente';
-                                                @endphp
-                                                @if($estado == 'pendiente')
-                                                    <span class="badge badge-warning">Pendiente</span>
-                                                @elseif($estado == 'pendiente_picking')
-                                                    <span class="badge badge-info">Picking</span>
-                                                @elseif($estado == 'aprobada_supervisor')
-                                                    <span class="badge badge-primary">Aprobada Sup.</span>
-                                                @else
-                                                    <span class="badge badge-secondary">{{ $estado }}</span>
+                                                @if($nvv['tiene_problemas_stock'])
+                                                    <span class="badge badge-warning">Stock</span>
+                                                @endif
+                                                @if($nvv['tiene_problemas_credito'])
+                                                    <span class="badge badge-danger">Crédito</span>
+                                                @endif
+                                                @if(!$nvv['tiene_problemas_stock'] && !$nvv['tiene_problemas_credito'])
+                                                    <span class="badge badge-success">OK</span>
                                                 @endif
                                             </td>
                                             <td>
-                                                <a href="{{ route('cotizacion.ver', $nota->id) }}" class="btn btn-info btn-sm">
+                                                <a href="{{ $nvv['url'] }}" class="btn btn-info btn-sm">
                                                     <i class="material-icons">visibility</i> Ver
                                                 </a>
                                             </td>
@@ -1420,13 +1232,13 @@
                                 @foreach($productosBajoStock as $producto)
                                 <div class="list-group-item">
                                     <div class="d-flex w-100 justify-content-between">
-                                        <h6 class="mb-1">{{ $producto['codigo'] ?? '' }}</h6>
-                                        <small class="text-danger">Stock: {{ $producto['stock_actual'] ?? 0 }}</small>
+                                        <h6 class="mb-1">{{ $producto['codigo'] }}</h6>
+                                        <small class="text-danger">{{ $producto['stock_actual'] }}/{{ $producto['stock_minimo'] }}</small>
                                     </div>
-                                    <p class="mb-1">{{ $producto['nombre'] ?? '' }}</p>
+                                    <p class="mb-1">{{ $producto['nombre'] }}</p>
                                     <small class="text-warning">
                                         <i class="material-icons" style="font-size: 16px;">warning</i>
-                                        Stock bajo (mín. 5)
+                                        Faltan {{ $producto['diferencia'] }} unidades
                                     </small>
                                 </div>
                                 @endforeach

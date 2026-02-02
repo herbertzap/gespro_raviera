@@ -12,7 +12,6 @@ use App\Models\StockComprometido;
 use App\Models\Cliente;
 use App\Services\ClienteValidacionService;
 use App\Services\StockService;
-use App\Services\StockConsultaService;
 
 class CotizacionController extends Controller
 {
@@ -423,11 +422,10 @@ class CotizacionController extends Controller
                         'CANTIDAD_MINIMA' => 1,
                         'MULTIPLO_VENTA' => $producto->multiplo_venta ?? 1,
                         'LISTA_PRECIOS' => $listaPrecios,
-                        'PRECIO_VALIDO' => $precioValido, // Indica si se puede agregar (precio > 0)
+                        'PRECIO_VALIDO' => $precioValido, // Nuevo campo para indicar si se puede agregar
                         'MOTIVO_BLOQUEO' => $precioValido ? null : 'Precio no disponible'
                     ];
                 })
-                ->values()
                 ->toArray();
             
             if (empty($productos)) {
@@ -482,18 +480,13 @@ class CotizacionController extends Controller
                 }
             }
             
-            // Si después de filtrar no quedan productos, retornar error
-            if (empty($productosFiltrados)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No se encontraron productos disponibles para el término de búsqueda: ' . $busqueda
-                ]);
-            }
+            // Reemplazar productos con los filtrados
+            $productos = $productosFiltrados;
             
             return response()->json([
                 'success' => true,
-                'data' => $productosFiltrados,
-                'total' => count($productosFiltrados),
+                'data' => $productos,
+                'total' => count($productos),
                 'search_term' => $busqueda
             ]);
             
@@ -1345,10 +1338,7 @@ class CotizacionController extends Controller
             return strtotime($fechaB) - strtotime($fechaA);
         });
         
-        // Obtener lista de clientes únicos para el select
-        $clientes = $this->obtenerClientesUnicos($cotizaciones);
-
-        return view('cotizaciones.index', compact('cotizaciones', 'estado', 'cliente', 'fechaInicio', 'fechaFin', 'buscar', 'montoMin', 'montoMax', 'clientes'))->with('pageSlug', 'cotizaciones');
+        return view('cotizaciones.index', compact('cotizaciones', 'estado', 'cliente', 'fechaInicio', 'fechaFin', 'buscar', 'montoMin', 'montoMax'))->with('pageSlug', 'cotizaciones');
     }
     
     /**
@@ -1396,9 +1386,12 @@ class CotizacionController extends Controller
                 }
             }
             
-            // Filtro por cliente (código exacto del select)
+            // Filtro por cliente
             if ($cliente) {
-                $query->where('cliente_codigo', $cliente);
+                $query->where(function($q) use ($cliente) {
+                    $q->where('cliente_codigo', 'LIKE', "%{$cliente}%")
+                      ->orWhere('cliente_nombre', 'LIKE', "%{$cliente}%");
+                });
             }
             
             // Filtro de búsqueda general
@@ -1441,8 +1434,7 @@ class CotizacionController extends Controller
                     'total' => $cotizacion->total,
                     'subtotal' => $cotizacion->subtotal,
                     'descuento_global' => $cotizacion->descuento_global,
-                    'estado' => ($cotizacion->estado_aprobacion === 'rechazada') ? 'rechazada' : $cotizacion->estado,
-                    'estado_aprobacion' => $cotizacion->estado_aprobacion,
+                    'estado' => $cotizacion->estado,
                     'requiere_aprobacion' => $cotizacion->requiere_aprobacion,
                     'observaciones' => $cotizacion->observaciones,
                     'productos_count' => $cotizacion->productos->count(),
@@ -1501,8 +1493,8 @@ class CotizacionController extends Controller
             }
             
             if ($cliente) {
-                $clienteEscaped = str_replace("'", "''", trim($cliente));
-                $whereClause .= " AND MAEDDO.ENDO = '{$clienteEscaped}'";
+                $cliente = strtoupper(addslashes($cliente));
+                $whereClause .= " AND (MAEDDO.ENDO LIKE '%{$cliente}%' OR MAEEN.NOKOEN LIKE '%{$cliente}%')";
             }
             
             // Filtro de búsqueda general (código de factura, cliente, etc.)
@@ -1570,73 +1562,39 @@ class CotizacionController extends Controller
             
             \Log::info('Query SQL completa: ' . $query);
             
-            // Usar tsql con archivo temporal
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $query . "\ngo\nquit");
+            // Usar conexión directa de Laravel
+            $connection = DB::connection('sqlsrv_external');
+            $resultados = $connection->select($query);
             
-            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-            $result = shell_exec($command);
-            
-            unlink($tempFile);
-            
-            if (!$result || str_contains($result, 'error')) {
-                throw new \Exception('Error ejecutando consulta tsql: ' . $result);
-            }
-            
-            \Log::info('TSQL Result: ' . substr($result, 0, 1000));
-            
-            // NUEVO MÉTODO: Procesar cada línea individualmente
-            $lines = explode("\n", $result);
+            // Convertir objetos a formato esperado
             $cotizaciones = [];
-            $inDataSection = false;
-            $headerFound = false;
-            
-            foreach ($lines as $lineNumber => $line) {
-                $line = trim($line);
-                
-                // Saltar líneas vacías o de configuración
-                if (empty($line) || 
-                    strpos($line, 'locale') !== false || 
-                    strpos($line, 'Setting') !== false || 
-                    strpos($line, '1>') !== false ||
-                    strpos($line, '2>') !== false || 
-                    strpos($line, 'Msg ') !== false || 
-                    strpos($line, 'Warning:') !== false) {
-                    continue;
-                }
-                
-                // Detectar el header de la tabla (más flexible)
-                if (strpos($line, 'IDMAEDDO') !== false || 
-                    (strpos($line, 'TD') !== false && strpos($line, 'NUM') !== false && strpos($line, 'EMIS_FCV') !== false)) {
-                    $headerFound = true;
-                    $inDataSection = true;
-                    \Log::info('Header encontrado en línea ' . $lineNumber . ': ' . $line);
-                    continue;
-                }
-                
-                // Detectar cuando terminamos la sección de datos
-                if (strpos($line, '(1 row affected)') !== false || strpos($line, 'rows affected') !== false) {
-                    $inDataSection = false;
-                    \Log::info('Fin de datos en línea ' . $lineNumber);
-                    break;
-                }
-                
-                // Si estamos en la sección de datos y la línea no está vacía
-                if ($inDataSection && $headerFound && !empty($line)) {
-                    \Log::info('Procesando línea de datos ' . $lineNumber . ': ' . substr($line, 0, 100) . '...');
-                    
-                    // Procesar cada línea individualmente
-                    $cotizacion = $this->procesarLineaCotizacion($line, $lineNumber);
-                    
-                    if ($cotizacion) {
-                        $cotizaciones[] = $cotizacion;
-                        \Log::info('Cotización procesada: ' . $cotizacion->cliente_nombre . ' - ' . $cotizacion->producto_nombre);
-                    }
-                }
+            foreach ($resultados as $row) {
+                $cotizaciones[] = (object) [
+                    'idmaeddo' => $row->IDMAEDDO,
+                    'tipo_documento' => $row->TD,
+                    'numero' => $row->NUM,
+                    'fecha_emision' => $row->EMIS_FCV,
+                    'codigo_cliente' => $row->COD_CLI,
+                    'cliente_nombre' => trim($row->CLIE ?? ''),
+                    'codigo_producto' => trim($row->KOPRCT ?? ''),
+                    'cantidad' => (float)($row->CAPRCO1 ?? 0),
+                    'producto_nombre' => trim($row->NOKOPR ?? ''),
+                    'facturado' => (float)($row->FACT ?? 0),
+                    'pendiente' => (float)($row->PEND ?? 0),
+                    'vendedor_nombre' => trim($row->NOKOFU ?? ''),
+                    'vendedor_codigo' => trim($row->KOFU ?? ''),
+                    'ciudad' => trim($row->NOKOCI ?? ''),
+                    'comuna' => trim($row->NOKOCM ?? ''),
+                    'dias' => (int)($row->DIAS ?? 0),
+                    'rango' => trim($row->Rango ?? ''),
+                    'precio_unitario' => (float)($row->PUNIT ?? 0),
+                    'valor_pendiente' => (float)($row->PEND_VAL ?? 0),
+                    'tipo_documento_relacionado' => trim($row->TD_R ?? ''),
+                    'numero_factura' => trim($row->N_FCV ?? ''),
+                ];
             }
             
-            \Log::info('Total de cotizaciones procesadas: ' . count($cotizaciones));
-            
+            \Log::info('Total de cotizaciones obtenidas: ' . count($cotizaciones));
             
             return $cotizaciones;
             
@@ -3126,331 +3084,43 @@ class CotizacionController extends Controller
 
     /**
      * Obtener stock actual de un producto específico
-     * MANTIENE la lógica original que funcionaba
-     * ADICIONALMENTE actualiza MySQL con los valores obtenidos
      */
     public function obtenerStockProducto($codigo)
     {
         try {
-            // PRIMERO: Verificar si el producto está oculto en SQL Server
             $stockService = new \App\Services\StockComprometidoService();
-            $productoOculto = $stockService->verificarProductoOculto($codigo);
             
-            // Si está oculto, retornar error inmediatamente sin consultar stock
-            if ($productoOculto) {
-                $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
-                $nombreProducto = $producto ? $producto->NOKOPR : $codigo;
-                
-                \Log::warning("⚠️ Intento de agregar producto oculto: {$codigo} ({$nombreProducto})");
-                
+            // Obtener stock disponible real
+            $stockDisponibleReal = $stockService->obtenerStockDisponibleReal($codigo);
+            
+            // Obtener datos del producto
+            $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
+            
+            if (!$producto) {
                 return response()->json([
                     'success' => false,
-                    'es_oculto' => true,
-                    'message' => "El producto {$codigo} ({$nombreProducto}) se encuentra oculto en el sistema. Por favor, seleccione otro producto.",
-                    'codigo' => $codigo,
-                    'nombre' => $nombreProducto
+                    'message' => 'Producto no encontrado'
                 ]);
             }
             
-            // Usar tsql para consultar directamente a MAEST con KOBO='LIB' (servidor antiguo sin TLS)
-            $host = env('SQLSRV_EXTERNAL_HOST');
-            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE');
-            $username = env('SQLSRV_EXTERNAL_USERNAME');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD');
-
-            $codigoEscapado = "'" . addslashes(trim($codigo)) . "'";
-
-            $query = "
-                SELECT 
-                    CAST(SUM(ISNULL(STFI1, 0)) AS FLOAT) AS STOCK_FISICO,
-                    CAST(SUM(ISNULL(STOCNV1, 0)) AS FLOAT) AS STOCK_COMPROMETIDO
-                FROM MAEST
-                WHERE KOPR = {$codigoEscapado}
-                AND KOBO = 'LIB'
-            ";
-
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_stock_');
-            file_put_contents($tempFile, $query . "\ngo\nquit");
-
-            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-            $output = shell_exec($command);
-
-            unlink($tempFile);
-
-            // Log para debugging - mostrar output completo si no se encuentra stock
-            if (empty($output)) {
-                \Log::error("Output vacío de tsql para producto {$codigo}");
-            } else {
-                \Log::info("Output tsql completo para producto {$codigo}: " . $output);
-            }
-
-            // Parsear resultado de tsql
-            $stockFisico = 0;
-            $stockComprometido = 0;
-
-            $lines = explode("\n", $output);
-            $headerFound = false;
-
-            foreach ($lines as $line) {
-                $line = trim($line);
-
-                // Saltar líneas de configuración
-                if (empty($line) || strpos($line, 'locale') !== false || 
-                    strpos($line, 'Setting') !== false || strpos($line, 'rows affected') !== false ||
-                    strpos($line, 'Msg ') !== false || strpos($line, 'Warning:') !== false ||
-                    preg_match('/^\d+>$/', $line) || preg_match('/^\d+>\s+\d+>\s+\d+>/', $line)) {
-                    continue;
-                }
-
-                // Buscar header
-                if (stripos($line, 'STOCK_FISICO') !== false || stripos($line, 'STOCK_COMPROMETIDO') !== false) {
-                    $headerFound = true;
-                    \Log::info("Header encontrado: {$line}");
-                    continue;
-                }
-
-                // Si no hay header pero hay una línea con números, intentar parsear directamente
-                // Esto puede pasar cuando SUM devuelve solo números
-                if (preg_match('/^\s*([0-9.]+)\s+([0-9.]+)\s*$/', $line, $matches)) {
-                    $stockFisico = (float)$matches[1];
-                    $stockComprometido = (float)$matches[2];
-                    \Log::info("Stock parseado sin header: Físico={$stockFisico}, Comprometido={$stockComprometido}");
-                    break;
-                }
-
-                // Parsear línea de datos - puede haber espacios múltiples
-                if ($headerFound) {
-                    // Intentar parsear con espacios múltiples
-                    $parts = preg_split('/\s+/', $line);
-                    if (count($parts) >= 2 && is_numeric($parts[0]) && is_numeric($parts[1])) {
-                        // El primer número es stock_fisico, el segundo es stock_comprometido
-                        $stockFisico = (float)$parts[0];
-                        $stockComprometido = (float)$parts[1];
-                        \Log::info("Stock parseado con header: Físico={$stockFisico}, Comprometido={$stockComprometido}");
-                        break;
-                    }
-                }
-            }
-
-            // Si no se encontraron datos, intentar parsear cualquier línea con números
-            if ($stockFisico == 0 && $stockComprometido == 0) {
-                foreach ($lines as $line) {
-                    $line = trim($line);
-                    // Buscar cualquier línea con dos números separados por espacios
-                    if (preg_match('/^\s*([0-9.]+)\s+([0-9.]+)\s*$/', $line, $matches)) {
-                        $stockFisico = (float)$matches[1];
-                        $stockComprometido = (float)$matches[2];
-                        \Log::info("Stock parseado en segunda pasada: Físico={$stockFisico}, Comprometido={$stockComprometido}");
-                        break;
-                    }
-                }
-            }
-            
-            // SIEMPRE ACTUALIZAR MySQL con los valores obtenidos de SQL Server
-            // Esto asegura que la tabla productos tenga los datos actualizados
-            try {
-                $stockConsultaService = new \App\Services\StockConsultaService();
-                $stockConsultaService->actualizarStockSiEsDiferente(
-                    $codigo,
-                    $stockFisico,
-                    $stockComprometido
-                );
-                \Log::info("✅ Stock ACTUALIZADO en MySQL para {$codigo}: Físico={$stockFisico}, Comprometido={$stockComprometido}");
-            } catch (\Exception $e) {
-                \Log::error("❌ Error actualizando MySQL para {$codigo}: " . $e->getMessage());
-                // Continuar aunque falle la actualización, pero loguear el error
-            }
-
-            // 2. VALIDACIÓN DE PRECIOS: Consultar y actualizar precios desde SQL Server si son diferentes
-            try {
-                $this->consultarYActualizarPreciosProducto($codigo);
-            } catch (\Exception $e) {
-                \Log::warning("⚠️ Error consultando/actualizando precios para {$codigo}: " . $e->getMessage());
-                // Continuar aunque falle la actualización de precios
-            }
-
-            // Obtener stock comprometido local adicional (por cotizaciones/NVV pendientes)
-            $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($codigo);
-
-            // Obtener datos del producto ACTUALIZADO desde tabla local
-            $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
-            
-            // Usar los valores ACTUALIZADOS de MySQL (pueden haber cambiado si se actualizó)
-            $stockFisicoMySQL = $producto ? ($producto->stock_fisico ?? $stockFisico) : $stockFisico;
-            $stockComprometidoMySQL = $producto ? ($producto->stock_comprometido ?? $stockComprometido) : $stockComprometido;
-            
-            // Stock disponible = Stock físico MySQL - Stock comprometido SQL - Stock comprometido local
-            $stockDisponible = max(0, $stockFisicoMySQL - $stockComprometidoMySQL - $stockComprometidoLocal);
-
-            \Log::info("📦 Stock final para {$codigo}: Físico MySQL={$stockFisicoMySQL}, Comprometido SQL={$stockComprometidoMySQL}, Comprometido Local={$stockComprometidoLocal}, Disponible={$stockDisponible}");
-
-            // Si no se encontró stock, log adicional
-            if ($stockFisico == 0 && $stockComprometido == 0 && (!$producto || ($producto->stock_fisico ?? 0) == 0)) {
-                \Log::warning("⚠️ No se encontró stock para producto {$codigo}. Output completo de tsql: " . substr($output, 0, 1000));
-            }
-
             return response()->json([
                 'success' => true,
-                'es_oculto' => false, // Producto no está oculto (ya se verificó arriba)
-                'stock_disponible' => $stockDisponible,
-                'stock_fisico' => $stockFisicoMySQL, // Retornar el valor actualizado de MySQL
-                'stock_comprometido' => $stockComprometidoMySQL, // Retornar el valor actualizado de MySQL
-                'stock_comprometido_local' => $stockComprometidoLocal,
+                'stock_disponible' => $stockDisponibleReal,
+                'stock_fisico' => $producto->stock_fisico ?? 0,
+                'stock_comprometido' => $producto->stock_comprometido ?? 0,
                 'producto' => [
-                    'codigo' => $codigo,
-                    'nombre' => $producto->NOKOPR ?? 'Producto no encontrado',
+                    'codigo' => $producto->KOPR,
+                    'nombre' => $producto->NOKOPR,
                     'unidad' => $producto->UD01PR ?? 'UN'
                 ]
             ]);
-
+            
         } catch (\Exception $e) {
             \Log::error('Error en obtenerStockProducto: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
-
             return response()->json([
                 'success' => false,
                 'message' => 'Error obteniendo stock: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Obtener lista de clientes únicos para el select
-     */
-    private function obtenerClientesUnicos($cotizaciones)
-    {
-        $clientes = [];
-        $clientesMap = [];
-        
-        foreach ($cotizaciones as $cotizacion) {
-            // Manejar tanto objetos Eloquent como arrays
-            $cotizacionArray = is_object($cotizacion) ? $cotizacion->toArray() : $cotizacion;
-            
-            $codigo = $cotizacionArray['cliente_codigo'] ?? $cotizacionArray['COD_CLI'] ?? '';
-            $nombre = $cotizacionArray['cliente_nombre'] ?? $cotizacionArray['CLIE'] ?? '';
-            
-            if (!empty($codigo) && !isset($clientesMap[$codigo])) {
-                $clientesMap[$codigo] = true;
-                $clientes[] = [
-                    'codigo' => $codigo,
-                    'nombre' => $nombre
-                ];
-            }
-        }
-        
-        // Ordenar por nombre
-        usort($clientes, function($a, $b) {
-            return strcmp($a['nombre'], $b['nombre']);
-        });
-        
-        return $clientes;
-    }
-
-    /**
-     * Consultar y actualizar precios del producto desde SQL Server si son diferentes
-     */
-    private function consultarYActualizarPreciosProducto($codigo)
-    {
-        try {
-            $host = env('SQLSRV_EXTERNAL_HOST');
-            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE');
-            $username = env('SQLSRV_EXTERNAL_USERNAME');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD');
-
-            $codigoEscapado = "'" . addslashes(trim($codigo)) . "'";
-
-            // Consultar precios para listas 01P y 02P desde TABPRE
-            $query = "
-                SELECT 
-                    CAST(ISNULL(PP01UD, 0) AS FLOAT) AS PRECIO_01P,
-                    CAST(ISNULL(PP02UD, 0) AS FLOAT) AS PRECIO_02P,
-                    CAST(ISNULL(DTMA01UD, 0) AS FLOAT) AS DESCUENTO_MAX_01P
-                FROM TABPRE
-                WHERE KOPR = {$codigoEscapado}
-                AND KOLT = '01P'
-            ";
-
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_precio_');
-            file_put_contents($tempFile, $query . "\ngo\nquit");
-
-            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-            $output = shell_exec($command);
-
-            unlink($tempFile);
-
-            if (empty($output) || str_contains(strtolower($output), 'error')) {
-                \Log::warning("⚠️ No se pudo consultar precios desde SQL Server para {$codigo}");
-                return;
-            }
-
-            // Parsear resultado
-            $precio01P = 0;
-            $precio02P = 0;
-            $descuentoMax01P = 0;
-
-            $lines = explode("\n", $output);
-            $headerFound = false;
-
-            foreach ($lines as $line) {
-                $line = trim($line);
-                if (empty($line)) continue;
-
-                // Buscar header
-                if (stripos($line, 'PRECIO_01P') !== false || stripos($line, 'PRECIO_02P') !== false) {
-                    $headerFound = true;
-                    continue;
-                }
-
-                if ($headerFound) {
-                    // Parsear línea de datos (formato: valor1    valor2    valor3)
-                    if (preg_match('/(\d+\.?\d*)\s+(\d+\.?\d*)\s+(\d+\.?\d*)/', $line, $matches)) {
-                        $precio01P = (float)$matches[1];
-                        $precio02P = (float)$matches[2];
-                        $descuentoMax01P = (float)$matches[3];
-                        break;
-                    }
-                }
-            }
-
-            // Obtener producto actual de MySQL
-            $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
-            if (!$producto) {
-                \Log::warning("⚠️ Producto {$codigo} no encontrado en MySQL para actualizar precios");
-                return;
-            }
-
-            // Comparar y actualizar si son diferentes
-            $necesitaActualizacion = false;
-            $updates = [];
-
-            if (abs($precio01P - ($producto->precio_01p ?? 0)) > 0.01) {
-                $updates['precio_01p'] = $precio01P;
-                $necesitaActualizacion = true;
-                \Log::info("💰 Precio 01P diferente para {$codigo}: MySQL=" . ($producto->precio_01p ?? 0) . ", SQL Server={$precio01P}");
-            }
-
-            if (abs($precio02P - ($producto->precio_02p ?? 0)) > 0.01) {
-                $updates['precio_02p'] = $precio02P;
-                $necesitaActualizacion = true;
-                \Log::info("💰 Precio 02P diferente para {$codigo}: MySQL=" . ($producto->precio_02p ?? 0) . ", SQL Server={$precio02P}");
-            }
-
-            if (abs($descuentoMax01P - ($producto->descuento_maximo_01p ?? 0)) > 0.01) {
-                $updates['descuento_maximo_01p'] = $descuentoMax01P;
-                $necesitaActualizacion = true;
-                \Log::info("💰 Descuento máximo 01P diferente para {$codigo}: MySQL=" . ($producto->descuento_maximo_01p ?? 0) . ", SQL Server={$descuentoMax01P}");
-            }
-
-            if ($necesitaActualizacion) {
-                $producto->update($updates);
-                \Log::info("✅ Precios ACTUALIZADOS en MySQL para {$codigo}: " . json_encode($updates));
-            }
-
-        } catch (\Exception $e) {
-            \Log::error("❌ Error consultando/actualizando precios para {$codigo}: " . $e->getMessage());
-            throw $e;
+            ]);
         }
     }
 } 

@@ -107,12 +107,25 @@ class ManejoStockController extends Controller
             $tido = null;
             $stfi1Value = $data['stfi1'] ?? null;
             if ($stfi1Value !== null) {
-                $tido = $stfi1Value < 0 ? 'GDI' : 'GRI';
+                // Si la diferencia es 0 (o muy cercana a 0), el stock está cuadrado
+                // Usar un umbral pequeño para evitar problemas de punto flotante
+                if (abs($stfi1Value) < 0.001) {
+                    $tido = 'CUADRADO';
+                } else {
+                    $tido = $stfi1Value < 0 ? 'GDI' : 'GRI';
+                }
             }
 
             // Guardar valores absolutos (sin signo negativo) ya que TIDO indica el tipo
+            // Para CUADRADO, guardar 0 ya que no hay diferencia
             $stfi1Absoluto = $stfi1Value !== null ? abs($stfi1Value) : null;
             $stfi2Absoluto = isset($data['stfi2']) && $data['stfi2'] !== null ? abs($data['stfi2']) : null;
+
+            // Obtener código de funcionario del usuario autenticado si no viene en el request
+            $funcionario = $data['funcionario'] ?? null;
+            if (empty($funcionario) && auth()->user()) {
+                $funcionario = auth()->user()->codigo_vendedor ?? null;
+            }
 
             $temporal = Temporal::create([
                 'bodega_id' => $bodega->id,
@@ -131,7 +144,7 @@ class ManejoStockController extends Controller
                 'captura_2' => $data['captura_2'] ?? null,
                 'stfi1' => $stfi1Absoluto,
                 'stfi2' => $stfi2Absoluto,
-                'funcionario' => $data['funcionario'] ?? null,
+                'funcionario' => $funcionario,
                 'tido' => $tido,
             ]);
 
@@ -176,7 +189,9 @@ class ManejoStockController extends Controller
             }
             */
 
-            if ($tido) {
+            // Solo insertar en SQL Server si hay diferencia (no es CUADRADO)
+            // Si es CUADRADO, solo se guarda en historial (tabla temporales) sin insertar en SQL
+            if ($tido && $tido !== 'CUADRADO') {
                 // PRIMERO insertar MAEDDO, luego calcular totales y insertar MAEEDO
                 $insertResultado = $this->insertarMAEDDO($temporal, $bodega, $tido);
                 
@@ -189,20 +204,49 @@ class ManejoStockController extends Controller
                 
                 // DESPUÉS de los inserts, actualizar MAEST, MAEPR y MAEPREM
                 $this->actualizarStock($temporal, $bodega, $tido);
+            } elseif ($tido === 'CUADRADO') {
+                // Stock cuadrado: no hay diferencia, solo registrar en historial
+                // NO se inserta en SQL Server porque la cantidad contada es igual al stock del sistema
+                Log::info("✅ Stock cuadrado - Registrado en historial sin insertar en SQL Server", [
+                    'sku' => $temporal->sku,
+                    'nombre_producto' => $temporal->nombre_producto,
+                    'captura_1' => $temporal->captura_1,
+                    'stfi1' => $stfi1Value,
+                    'bodega' => $bodega->nombre_bodega,
+                    'ubicacion' => $ubicacion->codigo ?? 'N/A',
+                    'funcionario' => $temporal->funcionario,
+                    'mensaje' => "Stock cuadrado: cantidad contada ({$temporal->captura_1}) coincide con stock del sistema. No requiere ajuste."
+                ]);
+                
+                // El registro ya está guardado en la tabla temporales con tido='CUADRADO'
+                // y aparecerá en el historial con el estado CUADRADO visible
             }
 
             // Si la petición es AJAX, devolver JSON
             if ($request->expectsJson() || $request->ajax()) {
-            return response()->json([
-                'success' => true,
-                'message' => 'Captura guardada correctamente.',
-                'data' => [
-                    'producto' => $temporal->nombre_producto,
-                    'sku' => $temporal->sku,
-                    'cantidad' => $temporal->captura_1,
-                    'tido' => $temporal->tido,
-                ],
-            ]);
+                $mensaje = 'Captura guardada correctamente.';
+                $tipoMensaje = 'success';
+                
+                if ($tido === 'CUADRADO') {
+                    $mensaje = "✅ Stock cuadrado - Código {$temporal->sku}: La cantidad contada ({$temporal->captura_1}) coincide exactamente con el stock del sistema. Registrado en historial con estado CUADRADO. No se requiere ajuste en SQL Server.";
+                    $tipoMensaje = 'info';
+                } elseif ($tido === 'GRI') {
+                    $mensaje = "Stock ajustado (GRI) - Se insertó en SQL Server con ajuste positivo.";
+                } elseif ($tido === 'GDI') {
+                    $mensaje = "Stock ajustado (GDI) - Se insertó en SQL Server con ajuste negativo.";
+                }
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => $mensaje,
+                    'tipo_mensaje' => $tipoMensaje,
+                    'data' => [
+                        'producto' => $temporal->nombre_producto,
+                        'sku' => $temporal->sku,
+                        'cantidad' => $temporal->captura_1,
+                        'tido' => $temporal->tido,
+                    ],
+                ]);
             }
 
             return redirect()->route('manejo-stock.contabilidad', [
@@ -1871,5 +1915,50 @@ class ManejoStockController extends Controller
         } catch (\Throwable $e) {
             return redirect()->back()->with('error', 'Error al exportar: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Vista simplificada de barrido para rol Barrido
+     * Entra directo sin seleccionar bodega/ubicación
+     * Solo permite escanear códigos de barras y asociarlos
+     */
+    public function barridoSimplificado(Request $request = null)
+    {
+        $user = auth()->user();
+        
+        // Si viene bodega_id en el request, usarla; sino usar la primera disponible
+        if ($request && $request->has('bodega_id')) {
+            $data = $request->validate([
+                'bodega_id' => ['required', 'exists:bodegas,id'],
+                'ubicacion_id' => ['nullable', 'exists:ubicaciones,id'],
+            ]);
+            
+            $bodega = Bodega::with('ubicaciones')->findOrFail($data['bodega_id']);
+            
+            $ubicacion = null;
+            if (!empty($data['ubicacion_id'])) {
+                $ubicacion = Ubicacion::where('id', (int) $data['ubicacion_id'])
+                    ->where('bodega_id', $bodega->id)
+                    ->first();
+            }
+        } else {
+            // Obtener la primera bodega disponible (o se puede configurar por usuario)
+            $bodega = Bodega::with(['ubicaciones' => function ($query) {
+                $query->orderBy('codigo');
+            }])->orderBy('nombre_bodega')->first();
+
+            if (!$bodega) {
+                return redirect()->route('dashboard')
+                    ->with('error', 'No hay bodegas configuradas en el sistema.');
+            }
+
+            // Obtener la primera ubicación de la bodega
+            $ubicacion = $bodega->ubicaciones->first();
+        }
+
+        return view('manejo-stock.barrido-simplificado', [
+            'bodega' => $bodega,
+            'ubicacion' => $ubicacion,
+        ]);
     }
 }

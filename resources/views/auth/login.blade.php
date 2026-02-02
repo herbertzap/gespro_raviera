@@ -24,30 +24,16 @@
             <div class="login-header">
                 <div class="logo-section">
                     <i class="material-icons logo-icon">local_shipping</i>
-                    <h1 class="company-name">Comercial Higuera</h1>
+                    <h1 class="company-name">PSI SPA</h1>
                     <p class="company-tagline">Sistema de Gestión Logística</p>
                 </div>
             </div>
 
-            <!-- Mensajes de Error -->
-            @if(session('error') || session('auto_logout'))
+            <!-- Mensajes de Auto-Logout -->
+            @if(session('auto_logout'))
                 <div class="alert alert-warning alert-dismissible fade show" role="alert">
                     <i class="material-icons">warning</i>
-                    <strong>{{ session('error') ?? 'Error en el inicio de sesión' }}</strong>
-                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
-                </div>
-            @endif
-            
-            @if($errors->any())
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    <i class="material-icons">error</i>
-                    <ul class="mb-0">
-                        @foreach($errors->all() as $error)
-                            <li>{{ $error }}</li>
-                        @endforeach
-                    </ul>
+                    <strong>{{ session('error') }}</strong>
                     <button type="button" class="close" data-dismiss="alert" aria-label="Close">
                         <span aria-hidden="true">&times;</span>
                     </button>

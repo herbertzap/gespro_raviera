@@ -18,8 +18,9 @@ class UserManagementController extends Controller
     public function __construct()
     {
         $this->middleware('auth');
+        // Usar permisos en lugar de roles para permitir acceso a Administrativo
         $this->middleware(function ($request, $next) {
-            if (!auth()->user()->hasRole('Super Admin') && !auth()->user()->hasRole('Administrativo')) {
+            if (!auth()->user()->can('ver_usuarios')) {
                 abort(403, 'No tienes permisos para acceder a esta sección');
             }
             return $next($request);
@@ -31,6 +32,11 @@ class UserManagementController extends Controller
      */
     public function index()
     {
+        // Verificar permiso específico
+        if (!auth()->user()->can('ver_usuarios')) {
+            abort(403, 'No tienes permisos para ver el listado de usuarios');
+        }
+        
         $users = User::with(['roles', 'vendedor'])->paginate(20);
         $roles = Role::all();
         $pageSlug = 'admin-users';
@@ -43,6 +49,10 @@ class UserManagementController extends Controller
      */
     public function vendedoresDisponibles()
     {
+        // Verificar permiso específico
+        if (!auth()->user()->can('crear_usuarios')) {
+            abort(403, 'No tienes permisos para crear usuarios');
+        }
         \Log::info('🔍 Cargando vendedores disponibles desde SQL Server');
         
         try {
@@ -88,11 +98,15 @@ class UserManagementController extends Controller
      */
     public function createFromVendedor(Request $request)
     {
+        // Verificar permiso específico
+        if (!auth()->user()->can('crear_usuarios')) {
+            abort(403, 'No tienes permisos para crear usuarios');
+        }
+        
         $request->validate([
             'vendedor_id' => 'required|string',
-            'codigo_vendedor' => 'required|string|max:10',
-            'email' => ['required', new \App\Rules\ValidEmailWithDomain(), 'unique:users,email'],
-            'email_alternativo' => ['nullable', new \App\Rules\ValidEmailWithDomain(), 'unique:users,email_alternativo'],
+            'email' => 'required|email|unique:users,email',
+            'email_alternativo' => 'nullable|email|unique:users,email_alternativo',
             'rut' => ['nullable', new \App\Rules\ValidRut(), 'unique:users,rut'],
             'password' => 'required|min:8|confirmed',
             'password_confirmation' => 'required|same:password',
@@ -137,28 +151,18 @@ class UserManagementController extends Controller
             }
 
             // Crear usuario
-            // Nota: No usar Hash::make() aquí porque el modelo User tiene un cast 'hashed' que hashea automáticamente
             $user = User::create([
                 'name' => $vendedorData->NOKOFU,
-                'email' => trim($request->email),
-                'email_alternativo' => $request->email_alternativo ? trim($request->email_alternativo) : null,
-                'password' => $request->password, // El cast 'hashed' del modelo se encargará del hashing
-                'codigo_vendedor' => $request->codigo_vendedor ?: $vendedorData->KOFU, // Usar código del formulario o del empleado
+                'email' => $request->email,
+                'email_alternativo' => $request->email_alternativo,
+                'password' => Hash::make($request->password),
+                'codigo_vendedor' => $esVendedor ? $vendedorData->KOFU : null, // Solo si es vendedor
                 'rut' => $request->rut ?: $vendedorData->RTFU, // Usar RUT del formulario o del empleado
                 'es_vendedor' => $esVendedor,
                 'primer_login' => true,
                 'fecha_ultimo_cambio_password' => now()
             ]);
 
-            // Validar que solo Super Admin puede asignar rol Super Admin
-            $superAdminRole = Role::where('name', 'Super Admin')->first();
-            if ($superAdminRole && in_array($superAdminRole->id, $request->roles)) {
-                if (!auth()->user()->hasRole('Super Admin')) {
-                    DB::rollBack();
-                    return back()->withErrors(['roles' => 'Solo un Super Admin puede asignar el rol Super Admin a otro usuario.'])->withInput();
-                }
-            }
-            
             // Asignar roles
             foreach ($request->roles as $roleId) {
                 $role = Role::find($roleId);
@@ -187,104 +191,33 @@ class UserManagementController extends Controller
     public function getVendedorData($vendedorId)
     {
         try {
-            // Obtener datos del empleado desde SQL Server usando tsql (mismo método que vendedoresDisponibles)
-            $host = env('SQLSRV_EXTERNAL_HOST');
-            $username = env('SQLSRV_EXTERNAL_USERNAME');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD');
-            $database = env('SQLSRV_EXTERNAL_DATABASE');
+            // Usar conexión directa de Laravel (igual que vendedoresDisponibles)
+            $vendedorRaw = DB::connection('sqlsrv_external')
+                ->selectOne("SELECT KOFU, NOKOFU, EMAIL, RTFU FROM TABFU WHERE KOFU = ?", [$vendedorId]);
             
-            if (!$host || !$database || !$username || !$password) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Credenciales SQL Server no configuradas'
-                ], 500);
-            }
-            
-            // Usar tsql para consultar SQL Server con separador | (igual que CobranzaService)
-            $query = "
-                SELECT 
-                    CAST(KOFU AS VARCHAR(10)) + '|' +
-                    CAST(NOKOFU AS VARCHAR(100)) + '|' +
-                    CAST(ISNULL(EMAIL, '') AS VARCHAR(100)) + '|' +
-                    CAST(ISNULL(RTFU, '') AS VARCHAR(20)) AS DATOS
-                FROM TABFU 
-                WHERE KOFU = '{$vendedorId}'
-            ";
-            
-            // Usar archivo temporal como en CobranzaService
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $query . "\ngo\nquit");
-            
-            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-            $output = shell_exec($command);
-            
-            unlink($tempFile);
-            
-            if (!$output || str_contains($output, 'error')) {
-                \Log::warning('Error obteniendo datos del vendedor: ' . $output);
+            if (!$vendedorRaw) {
                 return response()->json([
                     'success' => false,
                     'message' => 'No se encontró información del empleado'
                 ], 404);
             }
             
-            // Parsear el resultado usando | como separador (igual que CobranzaService)
-            $lines = explode("\n", $output);
-            $result = null;
+            // Asegurar codificación UTF-8
+            $nombre = mb_convert_encoding($vendedorRaw->NOKOFU ?? '', 'UTF-8', 'auto');
+            $email = $vendedorRaw->EMAIL ?? '';
+            $rut = $vendedorRaw->RTFU ?? '';
             
-            foreach ($lines as $line) {
-                $line = trim($line);
-                
-                // Filtrar líneas vacías, de configuración y cabeceras
-                if (empty($line) || 
-                    strpos($line, 'locale') !== false || 
-                    strpos($line, 'Setting') !== false || 
-                    strpos($line, 'Msg ') !== false || 
-                    strpos($line, 'rows affected') !== false ||
-                    strpos($line, 'DATOS') !== false) {
-                    continue;
-                }
-                
-                // Separar por | (formato: KOFU|NOKOFU|EMAIL|RTFU)
-                if (strpos($line, '|') !== false) {
-                    $parts = explode('|', $line);
-                    if (count($parts) >= 4) {
-                        $kofu = trim($parts[0]);
-                        $nombre = trim($parts[1]);
-                        $email = trim($parts[2]);
-                        $rut = trim($parts[3]);
-                        
-                        // Limpiar email si está vacío
-                        if (empty($email)) {
-                            $email = '';
-                        }
-                        
-                        // Asegurar codificación UTF-8
-                        $nombre = mb_convert_encoding($nombre, 'UTF-8', 'auto');
-                        
-                        $result = [
-                            'kofu' => $kofu,
-                            'nombre' => $nombre,
-                            'email' => $email,
-                            'rut' => $rut
-                        ];
-                        break;
-                    }
-                }
-            }
-            
-            if ($result) {
-                return response()->json([
-                    'success' => true,
-                    'data' => $result
-                ]);
-            }
+            $result = [
+                'kofu' => $vendedorRaw->KOFU,
+                'nombre' => $nombre,
+                'email' => $email,
+                'rut' => $rut
+            ];
             
             return response()->json([
-                'success' => false,
-                'message' => 'No se encontró información del empleado'
-            ], 404);
+                'success' => true,
+                'data' => $result
+            ]);
             
         } catch (\Exception $e) {
             \Log::error('Error en getVendedorData:', ['error' => $e->getMessage(), 'vendedor_id' => $vendedorId]);
@@ -326,15 +259,6 @@ class UserManagementController extends Controller
         try {
             DB::beginTransaction();
 
-            // Validar que solo Super Admin puede asignar rol Super Admin
-            $superAdminRole = Role::where('name', 'Super Admin')->first();
-            if ($superAdminRole && in_array($superAdminRole->id, $request->roles)) {
-                if (!auth()->user()->hasRole('Super Admin')) {
-                    DB::rollBack();
-                    return back()->withErrors(['roles' => 'Solo un Super Admin puede asignar el rol Super Admin a otro usuario.'])->withInput();
-                }
-            }
-
             // Actualizar datos del usuario
             $user->update([
                 'name' => $request->name,
@@ -369,42 +293,13 @@ class UserManagementController extends Controller
             'password_confirmation' => 'required|same:password'
         ]);
 
-        try {
-            \Log::info('Cambiando contraseña para usuario', [
-                'user_id' => $user->id,
-                'email' => $user->email,
-                'password_length' => strlen($request->password)
-            ]);
+        $user->update([
+            'password' => Hash::make($request->password),
+            'primer_login' => true,
+            'fecha_ultimo_cambio_password' => now()
+        ]);
 
-            // Guardar el password directamente - el cast 'hashed' lo hasheará automáticamente
-            $user->password = $request->password;
-            $user->primer_login = true;
-            $user->fecha_ultimo_cambio_password = now();
-            $user->save();
-
-            // Verificar que se guardó correctamente
-            $user->refresh();
-            $hashGuardado = $user->getAttributes()['password'];
-            $verificacion = Hash::check($request->password, $hashGuardado);
-            
-            \Log::info('Contraseña actualizada', [
-                'user_id' => $user->id,
-                'hash_length' => strlen($hashGuardado),
-                'verificacion_exitosa' => $verificacion
-            ]);
-
-            if (!$verificacion) {
-                \Log::error('ERROR: La contraseña guardada no verifica correctamente después de guardar');
-            }
-
-            return back()->with('success', 'Contraseña actualizada exitosamente.');
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return back()->withErrors($e->errors())->withInput();
-        } catch (\Exception $e) {
-            \Log::error('Error al cambiar contraseña: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
-            return back()->with('error', 'Error al actualizar la contraseña: ' . $e->getMessage());
-        }
+        return back()->with('success', 'Contraseña actualizada exitosamente');
     }
 
     /**
@@ -412,24 +307,10 @@ class UserManagementController extends Controller
      */
     public function destroy(User $user)
     {
-        $currentUser = auth()->user();
-        
-        // No permitir eliminar el super admin específico
+        // No permitir eliminar el super admin
         if ($user->hasRole('Super Admin') && $user->email === 'herbert.zapata19@gmail.com') {
             return back()->withErrors(['error' => 'No se puede eliminar el super administrador']);
         }
-        
-        // Validar permisos de eliminación según el rol del usuario actual
-        if ($user->hasRole('Super Admin')) {
-            // Si el usuario a eliminar tiene rol Super Admin
-            if (!$currentUser->hasRole('Super Admin')) {
-                // Solo Super Admin puede eliminar a otro Super Admin
-                return back()->withErrors(['error' => 'No tienes permisos para eliminar un usuario con rol Super Admin. Solo un Super Admin puede eliminar a otro Super Admin.']);
-            }
-        }
-        
-        // Super Admin puede eliminar a cualquiera (excepto el protegido arriba)
-        // Administrativo puede eliminar a cualquiera excepto Super Admin (ya validado arriba)
 
         try {
             DB::beginTransaction();
@@ -468,7 +349,7 @@ class UserManagementController extends Controller
                 'loginUrl' => url('/login')
             ], function ($message) use ($user) {
                 $message->to($user->email)
-                    ->subject('Acceso al Sistema - Comercial Higuera');
+                    ->subject('Acceso al Sistema - PSI SPA');
             });
         } catch (\Exception $e) {
             \Log::error('Error enviando email de acceso: ' . $e->getMessage());

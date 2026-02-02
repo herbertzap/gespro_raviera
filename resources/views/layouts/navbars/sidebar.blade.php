@@ -111,12 +111,12 @@
             <!-- Manejo Stock -->
             @can('ver_manejo_stock')
             <li>
-                <a data-toggle="collapse" href="#ManejoStockMenu" aria-expanded="true">
+                <a data-toggle="collapse" href="#ManejoStockMenu" aria-expanded="false">
                     <i class="tim-icons icon-notes"></i>
                     <span class="nav-link-text">{{ __('Manejo Stock') }}</span>
                     <b class="caret mt-1"></b>
                 </a>
-                <div class="collapse show" id="ManejoStockMenu">
+                <div class="collapse" id="ManejoStockMenu">
                     <ul class="nav pl-4">
                         @can('ver_contabilidad_stock')
                         <li @if ($pageSlug == 'manejo-stock') class="active " @endif>
@@ -166,12 +166,12 @@
             <!-- Mantenedor -->
             @can('ver_mantenedor')
             <li>
-                <a data-toggle="collapse" href="#MantenedorMenu" aria-expanded="true">
+                <a data-toggle="collapse" href="#MantenedorMenu" aria-expanded="false">
                     <i class="tim-icons icon-settings-gear-63"></i>
                     <span class="nav-link-text">{{ __('Mantenedor') }}</span>
                     <b class="caret mt-1"></b>
                 </a>
-                <div class="collapse show" id="MantenedorMenu">
+                <div class="collapse" id="MantenedorMenu">
                     <ul class="nav pl-4">
                         @can('gestionar_bodegas')
                         <li @if ($pageSlug == 'mantenedor-bodegas') class="active " @endif>

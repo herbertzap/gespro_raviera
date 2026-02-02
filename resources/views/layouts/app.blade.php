@@ -4,15 +4,10 @@
         <meta charset="UTF-8">
         <meta http-equiv="X-UA-Compatible" content="ie=edge">
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-        
-        {{-- Meta tags para evitar cache del navegador --}}
-        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-        <meta http-equiv="Pragma" content="no-cache">
-        <meta http-equiv="Expires" content="0">
 
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
-        <title>@yield('title', config('app.name', 'GESPRO RIVERA'))</title>
+        <title>@yield('title', config('app.name', 'PSI SPA'))</title>
         <!-- Favicon -->
         <link rel="apple-touch-icon" sizes="76x76" href="{{ asset('black') }}/img/apple-icon.png">
         <link rel="icon" type="image/png" href="{{ asset('black') }}/img/favicon.png">
@@ -28,27 +23,10 @@
         <link href="{{ asset('black') }}/css/theme.css" rel="stylesheet" />
         <link href="{{ asset('css/pagination.css') }}" rel="stylesheet" />
         <link href="{{ asset('css/custom-badges.css') }}" rel="stylesheet" />
-        <link href="{{ asset('css/fix-tables.css') }}" rel="stylesheet" />
         <style>
             /* Ocultar el fixed-plugin en todo el sitio */
             .fixed-plugin {
                 display: none !important;
-            }
-
-            /* Estilos para el menú dropdown del perfil - texto negro */
-            .dropdown-menu.dropdown-navbar .nav-item.dropdown-item,
-            .dropdown-menu.dropdown-navbar .nav-link .nav-item.dropdown-item {
-                color: #000 !important;
-            }
-            
-            .dropdown-menu.dropdown-navbar .nav-item.dropdown-item:hover,
-            .dropdown-menu.dropdown-navbar .nav-link .nav-item.dropdown-item:hover {
-                color: #000 !important;
-                background-color: #f5f5f5 !important;
-            }
-            
-            .dropdown-menu.dropdown-navbar {
-                color: #000 !important;
             }
 
             /* Estilos para selects con tema oscuro - fondo oscuro y texto visible */
@@ -94,41 +72,6 @@
             select.form-control[multiple] option:checked {
                 background-color: #1e88e5 !important;
                 color: #ffffff !important;
-            }
-
-            /* Estilos globales para botones - evitar cortes de texto */
-            .btn {
-                white-space: nowrap !important;
-                overflow: visible !important;
-                text-overflow: clip !important;
-                display: inline-flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                word-wrap: normal !important;
-            }
-
-            .btn .material-icons {
-                flex-shrink: 0;
-                margin-right: 4px;
-                font-size: 18px;
-                line-height: 1;
-            }
-
-            .btn .material-icons:only-child {
-                margin-right: 0;
-            }
-
-            /* Botones con texto después del ícono */
-            .btn .material-icons + *:not(.material-icons) {
-                margin-left: 0;
-            }
-
-            /* Asegurar que los botones no se corten en columnas pequeñas */
-            .col-md-auto .btn,
-            .col-sm-auto .btn,
-            .col-auto .btn {
-                width: auto !important;
-                min-width: fit-content;
             }
 
             /* Estilos para select cuando tiene focus */

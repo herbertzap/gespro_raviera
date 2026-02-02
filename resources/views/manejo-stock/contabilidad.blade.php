@@ -854,8 +854,8 @@
             }
 
             const captura1 = Number(inputCaptura1.value || 0);
-            if (captura1 <= 0) {
-                alert('Debes ingresar una cantidad en Captura 1.');
+            if (captura1 < 0) {
+                alert('La cantidad no puede ser negativa.');
                 return;
             }
 

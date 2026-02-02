@@ -144,7 +144,7 @@
                                                 <input type="password" name="password" id="new_password" class="form-control @error('password') is-invalid @enderror" required minlength="8">
                                                 <div class="input-group-append">
                                                     <button class="btn btn-outline-secondary" type="button" id="toggleNewPassword" onclick="togglePasswordVisibility('new_password', 'toggleNewPassword')">
-                                                        <i class="tim-icons icon-single-02" id="iconNewPassword"></i>
+                                                        <i class="tim-icons icon-lock-circle" id="iconNewPassword"></i>
                                                     </button>
                                                 </div>
                                             </div>
@@ -160,7 +160,7 @@
                                                 <input type="password" name="password_confirmation" id="password_confirmation" class="form-control @error('password_confirmation') is-invalid @enderror" required minlength="8">
                                                 <div class="input-group-append">
                                                     <button class="btn btn-outline-secondary" type="button" id="togglePasswordConfirmation" onclick="togglePasswordVisibility('password_confirmation', 'togglePasswordConfirmation')">
-                                                        <i class="tim-icons icon-single-02" id="iconPasswordConfirmation"></i>
+                                                        <i class="tim-icons icon-lock-circle" id="iconPasswordConfirmation"></i>
                                                     </button>
                                                 </div>
                                             </div>
@@ -218,10 +218,10 @@ function togglePasswordVisibility(inputId, buttonId) {
 
     if (input.type === 'password') {
         input.type = 'text';
-        icon.className = 'tim-icons icon-lock-circle';
+        icon.className = 'tim-icons icon-single-02';
     } else {
         input.type = 'password';
-        icon.className = 'tim-icons icon-single-02';
+        icon.className = 'tim-icons icon-lock-circle';
     }
 }
 

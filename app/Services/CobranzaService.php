@@ -4,6 +4,7 @@ namespace App\Services;
 
 use PDO;
 use PDOException;
+use Illuminate\Support\Facades\DB;
 
 class CobranzaService
 {
@@ -695,93 +696,47 @@ class CobranzaService
         }
 
         try {
-            $host = env('SQLSRV_EXTERNAL_HOST');
-            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE');
-            $username = env('SQLSRV_EXTERNAL_USERNAME');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD');
-            
-            // Verificar que las credenciales estén configuradas
-            if (!$host || !$database || !$username || !$password) {
-                throw new \Exception('Credenciales SQL Server no configuradas en .env');
-            }
+            // Usar conexión directa de Laravel
+            $connection = DB::connection('sqlsrv_external');
             
             $query = "
                 SELECT 
-                    dbo.MAEEDO.TIDO AS TIPO_DOCTO,
-                    dbo.MAEEDO.NUDO AS NRO_DOCTO,
-                    dbo.MAEEDO.FEEMDO AS EMISION,
-                    dbo.MAEEDO.FEULVEDO AS VENCIMIENTO,
-                    CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) AS DIAS_VENCIDO,
-                    CASE WHEN dbo.MAEEDO.TIDO = 'NCV' THEN dbo.MAEEDO.VABRDO * - 1 ELSE dbo.MAEEDO.VABRDO END AS VALOR,
-                    CASE WHEN dbo.MAEEDO.TIDO = 'NCV' THEN dbo.MAEEDO.VAABDO * - 1 ELSE dbo.MAEEDO.VAABDO END AS ABONOS,
-                    CASE WHEN dbo.MAEEDO.TIDO = 'NCV' THEN (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) * - 1 ELSE (dbo.MAEEDO.VABRDO - dbo.MAEEDO.VAABDO) END AS SALDO,
-                    CASE WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) < - 8 THEN 'VIGENTE' 
-                         WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN - 7 AND - 1 THEN 'POR VENCER' 
-                         WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN 0 AND 7 THEN 'VENCIDO' 
-                         WHEN CAST(GETDATE() - dbo.MAEEDO.FEULVEDO AS INT) BETWEEN 8 AND 30 THEN 'MOROSO' 
+                    TIDO AS TIPO_DOCTO,
+                    NUDO AS NRO_DOCTO,
+                    FEEMDO AS EMISION,
+                    FEULVEDO AS VENCIMIENTO,
+                    CAST(GETDATE() - FEULVEDO AS INT) AS DIAS_VENCIDO,
+                    CASE WHEN TIDO = 'NCV' THEN VABRDO * - 1 ELSE VABRDO END AS VALOR,
+                    CASE WHEN TIDO = 'NCV' THEN VAABDO * - 1 ELSE VAABDO END AS ABONOS,
+                    CASE WHEN TIDO = 'NCV' THEN (VABRDO - VAABDO) * - 1 ELSE (VABRDO - VAABDO) END AS SALDO,
+                    CASE WHEN CAST(GETDATE() - FEULVEDO AS INT) < - 8 THEN 'VIGENTE' 
+                         WHEN CAST(GETDATE() - FEULVEDO AS INT) BETWEEN - 7 AND - 1 THEN 'POR VENCER' 
+                         WHEN CAST(GETDATE() - FEULVEDO AS INT) BETWEEN 0 AND 7 THEN 'VENCIDO' 
+                         WHEN CAST(GETDATE() - FEULVEDO AS INT) BETWEEN 8 AND 30 THEN 'MOROSO' 
                          ELSE 'BLOQUEAR' END AS ESTADO
-                FROM dbo.MAEEDO
-                WHERE dbo.MAEEDO.ENDO = '{$codigoCliente}'
-                    AND (dbo.MAEEDO.EMPRESA = '01' OR dbo.MAEEDO.EMPRESA = '02') 
-                    AND (dbo.MAEEDO.TIDO = 'FCV' OR dbo.MAEEDO.TIDO = 'FDV') 
-                    AND (dbo.MAEEDO.VABRDO > dbo.MAEEDO.VAABDO)
+                FROM MAEEDO
+                WHERE ENDO = ?
+                    AND (EMPRESA = '01' OR EMPRESA = '02') 
+                    AND (TIDO = 'FCV' OR TIDO = 'FDV') 
+                    AND (VABRDO > VAABDO)
                 ORDER BY DIAS_VENCIDO DESC";
 
-            // Crear archivo temporal con la consulta
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $query . "\ngo\nquit");
+            $result = $connection->select($query, [$codigoCliente]);
             
-            // Ejecutar consulta usando tsql
-            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-            $output = shell_exec($command);
-            
-            // Limpiar archivo temporal
-            unlink($tempFile);
-            
-            if (!$output || str_contains($output, 'error')) {
-                throw new \Exception('Error ejecutando consulta tsql: ' . $output);
-            }
-            
-            // Procesar la salida
-            $lines = explode("\n", $output);
-            $result = [];
-            
-            foreach ($lines as $line) {
-                $line = trim($line);
-                
-                // Saltar líneas de configuración
-                if (empty($line) || 
-                    strpos($line, 'locale') !== false || 
-                    strpos($line, 'Setting') !== false || 
-                    strpos($line, 'Msg ') !== false || 
-                    strpos($line, 'Warning:') !== false ||
-                    preg_match('/^\d+>$/', $line) ||
-                    preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
-                    strpos($line, 'rows affected') !== false ||
-                    strpos($line, 'TIPO_DOCTO') !== false ||
-                    strpos($line, 'NRO_DOCTO') !== false ||
-                    strpos($line, 'EMISION') !== false) {
-                    continue;
-                }
-                
-                // Buscar líneas con datos de facturas
-                if (preg_match('/^(\w+)\s+(\d+)\s+(.+?)\s+(.+?)\s+(-?\d+)\s+([\d\.-]+)\s+([\d\.-]+)\s+([\d\.-]+)\s+(.+)$/', $line, $matches)) {
-                    $result[] = [
-                        'TIPO_DOCTO' => $matches[1],
-                        'NRO_DOCTO' => $matches[2],
-                        'EMISION' => $matches[3],
-                        'VENCIMIENTO' => $matches[4],
-                        'DIAS_VENCIDO' => (int)$matches[5],
-                        'VALOR' => (float)$matches[6],
-                        'ABONOS' => (float)$matches[7],
-                        'SALDO' => (float)$matches[8],
-                        'ESTADO' => trim($matches[9])
-                    ];
-                }
-            }
-            
-            return $result;
+            // Convertir objetos a arrays con formato esperado
+            return array_map(function($row) {
+                return [
+                    'TIPO_DOCTO' => $row->TIPO_DOCTO,
+                    'NRO_DOCTO' => $row->NRO_DOCTO,
+                    'EMISION' => $row->EMISION ? date('Y-m-d', strtotime($row->EMISION)) : null,
+                    'VENCIMIENTO' => $row->VENCIMIENTO ? date('Y-m-d', strtotime($row->VENCIMIENTO)) : null,
+                    'DIAS_VENCIDO' => (int)$row->DIAS_VENCIDO,
+                    'VALOR' => (float)$row->VALOR,
+                    'ABONOS' => (float)$row->ABONOS,
+                    'SALDO' => (float)$row->SALDO,
+                    'ESTADO' => trim($row->ESTADO)
+                ];
+            }, $result);
 
         } catch (\Exception $e) {
             \Log::error('Error obteniendo facturas pendientes del cliente ' . $codigoCliente . ': ' . $e->getMessage(), [
@@ -792,7 +747,6 @@ class CobranzaService
                 'trace' => $e->getTraceAsString()
             ]);
             
-            // En lugar de usar datos de prueba, retornar array vacío para evitar errores
             return [];
         }
     }
@@ -2027,19 +1981,16 @@ class CobranzaService
     public function getDatosFacturacionCliente($codigoCliente)
     {
         try {
-            $host = env('SQLSRV_EXTERNAL_HOST');
-            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE');
-            $username = env('SQLSRV_EXTERNAL_USERNAME');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD');
+            // Usar conexión directa de Laravel
+            $connection = DB::connection('sqlsrv_external');
             
             // Consulta para obtener facturas pendientes del cliente
             $queryFacturas = "
                 SELECT 
                     COUNT(*) AS CANTIDAD_FACTURAS,
                     SUM(CASE WHEN TIDO = 'NCV' THEN (VABRDO - VAABDO) * -1 ELSE (VABRDO - VAABDO) END) AS SALDO_TOTAL
-                FROM dbo.MAEEDO
-                WHERE ENDO = '{$codigoCliente}'
+                FROM MAEEDO
+                WHERE ENDO = ?
                     AND (TIDO = 'FCV' OR TIDO = 'NCV' OR TIDO = 'FDV')
                     AND (VABRDO > VAABDO)
                     AND (EMPRESA = '01' OR EMPRESA = '02')
@@ -2048,80 +1999,28 @@ class CobranzaService
             // Consulta para obtener crédito de compras (ventas de los últimos 3 meses)
             $queryCredito = "
                 SELECT 
-                    ENDO,
                     CASE WHEN TIDO = 'NCV' THEN SUM(VANEDO) * -1 ELSE SUM(VANEDO) * 1 END AS VENTA3M,
                     CASE WHEN TIDO = 'NCV' THEN (SUM(VANEDO) / 3) * -1 ELSE (SUM(VANEDO) / 3) * 1 END AS VENTAM
-                FROM dbo.MAEEDO
+                FROM MAEEDO
                 WHERE (TIDO = 'FCV' OR TIDO = 'NCV') 
-                    AND (FEEMDO > GETDATE() - 90)
-                    AND ENDO = '{$codigoCliente}'
-                GROUP BY ENDO, TIDO
+                    AND (FEEMDO > DATEADD(day, -90, GETDATE()))
+                    AND ENDO = ?
+                GROUP BY TIDO
             ";
             
-            // Crear archivo temporal con las consultas
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $queryFacturas . "\ngo\n" . $queryCredito . "\ngo\nquit");
+            // Ejecutar primera consulta
+            $resultFacturas = $connection->selectOne($queryFacturas, [$codigoCliente]);
+            $cantidadFacturas = (int)($resultFacturas->CANTIDAD_FACTURAS ?? 0);
+            $saldoTotal = (float)($resultFacturas->SALDO_TOTAL ?? 0);
             
-            // Ejecutar consulta usando tsql
-            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-            $output = shell_exec($command);
-            
-            // Limpiar archivo temporal
-            unlink($tempFile);
-            
-            if (!$output || str_contains($output, 'error')) {
-                throw new \Exception('Error ejecutando consulta tsql: ' . $output);
-            }
-            
-            // Procesar la salida
-            $lines = explode("\n", $output);
-            $cantidadFacturas = 0;
-            $saldoTotal = 0;
+            // Ejecutar segunda consulta
+            $resultCredito = $connection->select($queryCredito, [$codigoCliente]);
             $venta3M = 0;
             $ventaM = 0;
             
-            \Log::info('Procesando salida de tsql para cliente ' . $codigoCliente . ': ' . substr($output, 0, 500));
-            
-            foreach ($lines as $lineNumber => $line) {
-                $line = trim($line);
-                
-                // Debug: mostrar todas las líneas
-                \Log::info("Línea {$lineNumber}: " . $line);
-                
-                // Saltar líneas de configuración
-                if (empty($line) || 
-                    strpos($line, 'locale') !== false || 
-                    strpos($line, 'Setting') !== false || 
-                    strpos($line, 'Msg ') !== false || 
-                    strpos($line, 'Warning:') !== false ||
-                    preg_match('/^\d+>$/', $line) ||
-                    preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
-                    strpos($line, 'rows affected') !== false ||
-                    strpos($line, 'CANTIDAD_FACTURAS') !== false ||
-                    strpos($line, 'SALDO_TOTAL') !== false ||
-                    strpos($line, 'ENDO') !== false ||
-                    strpos($line, 'VENTA3M') !== false ||
-                    strpos($line, 'VENTAM') !== false) {
-                    continue;
-                }
-                
-                // Buscar líneas con datos numéricos (más flexible)
-                if (preg_match('/^\s*(\d+)\s+([\d\.]+)\s*$/', $line, $matches)) {
-                    // Primera consulta: cantidad_facturas y saldo_total
-                    $cantidadFacturas = (int)$matches[1];
-                    $saldoTotal = (float)$matches[2];
-                    \Log::info("Datos de facturación encontrados: cantidad={$cantidadFacturas}, saldo={$saldoTotal}");
-                } elseif (preg_match('/^\s*([A-Z0-9]+)\s+([\d\.-]+)\s+([\d\.-]+)\s*$/', $line, $matches)) {
-                    // Segunda consulta: venta3M y ventaM
-                    $venta3M = (float)$matches[2];
-                    $ventaM = (float)$matches[3];
-                    \Log::info("Datos de crédito encontrados: venta3M={$venta3M}, ventaM={$ventaM}");
-                } elseif (preg_match('/^\s*([\d\.-]+)\s+([\d\.-]+)\s*$/', $line, $matches)) {
-                    // Formato alternativo sin código de cliente
-                    $venta3M = (float)$matches[1];
-                    $ventaM = (float)$matches[2];
-                    \Log::info("Datos de crédito encontrados (formato alternativo): venta3M={$venta3M}, ventaM={$ventaM}");
-                }
+            foreach ($resultCredito as $row) {
+                $venta3M += (float)($row->VENTA3M ?? 0);
+                $ventaM += (float)($row->VENTAM ?? 0);
             }
             
             return [
@@ -2167,17 +2066,9 @@ class CobranzaService
             $busqueda = strtoupper(trim($busqueda));
             
             // Búsqueda simple y eficiente usando índices
-            // Filtrar productos descontinuados y con precio mayor a 0 o con stock disponible
-            // Considerar POIVPR, precios de listas (precio_01p, precio_02p, precio_03p) o stock disponible
+            // Filtrar productos descontinuados y con precio mayor a 0
             $productos = \App\Models\Producto::where('TIPR', '!=', 'D')
-                ->where(function($q) {
-                    // Producto tiene precio base, precio en alguna lista, o stock disponible
-                    $q->where('POIVPR', '>', 0)
-                      ->orWhere('precio_01p', '>', 0)
-                      ->orWhere('precio_02p', '>', 0)
-                      ->orWhere('precio_03p', '>', 0)
-                      ->orWhere('stock_disponible', '>', 0);
-                })
+                ->where('POIVPR', '>', 0) // Filtrar productos con precio mayor a 0
                 ->where(function($q) use ($busqueda) {
                     $q->where('KOPR', 'LIKE', $busqueda . '%')
                       ->orWhere('NOKOPR', 'LIKE', $busqueda . '%');
@@ -2616,7 +2507,6 @@ class CobranzaService
                         'COD_CLI' => $nvv['COD_CLI'],
                         'CLIE' => $nvv['CLIE'],
                         'NOKOFU' => $nvv['NOKOFU'],
-                        'VENDEDOR_NOMBRE' => $nvv['VENDEDOR_NOMBRE'] ?? $nvv['NOKOFU'],
                         'NOKOCI' => $nvv['NOKOCI'],
                         'NOKOCM' => $nvv['NOKOCM'],
                         'DIAS' => $nvv['DIAS'],
@@ -4366,477 +4256,6 @@ class CobranzaService
     }
 
     /**
-     * Obtener detalle de cheques en cartera desde SQL Server
-     * @param string|null $codigoVendedor Código del vendedor (null para todos)
-     * @param int $limit Límite de resultados
-     * @param int $offset Offset para paginación
-     * @return array Array con 'data' (cheques) y 'total' (total de cheques) si se usa offset, o array simple si no
-     */
-    public function getChequesEnCarteraDetalle($codigoVendedor = null, $limit = 10, $offset = 0)
-    {
-        try {
-            $host = env('SQLSRV_EXTERNAL_HOST');
-            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE');
-            $username = env('SQLSRV_EXTERNAL_USERNAME');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD');
-            
-            // Verificar que las credenciales estén configuradas
-            if (!$host || !$database || !$username || !$password) {
-                throw new \Exception('Credenciales SQL Server no configuradas en .env');
-            }
-
-            // Construir la consulta con filtro de vendedor si se especifica
-            $whereVendedor = '';
-            if ($codigoVendedor) {
-                $codigoVendedorEscapado = str_replace("'", "''", trim($codigoVendedor));
-                $whereVendedor = "AND dbo.CLIENTES.KOFUEN = '{$codigoVendedorEscapado}'";
-            }
-
-            // Obtener el total siempre que necesitemos paginación (si limit está especificado o hay offset)
-            // Esto permite mostrar la paginación incluso en la primera página
-            $total = null;
-            if ($limit > 0 || $offset > 0) {
-                $queryCount = "
-                SELECT COUNT(*) AS TOTAL
-                FROM dbo.TABFU 
-                INNER JOIN dbo.CLIENTES ON dbo.TABFU.KOFU = dbo.CLIENTES.KOFUEN 
-                RIGHT OUTER JOIN dbo.MAEDPCE ON dbo.CLIENTES.KOEN = dbo.MAEDPCE.ENDP 
-                LEFT OUTER JOIN dbo.TABSU ON dbo.MAEDPCE.SUREDP = dbo.TABSU.KOSU 
-                LEFT OUTER JOIN dbo.TABCTAEM ON dbo.MAEDPCE.CUDP = dbo.TABCTAEM.CTACTEEM
-                WHERE (dbo.MAEDPCE.TIDP = 'CHV') 
-                AND (dbo.MAEDPCE.FEVEDP > GETDATE() - 1) 
-                AND (dbo.MAEDPCE.ESPGDP = 'P') 
-                AND (dbo.MAEDPCE.EMPRESA = '01')
-                {$whereVendedor}
-                ";
-                
-                $tempFileCount = tempnam(sys_get_temp_dir(), 'sql_count_');
-                file_put_contents($tempFileCount, $queryCount . "\ngo\nquit");
-                $commandCount = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFileCount} 2>&1";
-                $outputCount = shell_exec($commandCount);
-                unlink($tempFileCount);
-                
-                if ($outputCount && !str_contains($outputCount, 'error')) {
-                    // Buscar el número en la salida - intentar varios patrones
-                    if (preg_match('/\s+(\d+)\s+/', $outputCount, $matches) || 
-                        preg_match('/(\d+)/', $outputCount, $matches) ||
-                        preg_match('/TOTAL\s+(\d+)/i', $outputCount, $matches)) {
-                        $total = (int)$matches[1];
-                    }
-                }
-            }
-
-            // Consulta para obtener cheques en cartera (detalle) con paginación
-            // Para versiones antiguas de SQL Server, usamos TOP con lógica de offset
-            if ($offset > 0) {
-                // Si hay offset, necesitamos obtener más registros y luego aplicar el offset manualmente
-                $topLimit = $offset + $limit;
-            } else {
-                $topLimit = $limit;
-            }
-            
-            $query = "
-            SELECT TOP {$topLimit}
-                CAST(dbo.MAEDPCE.TIDP AS VARCHAR(10)) + '|' +
-                CAST(dbo.MAEDPCE.NUDP AS VARCHAR(20)) + '|' +
-                CAST(dbo.MAEDPCE.ENDP AS VARCHAR(20)) + '|' +
-                CAST(dbo.CLIENTES.NOKOEN AS VARCHAR(100)) + '|' +
-                CAST(dbo.MAEDPCE.FEVEDP AS VARCHAR(50)) + '|' +
-                CAST(dbo.MAEDPCE.FEVEDP AS VARCHAR(50)) + '|' +
-                CAST(dbo.MAEDPCE.MODP AS VARCHAR(10)) + '|' +
-                CAST(CASE WHEN dbo.MAEDPCE.TIDP = 'CHC' THEN dbo.MAEDPCE.VADP * - 1 ELSE dbo.MAEDPCE.VADP * 1 END AS VARCHAR(20)) + '|' +
-                CAST(dbo.MAEDPCE.SUREDP AS VARCHAR(10)) + '|' +
-                CAST(ISNULL(dbo.TABSU.NOKOSU, '') AS VARCHAR(100)) + '|' +
-                CAST(dbo.MAEDPCE.EMDP AS VARCHAR(10)) + '|' +
-                CAST(dbo.MAEDPCE.SUEMDP AS VARCHAR(10)) + '|' +
-                CAST(dbo.MAEDPCE.CUDP AS VARCHAR(20)) + '|' +
-                CAST(dbo.MAEDPCE.FEEMDP AS VARCHAR(10)) + '|' +
-                CAST(dbo.MAEDPCE.NUCUDP AS VARCHAR(20)) + '|' +
-                CAST(CASE WHEN dbo.TABCTAEM.NOCTACTEEM IS NULL THEN 'CARTERA' ELSE dbo.TABCTAEM.NOCTACTEEM END AS VARCHAR(50)) + '|' +
-                CAST(dbo.CLIENTES.KOFUEN AS VARCHAR(10)) + '|' +
-                CAST(ISNULL(dbo.TABFU.NOKOFU, '') AS VARCHAR(100)) AS DATOS_CHEQUE
-            FROM dbo.TABFU 
-            INNER JOIN dbo.CLIENTES ON dbo.TABFU.KOFU = dbo.CLIENTES.KOFUEN 
-            RIGHT OUTER JOIN dbo.MAEDPCE ON dbo.CLIENTES.KOEN = dbo.MAEDPCE.ENDP 
-            LEFT OUTER JOIN dbo.TABSU ON dbo.MAEDPCE.SUREDP = dbo.TABSU.KOSU 
-            LEFT OUTER JOIN dbo.TABCTAEM ON dbo.MAEDPCE.CUDP = dbo.TABCTAEM.CTACTEEM
-            WHERE (dbo.MAEDPCE.TIDP = 'CHV') 
-            AND (dbo.MAEDPCE.FEVEDP > GETDATE() - 1) 
-            AND (dbo.MAEDPCE.ESPGDP = 'P') 
-            AND (dbo.MAEDPCE.EMPRESA = '01')
-            {$whereVendedor}
-            ORDER BY dbo.MAEDPCE.FEVEDP
-            ";
-
-            // Crear archivo temporal con la consulta
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $query . "\ngo\nquit");
-            
-            // Ejecutar consulta usando tsql
-            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-            $output = shell_exec($command);
-            
-            // Limpiar archivo temporal
-            unlink($tempFile);
-            
-            if (!$output || str_contains($output, 'error')) {
-                throw new \Exception('Error ejecutando consulta tsql: ' . $output);
-            }
-            
-            // Procesar la salida línea por línea
-            $lines = explode("\n", $output);
-            $cheques = [];
-            
-            // Asegurar que la salida esté en UTF-8
-            $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
-            
-            foreach ($lines as $line) {
-                $line = trim($line);
-                
-                // Saltar líneas vacías o de configuración
-                if (empty($line) || 
-                    strpos($line, 'locale') !== false || 
-                    strpos($line, 'Setting') !== false || 
-                    strpos($line, 'Msg ') !== false || 
-                    strpos($line, 'Warning:') !== false ||
-                    preg_match('/^\d+>$/', $line) ||
-                    preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
-                    strpos($line, 'rows affected') !== false ||
-                    strpos($line, 'TIDP') !== false ||
-                    strpos($line, 'DATOS_CHEQUE') !== false) {
-                    continue;
-                }
-                
-                // Buscar líneas que contengan datos (tipo de documento seguido de |)
-                if (strpos($line, 'CHV|') === 0 || strpos($line, 'CHC|') === 0) {
-                    $datos = explode('|', $line);
-                    if (count($datos) >= 17) {
-                        // El formato es: TIDP|NUDP|ENDP|NOKOEN|FEVEDP|VCMTO|MODP|VALOR|SUREDP|NOKOSU|EMDP|SUEMDP|CUDP|FEEMDP|NUCUDP|CTA|KOFUEN|NOKOFU
-                        // Índices:       0    1    2    3       4       5      6    7      8       9       10   11      12   13      14      15  16      17
-                        $fechaVencimientoStr = trim($datos[4] ?? '');
-                        $valorStr = trim($datos[7] ?? '0');
-                        
-                        // Limpiar valor (puede tener comas o puntos decimales)
-                        $valorStr = str_replace(',', '.', $valorStr);
-                        $valorStr = preg_replace('/[^0-9.-]/', '', $valorStr);
-                        
-                        $cheques[] = [
-                            'numero' => mb_convert_encoding(trim($datos[1] ?? ''), 'UTF-8', 'ISO-8859-1'),
-                            'cliente' => mb_convert_encoding(trim($datos[3] ?? ''), 'UTF-8', 'ISO-8859-1'),
-                            'codigo_cliente' => mb_convert_encoding(trim($datos[2] ?? ''), 'UTF-8', 'ISO-8859-1'),
-                            'valor' => floatval($valorStr),
-                            'fecha_vencimiento' => $this->parseFecha($fechaVencimientoStr),
-                            'vendedor' => mb_convert_encoding(trim($datos[17] ?? ''), 'UTF-8', 'ISO-8859-1')
-                        ];
-                    }
-                }
-            }
-            
-            // Aplicar offset manualmente si es necesario (ya que SQL Server antiguo no soporta OFFSET)
-            if ($offset > 0 && count($cheques) > $offset) {
-                $cheques = array_slice($cheques, $offset);
-            } elseif ($offset > 0) {
-                // Si el offset es mayor que los resultados obtenidos, no hay más datos
-                $cheques = [];
-            }
-            
-            // Limitar al número solicitado
-            if (count($cheques) > $limit) {
-                $cheques = array_slice($cheques, 0, $limit);
-            }
-            
-            // Si tenemos el total y hay límite especificado, retornar con información de paginación
-            if ($total !== null && $limit > 0) {
-                $currentPage = $offset > 0 ? floor($offset / $limit) + 1 : 1;
-                return [
-                    'data' => $cheques,
-                    'total' => $total,
-                    'per_page' => $limit,
-                    'current_page' => $currentPage,
-                    'last_page' => ceil($total / $limit)
-                ];
-            }
-            
-            // Retornar array simple para compatibilidad hacia atrás (sin paginación)
-            return $cheques;
-            
-        } catch (\Exception $e) {
-            \Log::error('Error obteniendo cheques en cartera detalle: ' . $e->getMessage());
-            if ($limit > 0) {
-                return [
-                    'data' => [],
-                    'total' => 0,
-                    'per_page' => $limit,
-                    'current_page' => 1,
-                    'last_page' => 1
-                ];
-            }
-            return [];
-        }
-    }
-
-    /**
-     * Obtener cheques en cartera detalle filtrados por código de cliente
-     * @param string $codigoCliente Código del cliente
-     * @param int $limit Límite de resultados (por defecto 100 para mostrar todos)
-     * @param int $offset Offset para paginación (por defecto 0)
-     * @return array Array con 'data' (cheques) y 'total' (total de cheques)
-     */
-    public function getChequesEnCarteraDetallePorCliente($codigoCliente, $limit = 100, $offset = 0)
-    {
-        try {
-            $host = env('SQLSRV_EXTERNAL_HOST');
-            $port = env('SQLSRV_EXTERNAL_PORT', '1433');
-            $database = env('SQLSRV_EXTERNAL_DATABASE');
-            $username = env('SQLSRV_EXTERNAL_USERNAME');
-            $password = env('SQLSRV_EXTERNAL_PASSWORD');
-            
-            if (!$host || !$database || !$username || !$password) {
-                throw new \Exception('Credenciales SQL Server no configuradas en .env');
-            }
-
-            // Escapar código de cliente para prevenir SQL injection
-            $codigoClienteEscapado = str_replace("'", "''", trim($codigoCliente));
-
-            // Query para obtener cheques en cartera filtrados por cliente
-            $query = "
-            SELECT 
-                CAST(dbo.MAEDPCE.TIDP AS VARCHAR(10)) + '|' +
-                CAST(dbo.MAEDPCE.NUDP AS VARCHAR(20)) + '|' +
-                CAST(dbo.MAEDPCE.ENDP AS VARCHAR(20)) + '|' +
-                CAST(dbo.CLIENTES.NOKOEN AS VARCHAR(100)) + '|' +
-                CAST(dbo.MAEDPCE.FEVEDP AS VARCHAR(20)) + '|' +
-                CAST(dbo.MAEDPCE.MODP AS VARCHAR(10)) + '|' +
-                CAST(CAST(CASE WHEN dbo.MAEDPCE.TIDP = 'CHC' THEN dbo.MAEDPCE.VADP * -1 ELSE dbo.MAEDPCE.VADP * 1 END AS DECIMAL(18,0)) AS VARCHAR(20)) + '|' +
-                CAST(dbo.MAEDPCE.SUREDP AS VARCHAR(10)) + '|' +
-                CAST(ISNULL(dbo.TABSU.NOKOSU, '') AS VARCHAR(100)) + '|' +
-                CAST(dbo.MAEDPCE.EMDP AS VARCHAR(10)) + '|' +
-                CAST(dbo.MAEDPCE.SUEMDP AS VARCHAR(10)) + '|' +
-                CAST(dbo.CLIENTES.KOFUEN AS VARCHAR(10)) + '|' +
-                CAST(ISNULL(dbo.TABFU.NOKOFU, '') AS VARCHAR(100)) AS DATOS_CHEQUE
-            FROM dbo.TABFU 
-            INNER JOIN dbo.CLIENTES ON dbo.TABFU.KOFU = dbo.CLIENTES.KOFUEN 
-            RIGHT OUTER JOIN dbo.MAEDPCE ON dbo.CLIENTES.KOEN = dbo.MAEDPCE.ENDP 
-            LEFT OUTER JOIN dbo.TABSU ON dbo.MAEDPCE.SUREDP = dbo.TABSU.KOSU 
-            LEFT OUTER JOIN dbo.TABCTAEM ON dbo.MAEDPCE.CUDP = dbo.TABCTAEM.CTACTEEM
-            WHERE (dbo.MAEDPCE.TIDP = 'CHV') 
-            AND (dbo.MAEDPCE.FEVEDP > GETDATE() - 1) 
-            AND (dbo.MAEDPCE.ESPGDP = 'P') 
-            AND (dbo.MAEDPCE.EMPRESA = '01')
-            AND dbo.MAEDPCE.ENDP = '{$codigoClienteEscapado}'
-            ORDER BY dbo.MAEDPCE.FEVEDP
-            ";
-
-            // Crear archivo temporal con la consulta
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $query . "\ngo\nquit");
-            
-            // Ejecutar consulta usando tsql
-            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
-            $output = shell_exec($command);
-            
-            // Limpiar archivo temporal
-            unlink($tempFile);
-            
-            if (!$output || str_contains($output, 'error')) {
-                throw new \Exception('Error ejecutando consulta tsql: ' . $output);
-            }
-            
-            // Procesar la salida línea por línea
-            $lines = explode("\n", $output);
-            $cheques = [];
-            
-            // Convertir la salida a UTF-8 desde ISO-8859-1 (Latin1) que es común en SQL Server
-            $output = mb_convert_encoding($output, 'UTF-8', 'ISO-8859-1');
-            
-            foreach ($lines as $line) {
-                $line = trim($line);
-                
-                // Saltar líneas vacías o de configuración
-                if (empty($line) || 
-                    strpos($line, 'locale') !== false || 
-                    strpos($line, 'Setting') !== false || 
-                    strpos($line, 'Msg ') !== false || 
-                    strpos($line, 'Warning:') !== false ||
-                    preg_match('/^\d+>$/', $line) ||
-                    preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
-                    strpos($line, 'rows affected') !== false ||
-                    strpos($line, 'TIDP') !== false ||
-                    strpos($line, 'DATOS_CHEQUE') !== false) {
-                    continue;
-                }
-                
-                // Buscar líneas que contengan datos (tipo de documento seguido de |)
-                if (strpos($line, 'CHV|') === 0 || strpos($line, 'CHC|') === 0) {
-                    $datos = explode('|', $line);
-                    if (count($datos) >= 13) {
-                        // El formato es: TIDP|NUDP|ENDP|NOKOEN|FEVEDP|MODP|VALOR|SUREDP|NOKOSU|EMDP|SUEMDP|KOFUEN|NOKOFU
-                        // Índices:       0    1    2    3       4       5    6      7       8       9    10      11      12
-                        $fechaVencimientoStr = trim($datos[4] ?? '');
-                        $valorStr = trim($datos[6] ?? '0');
-                        
-                        // Limpiar valor: los cheques son números enteros sin decimales
-                        // SQL Server puede devolver números con separadores de miles (puntos o comas)
-                        // Eliminar TODOS los caracteres no numéricos excepto el signo negativo al inicio
-                        $valorStr = preg_replace('/[^0-9-]/', '', $valorStr);
-                        // Si hay signo negativo, asegurar que esté solo al inicio
-                        if (strpos($valorStr, '-') !== false && strpos($valorStr, '-') !== 0) {
-                            $valorStr = '-' . str_replace('-', '', $valorStr);
-                        }
-                        // Convertir a entero (los cheques no tienen decimales)
-                        $valor = (int)floatval($valorStr);
-                        
-                        $cheques[] = [
-                            'numero' => mb_convert_encoding(trim($datos[1] ?? ''), 'UTF-8', 'ISO-8859-1'),
-                            'cliente' => mb_convert_encoding(trim($datos[3] ?? ''), 'UTF-8', 'ISO-8859-1'),
-                            'codigo_cliente' => mb_convert_encoding(trim($datos[2] ?? ''), 'UTF-8', 'ISO-8859-1'),
-                            'valor' => $valor,
-                            'fecha_vencimiento' => $this->parseFecha($fechaVencimientoStr),
-                            'vendedor' => mb_convert_encoding(trim($datos[12] ?? ''), 'UTF-8', 'ISO-8859-1')
-                        ];
-                    }
-                }
-            }
-            
-            // Aplicar paginación
-            $total = count($cheques);
-            $chequesPaginados = array_slice($cheques, $offset, $limit);
-            
-            return [
-                'data' => $chequesPaginados,
-                'total' => $total,
-                'per_page' => $limit,
-                'current_page' => floor($offset / $limit) + 1,
-                'last_page' => ceil($total / $limit)
-            ];
-            
-        } catch (\Exception $e) {
-            \Log::error('Error obteniendo cheques en cartera por cliente: ' . $e->getMessage());
-            return [
-                'data' => [],
-                'total' => 0,
-                'per_page' => $limit > 0 ? $limit : 100,
-                'current_page' => 1,
-                'last_page' => 1
-            ];
-        }
-    }
-
-    /**
-     * Obtener cheques protestados detalle filtrados por código de cliente
-     * @param string $codigoCliente Código del cliente
-     * @param int $limit Límite de resultados (por defecto 10)
-     * @param int $offset Offset para paginación (por defecto 0)
-     * @return array Array con 'data' (cheques) y 'total' (total de cheques)
-     */
-    public function getChequesProtestadosDetallePorCliente($codigoCliente, $limit = 10, $offset = 0)
-    {
-        try {
-            // Obtener total de cheques protestados
-            $total = \Illuminate\Support\Facades\DB::table('cheques_protestados')
-                ->where('codigo_cliente', $codigoCliente)
-                ->count();
-            
-            // Obtener cheques protestados desde la tabla local con paginación
-            $cheques = \Illuminate\Support\Facades\DB::table('cheques_protestados')
-                ->where('codigo_cliente', $codigoCliente)
-                ->orderBy('fecha_vencimiento', 'desc')
-                ->offset($offset)
-                ->limit($limit)
-                ->get()
-                ->map(function($cheque) {
-                    return [
-                        'numero' => $cheque->numero_documento,
-                        'cliente' => $cheque->nombre_cliente,
-                        'codigo_cliente' => $cheque->codigo_cliente,
-                        'valor' => (float)$cheque->valor,
-                        'fecha_vencimiento' => $cheque->fecha_vencimiento,
-                        'vendedor' => $cheque->nombre_vendedor ?? ''
-                    ];
-                })
-                ->toArray();
-            
-            return [
-                'data' => $cheques,
-                'total' => $total,
-                'per_page' => $limit,
-                'current_page' => floor($offset / $limit) + 1,
-                'last_page' => ceil($total / $limit)
-            ];
-            
-        } catch (\Exception $e) {
-            \Log::error('Error obteniendo cheques protestados por cliente: ' . $e->getMessage());
-            return [
-                'data' => [],
-                'total' => 0,
-                'per_page' => $limit,
-                'current_page' => 1,
-                'last_page' => 1
-            ];
-        }
-    }
-
-    /**
-     * Función auxiliar para parsear fechas de SQL Server
-     */
-    private function parseFecha($fechaStr)
-    {
-        if (empty($fechaStr) || $fechaStr === 'NULL' || trim($fechaStr) === '') {
-            return null;
-        }
-        
-        $fechaStr = trim($fechaStr);
-        
-        try {
-            // Intentar varios formatos comunes de SQL Server
-            // Formato 1: "Dec 13 2025 12:00AM" o "Dec 13 2025" o "Dec 13 2025 12:00:00.000"
-            // Extraer mes, día y año usando regex (más flexible)
-            if (preg_match('/^([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})(\s+\d{1,2}:\d{2}(:\d{2})?(\.\d+)?\s*(AM|PM)?)?/i', $fechaStr, $matches)) {
-                $mes = $matches[1];
-                $dia = str_pad($matches[2], 2, '0', STR_PAD_LEFT);
-                $ano = $matches[3];
-                // Construir fecha en formato que strtotime entienda: "Dec 13 2025"
-                $fechaLimpia = "{$mes} {$dia} {$ano}";
-                $timestamp = strtotime($fechaLimpia);
-                if ($timestamp !== false && $timestamp > 0) {
-                    return date('Y-m-d', $timestamp);
-                }
-            }
-            
-            // Formato 2: "2025-12-13" o "2025/12/13" o "13/12/2025"
-            if (preg_match('/^\d{4}[-\\/]\d{2}[-\\/]\d{2}/', $fechaStr)) {
-                $timestamp = strtotime(str_replace('/', '-', $fechaStr));
-                if ($timestamp !== false && $timestamp > 0) {
-                    return date('Y-m-d', $timestamp);
-                }
-            }
-            
-            // Formato 3: "13/12/2025" (día/mes/año)
-            if (preg_match('/^(\d{1,2})[\\/](\d{1,2})[\\/](\d{4})/', $fechaStr, $matches)) {
-                $dia = str_pad($matches[1], 2, '0', STR_PAD_LEFT);
-                $mes = str_pad($matches[2], 2, '0', STR_PAD_LEFT);
-                $ano = $matches[3];
-                $fechaLimpia = "{$ano}-{$mes}-{$dia}";
-                $timestamp = strtotime($fechaLimpia);
-                if ($timestamp !== false && $timestamp > 0) {
-                    return date('Y-m-d', $timestamp);
-                }
-            }
-            
-            // Último intento con strtotime genérico
-            $timestamp = strtotime($fechaStr);
-            if ($timestamp !== false && $timestamp > 0) {
-                return date('Y-m-d', $timestamp);
-            }
-        } catch (\Exception $e) {
-            \Log::warning("Error parseando fecha: {$fechaStr} - " . $e->getMessage());
-        }
-        
-        return null;
-    }
-
-    /**
      * Obtener total de notas de venta en SQL Server
      */
     public function getTotalNotasVentaSQL()
@@ -5358,9 +4777,6 @@ class CobranzaService
                 return [];
             }
             
-            // Convertir el output completo a UTF-8 si es necesario
-            $output = mb_convert_encoding($output, 'UTF-8', 'ISO-8859-1');
-            
             $lines = explode("\n", $output);
             $vendedores = [];
             $inDataSection = false;
@@ -5389,7 +4805,7 @@ class CobranzaService
                     if (count($fields) >= 4) {
                         $vendedores[] = [
                             'codigo' => trim($fields[0]),
-                            'nombre' => $this->convertToUtf8(trim($fields[1])),
+                            'nombre' => trim($fields[1]),
                             'email' => trim($fields[2]) ?: '',
                             'rut' => trim($fields[3]) ?: ''
                         ];

@@ -26,8 +26,7 @@ Route::get('/error/{code?}', [App\Http\Controllers\ErrorController::class, 'show
     ->where('code', '[0-9]+');
 
 // Dashboard
-Route::get('/dashboard', [App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard')->middleware(['auth', 'sincronizar.clientes']);
-Route::get('/dashboard/cheques', [App\Http\Controllers\DashboardController::class, 'getCheques'])->name('dashboard.cheques')->middleware(['auth']);
+Route::get('/dashboard', [App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard')->middleware(['auth']);
 
 // Rutas de Cobranza
 Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
@@ -71,7 +70,6 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/nota-venta/editar/{id}', [App\Http\Controllers\NotaVentaController::class, 'editar'])->name('nota-venta.editar');
     Route::put('/nota-venta/actualizar/{id}', [App\Http\Controllers\NotaVentaController::class, 'actualizar'])->name('nota-venta.actualizar');
     Route::get('/nota-venta/ver/{id}', [App\Http\Controllers\NotaVentaController::class, 'ver'])->name('nota-venta.ver');
-    Route::get('/nota-venta/pdf/{id}', [App\Http\Controllers\NotaVentaController::class, 'generarPDF'])->name('nota-venta.pdf');
     Route::delete('/nota-venta/{id}', [App\Http\Controllers\NotaVentaController::class, 'eliminar'])->name('nota-venta.eliminar');
     Route::post('/nota-venta/generar-nota-venta/{id}', [App\Http\Controllers\NotaVentaController::class, 'generarNotaVenta'])->name('nota-venta.generar-nota-venta');
     Route::post('/nota-venta/convertir-a-nota-venta/{id}', [App\Http\Controllers\NotaVentaController::class, 'convertirANotaVenta'])->name('nota-venta.convertir-a-nota-venta');
@@ -85,11 +83,7 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware(['auth'])->group(function () {
     Route::get('/productos', [App\Http\Controllers\ProductoController::class, 'index'])->name('productos.index');
     Route::get('/productos/ver/{codigo}', [App\Http\Controllers\ProductoController::class, 'ver'])->name('productos.ver');
-    Route::get('/productos/descargar-informe-compras', [App\Http\Controllers\ProductoController::class, 'descargarInformeCompras'])->name('productos.descargar-informe-compras');
-    Route::post('/productos/sincronizar-general', [App\Http\Controllers\ProductoController::class, 'sincronizarProductosGeneral'])->name('productos.sincronizar-general');
-    Route::post('/productos/sincronizar-stock', [App\Http\Controllers\ProductoController::class, 'sincronizarStockProductos'])->name('productos.sincronizar-stock');
     Route::get('/api/productos/buscar', [App\Http\Controllers\ProductoController::class, 'buscar'])->name('productos.buscar');
-    Route::get('/api/productos/buscar-nvv', [App\Http\Controllers\ProductoController::class, 'buscarConNvvPendientes'])->name('productos.buscar-nvv');
     Route::post('/api/productos/crear-nvv', [App\Http\Controllers\ProductoController::class, 'crearNVVDesdeProductos'])->name('productos.crear-nvv');
     Route::post('/api/productos/modificar-cantidades', [App\Http\Controllers\ProductoController::class, 'modificarCantidades'])->name('productos.modificar-cantidades');
 
@@ -109,14 +103,12 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/aprobaciones/{id}', [App\Http\Controllers\AprobacionController::class, 'show'])->name('aprobaciones.show');
     Route::get('/aprobaciones/{id}/historial', [App\Http\Controllers\AprobacionController::class, 'historial'])->name('aprobaciones.historial');
     Route::get('/aprobaciones/{id}/imprimir', [App\Http\Controllers\AprobacionController::class, 'imprimir'])->name('aprobaciones.imprimir');
-    Route::get('/aprobaciones/{id}/descargar-guia-picking', [App\Http\Controllers\AprobacionController::class, 'descargarGuiaPicking'])->name('aprobaciones.descargar-guia-picking');
     
     // Aprobaciones por rol
     Route::post('/aprobaciones/{id}/supervisor', [App\Http\Controllers\AprobacionController::class, 'aprobarSupervisor'])->name('aprobaciones.supervisor');
     Route::post('/aprobaciones/{id}/compras', [App\Http\Controllers\AprobacionController::class, 'aprobarCompras'])->name('aprobaciones.compras');
         Route::post('/aprobaciones/{id}/picking', [App\Http\Controllers\AprobacionController::class, 'aprobarPicking'])->name('aprobaciones.picking');
         Route::post('/aprobaciones/{id}/guardar-pendiente-entrega', [App\Http\Controllers\AprobacionController::class, 'guardarPendienteEntrega'])->name('aprobaciones.guardar-pendiente-entrega');
-        Route::put('/aprobaciones/{id}/agregar-observaciones-picking', [App\Http\Controllers\AprobacionController::class, 'agregarObservacionesPicking'])->name('aprobaciones.agregar-observaciones-picking');
     
     // Rechazar y separar productos
     Route::post('/aprobaciones/{id}/rechazar', [App\Http\Controllers\AprobacionController::class, 'rechazar'])->name('aprobaciones.rechazar');
@@ -189,8 +181,6 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
 Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/clientes', [App\Http\Controllers\ClienteController::class, 'index'])->name('clientes.index');
     Route::get('/clientes/{codigo}', [App\Http\Controllers\ClienteController::class, 'show'])->name('clientes.show');
-    Route::get('/clientes/{codigo}/info-ajax', [App\Http\Controllers\ClienteController::class, 'getInfoAjax'])->name('clientes.info-ajax');
-    Route::get('/clientes/{codigo}/cheques-ajax', [App\Http\Controllers\ClienteController::class, 'getChequesAjax'])->name('clientes.cheques-ajax');
     Route::post('/clientes/buscar', [App\Http\Controllers\ClienteController::class, 'buscar'])->name('clientes.buscar');
     Route::get('/clientes/buscar', [App\Http\Controllers\ClienteController::class, 'buscarAjax'])->name('clientes.buscar.ajax');
     Route::post('/clientes/sincronizar', [App\Http\Controllers\ClienteController::class, 'sincronizar'])->name('clientes.sincronizar');
@@ -221,10 +211,7 @@ Route::middleware(['auth', 'handle.errors'])->group(function () {
 });
 
 // Ruta para página de cliente
-Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
-    Route::get('/cliente/{codigo}', [App\Http\Controllers\ClienteController::class, 'show'])->name('cliente.show');
-    Route::get('/cliente/{codigo}/imprimir', [App\Http\Controllers\ClienteController::class, 'imprimir'])->name('cliente.imprimir');
-});
+Route::get('/cliente/{codigo}', [App\Http\Controllers\ClienteController::class, 'show'])->name('cliente.show');
 
 // Autenticación
 Auth::routes();
@@ -349,6 +336,9 @@ Route::middleware(['auth', 'handle.errors'])->group(function () {
         Route::get('/manejo-stock/api/barcode', [App\Http\Controllers\ManejoStockController::class, 'buscarCodigoBarras'])->name('manejo-stock.barcode');
         Route::get('/manejo-stock/api/producto', [App\Http\Controllers\ManejoStockController::class, 'producto'])->name('manejo-stock.producto');
         Route::get('/manejo-stock/api/ubicaciones', [App\Http\Controllers\ManejoStockController::class, 'buscarUbicaciones'])->name('manejo-stock.ubicaciones');
+        
+        // Barrido Simplificado (Solo para rol Barrido)
+        Route::get('/manejo-stock/barrido-simplificado', [App\Http\Controllers\ManejoStockController::class, 'barridoSimplificado'])->name('manejo-stock.barrido-simplificado');
     });
 
     // **Mantenedor**
@@ -365,7 +355,7 @@ Route::middleware(['auth', 'handle.errors'])->group(function () {
 });
 
 // Rutas de Administración de Usuarios
-Route::middleware(['auth', 'role:Super Admin|Administrativo'])->prefix('admin')->name('admin.')->group(function () {
+Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
     // Gestión de usuarios
     Route::get('/users', [App\Http\Controllers\Admin\UserManagementController::class, 'index'])->name('users.index');
     Route::get('/users/create-from-vendedor', [App\Http\Controllers\Admin\UserManagementController::class, 'vendedoresDisponibles'])->name('users.create-from-vendedor');
@@ -385,11 +375,8 @@ Route::middleware(['auth', 'role:Super Admin|Administrativo'])->prefix('admin')-
             return response()->json(['success' => false, 'message' => $e->getMessage()]);
         }
     })->name('vendedores.sincronizar');
-});
 
-// Rutas de Gestión de Múltiplos de Productos (acceso para Compras y Super Admin)
-// Nota: El controlador tiene su propia verificación de permisos
-Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
+    // Gestión de Múltiplos de Productos
     Route::get('/productos/multiplos', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'index'])->name('productos.multiplos');
     Route::post('/productos/multiplos/cargar', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'cargarExcel'])->name('productos.multiplos.cargar');
     Route::put('/productos/multiplos/{id}', [App\Http\Controllers\Admin\ProductoMultiploController::class, 'actualizar'])->name('productos.multiplos.actualizar');

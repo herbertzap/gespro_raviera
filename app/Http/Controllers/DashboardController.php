@@ -9,8 +9,6 @@ use App\Models\NotaVenta;
 use App\Models\StockTemporal;
 use App\Models\User;
 use App\Models\Cliente;
-use App\Models\Temporal;
-use App\Models\CodigoBarraLog;
 use Illuminate\Support\Facades\Log;
 
 class DashboardController extends Controller
@@ -51,14 +49,15 @@ class DashboardController extends Controller
             return redirect()->route('login');
         }
         
+        // Verificar si el usuario tiene acceso al dashboard
+        if (!$user->can('ver_dashboard')) {
+            abort(403, 'No tienes permiso para acceder al dashboard.');
+        }
+
         $data = [];
 
-        // Datos según el rol del usuario
-        if ($user->hasRole('Super Admin')) {
-            $data = $this->getSuperAdminDashboard($user);
-        } elseif ($user->hasRole('Vendedor')) {
-            $data = $this->getVendedorDashboard($user);
-        } elseif ($user->hasRole('Supervisor')) {
+        // Para usuarios con roles específicos, usar sus dashboards especializados
+        if ($user->hasRole('Supervisor')) {
             $data = $this->getSupervisorDashboard($user);
             $data['pageSlug'] = 'dashboard';
             return view('dashboard.supervisor', $data);
@@ -74,22 +73,157 @@ class DashboardController extends Controller
             $data = $this->getPickingDashboard($user);
             $data['pageSlug'] = 'dashboard';
             return view('dashboard.picking', $data);
-        } elseif ($user->hasRole('Manejo Stock')) {
-            $data = $this->getManejoStockDashboard($user);
-            $data['pageSlug'] = 'dashboard';
-            return view('dashboard.manejo-stock', $data);
-        } elseif ($user->hasRole('Barrido') && !$user->hasRole('Super Admin')) {
-            // Para rol Barrido, redirigir directamente a barrido simplificado
-            return redirect()->route('manejo-stock.barrido-simplificado');
-        } else {
-            // Rol por defecto
+        } elseif ($user->hasRole('Super Admin')) {
+            // Super Admin ve todo - cargar todos los datos
+            $data = $this->getSuperAdminDashboard($user);
+        } elseif ($user->hasRole('Vendedor')) {
+            // Vendedor tiene su propio dashboard
             $data = $this->getVendedorDashboard($user);
+        } else {
+            // Para otros usuarios (incluyendo Administrativo), cargar dashboard basado en permisos granulares
+            $data = $this->getDashboardByPermissions($user);
         }
 
         // Agregar pageSlug para el sidebar
         $data['pageSlug'] = 'dashboard';
         
         return view('dashboard.index', $data);
+    }
+
+    /**
+     * Carga datos del dashboard basado en los permisos del usuario
+     */
+    private function getDashboardByPermissions($user)
+    {
+        $codigoVendedor = $this->getCodigoVendedorFiltro($user);
+        
+        $data = [
+            'tipoUsuario' => $user->getRolPrincipalAttribute(),
+            'resumenCobranza' => [],
+            'resumenNvvPendientes' => [],
+            'resumenCompras' => [],
+            'totalUsuarios' => 0,
+            'usuariosPorRol' => [],
+        ];
+
+        try {
+            // Si tiene permiso para ver resumen de usuarios, cargar datos
+            if ($user->can('ver_dashboard_card_total_usuarios') || $user->hasRole('Super Admin')) {
+                $data['totalUsuarios'] = User::count();
+                $roles = ['Super Admin', 'Vendedor', 'Supervisor', 'Compras', 'Picking'];
+                foreach ($roles as $rol) {
+                    try {
+                        $data['usuariosPorRol'][$rol] = User::role($rol)->count();
+                    } catch (\Exception $e) {
+                        $data['usuariosPorRol'][$rol] = 0;
+                    }
+                }
+            }
+
+            // Cargar datos de cobranza si tiene permisos
+            if ($user->can('ver_dashboard_card_total_documentos_pendientes') || 
+                $user->can('ver_dashboard_card_total_documentos_vencidos') ||
+                $user->can('ver_dashboard_card_cheques_cartera') ||
+                $user->can('ver_dashboard_card_cheques_protestados') ||
+                $user->hasRole('Super Admin')) {
+                
+                $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes($codigoVendedor);
+                $facturasPendientes = $this->cobranzaService->getFacturasPendientes($codigoVendedor, 10);
+                $chequesEnCartera = $this->cobranzaService->getChequesEnCartera($codigoVendedor);
+                $chequesProtestados = $this->cobranzaService->getChequesProtestados($codigoVendedor);
+
+                $data['resumenCobranza'] = [
+                    'TOTAL_FACTURAS' => $resumenFacturasPendientes['total_facturas'] ?? 0,
+                    'TOTAL_NOTAS_VENTA' => $this->cobranzaService->getTotalNotasVentaSQL(),
+                    'SALDO_VENCIDO' => ($resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] ?? 0) + 
+                                       ($resumenFacturasPendientes['por_estado']['MOROSO']['valor'] ?? 0) + 
+                                       ($resumenFacturasPendientes['por_estado']['BLOQUEAR']['valor'] ?? 0),
+                    'CHEQUES_EN_CARTERA' => $chequesEnCartera,
+                    'CHEQUES_PROTESTADOS' => $chequesProtestados,
+                ];
+                $data['facturasPendientes'] = $facturasPendientes;
+                $data['resumenFacturasPendientes'] = $resumenFacturasPendientes;
+            }
+
+            // Cargar datos de NVV si tiene permisos
+            if ($user->can('ver_dashboard_card_nvv_pendientes') || 
+                $user->can('ver_dashboard_card_valor_nvv_pendientes') ||
+                $user->hasRole('Super Admin')) {
+                
+                $data['resumenNvvPendientes'] = $this->cobranzaService->getResumenNvvPendientes($codigoVendedor);
+                $data['nvvPendientes'] = $this->cobranzaService->getNvvPendientesDetalle($codigoVendedor, 10);
+            }
+
+            // Cargar datos adicionales para otras cards si tiene permisos
+            if ($user->can('ver_dashboard_card_total_notas_venta_aprobacion') || $user->hasRole('Super Admin')) {
+                $data['resumenCobranza']['TOTAL_NOTAS_VENTA'] = $this->cobranzaService->getTotalNotasVentaSQL();
+            }
+
+            if ($user->can('ver_dashboard_card_nvv_por_validar') || $user->hasRole('Super Admin')) {
+                $data['resumenCobranza']['TOTAL_NOTAS_PENDIENTES_VALIDAR'] = Cotizacion::where(function($query) {
+                    $query->where('estado_aprobacion', 'pendiente')
+                          ->orWhere('estado_aprobacion', 'pendiente_picking')
+                          ->orWhere('estado_aprobacion', 'aprobada_supervisor');
+                })->count();
+            }
+
+            if ($user->can('ver_dashboard_card_nvv_sistema_mes') || $user->hasRole('Super Admin')) {
+                $data['resumenCobranza']['TOTAL_NOTAS_VENTA_MES_ACTUAL'] = $this->cobranzaService->getTotalNotasVentaMesActual();
+            }
+
+            if ($user->can('ver_dashboard_card_facturas_mes') || $user->hasRole('Super Admin')) {
+                $facturasMesActual = $this->cobranzaService->getFacturasPendientesMesActual($codigoVendedor);
+                $data['resumenCobranza']['TOTAL_FACTURAS_MES_ACTUAL'] = count($facturasMesActual);
+            }
+
+            // Cargar datos de productos bajo stock si tiene permisos
+            if ($user->can('ver_dashboard_card_productos_bajo_stock') || $user->hasRole('Super Admin')) {
+                try {
+                    $productosBajoStock = $this->getProductosBajoStockMySQL();
+                    $resumenCompras = $this->getResumenComprasMySQL();
+                    $data['productosBajoStock'] = $productosBajoStock;
+                    $data['resumenCompras'] = $resumenCompras;
+                } catch (\Exception $e) {
+                    Log::error("Error al cargar productos bajo stock: " . $e->getMessage());
+                    $data['productosBajoStock'] = [];
+                    $data['resumenCompras'] = [
+                        'productos_bajo_stock' => 0,
+                        'total_compras_mes' => 0,
+                        'compras_pendientes' => 0,
+                        'mes_actual' => date('Y-m')
+                    ];
+                }
+            }
+
+            // Datos para Vendedor (clientes asignados)
+            if ($user->hasRole('Vendedor') && $codigoVendedor) {
+                $filtros = [
+                    'buscar' => request()->get('buscar', ''),
+                    'ordenar_por' => request()->get('ordenar_por', 'NOMBRE_CLIENTE'),
+                    'orden' => request()->get('orden', 'asc'),
+                ];
+                $clientesAsignados = $this->cobranzaService->getClientesPorVendedor($codigoVendedor);
+                $clientesFiltrados = $this->aplicarFiltrosClientes($clientesAsignados, $filtros);
+                $perPage = 10;
+                $currentPage = request()->get('page', 1);
+                $offset = ($currentPage - 1) * $perPage;
+                
+                $data['clientesAsignados'] = new \Illuminate\Pagination\LengthAwarePaginator(
+                    array_slice($clientesFiltrados, $offset, $perPage),
+                    count($clientesFiltrados),
+                    $perPage,
+                    $currentPage,
+                    ['path' => request()->url(), 'query' => request()->query()]
+                );
+                $data['filtros'] = $filtros;
+            }
+
+        } catch (\Exception $e) {
+            Log::error("Error en getDashboardByPermissions: " . $e->getMessage());
+            Log::error("Stack trace: " . $e->getTraceAsString());
+        }
+
+        return $data;
     }
 
     private function getVendedorDashboard($user)
@@ -219,19 +353,12 @@ class DashboardController extends Controller
             // 9. CHEQUES PROTESTADOS - TODOS los cheques protestados del sistema
             $chequesProtestados = $this->cobranzaService->getChequesProtestados(null);
 
-            // Calcular valor total de facturas del mes actual (no pagadas)
-            $valorTotalFacturasMesActual = 0;
-            foreach ($facturasMesActual as $factura) {
-                $valorTotalFacturasMesActual += floatval($factura['SALDO'] ?? $factura['VALOR'] ?? 0);
-            }
-            
             // Resumen para las tarjetas principales
             $resumenCobranza = [
                 'TOTAL_FACTURAS_PENDIENTES' => $totalFacturasPendientes, // Total real, no solo 10
                 'TOTAL_NOTAS_VENTA_SQL' => $this->cobranzaService->getTotalNotasVentaSQL(),
                 'TOTAL_NOTAS_VENTA_MES_ACTUAL' => $nvvMesActual,
                 'TOTAL_FACTURAS_MES_ACTUAL' => count($facturasMesActual),
-                'VALOR_TOTAL_FACTURAS_MES_ACTUAL' => $valorTotalFacturasMesActual, // Nuevo: valor total mensual
                 'TOTAL_NOTAS_PENDIENTES_VALIDAR' => $notasPendientesSupervisor,
                 'TOTAL_FACTURAS' => $totalFacturasPendientes,
                 'TOTAL_NOTAS_VENTA' => $this->cobranzaService->getTotalNotasVentaSQL(),
@@ -242,62 +369,12 @@ class DashboardController extends Controller
                                    ($resumenFacturasPendientes['por_estado']['BLOQUEAR']['valor'] ?? 0)
             ];
 
-            // Obtener cheques en cartera (detalle) desde SQL Server con paginación
-            $pageCartera = request()->get('page_cartera', 1);
-            $pageProtestados = request()->get('page_protestados', 1);
-            $perPage = 10;
-            
-            // Obtener cheques en cartera con paginación (usando método que acepta offset)
-            $chequesEnCarteraResult = $this->cobranzaService->getChequesEnCarteraDetalle(null, $perPage, ($pageCartera - 1) * $perPage);
-            $chequesEnCarteraDetalle = is_array($chequesEnCarteraResult) && isset($chequesEnCarteraResult['data']) ? $chequesEnCarteraResult['data'] : $chequesEnCarteraResult;
-            $chequesEnCarteraPagination = null;
-            
-            // Si el resultado tiene estructura de paginación, usar esos datos
-            if (is_array($chequesEnCarteraResult) && isset($chequesEnCarteraResult['total'])) {
-                $chequesEnCarteraPagination = [
-                    'current_page' => $chequesEnCarteraResult['current_page'] ?? $pageCartera,
-                    'last_page' => $chequesEnCarteraResult['last_page'] ?? 1,
-                    'total' => $chequesEnCarteraResult['total'] ?? count($chequesEnCarteraDetalle),
-                    'per_page' => $perPage
-                ];
-            }
-            
-            // Obtener cheques protestados con paginación
-            $totalProtestados = \DB::table('cheques_protestados')->count();
-            $chequesProtestadosDetalle = \DB::table('cheques_protestados')
-                ->orderBy('fecha_vencimiento', 'desc')
-                ->offset(($pageProtestados - 1) * $perPage)
-                ->limit($perPage)
-                ->get()
-                ->map(function($cheque) {
-                    return [
-                        'numero' => $cheque->numero_documento ?? '',
-                        'cliente' => $cheque->nombre_cliente ?? '',
-                        'codigo_cliente' => $cheque->codigo_cliente ?? '',
-                        'valor' => $cheque->valor ?? 0,
-                        'fecha_vencimiento' => $cheque->fecha_vencimiento ?? null,
-                        'vendedor' => $cheque->nombre_vendedor ?? ''
-                    ];
-                })
-                ->toArray();
-            
-            $chequesProtestadosPagination = [
-                'current_page' => $pageProtestados,
-                'last_page' => ceil($totalProtestados / $perPage),
-                'total' => $totalProtestados,
-                'per_page' => $perPage
-            ];
-
             return [
                 'notasPendientes' => $notasPendientes,
                 'notasVentaSQL' => $notasVentaSQL,
                 'facturasPendientes' => $facturasPendientes, // Solo 10 para la tabla
                 'resumenFacturasPendientes' => $resumenFacturasPendientes, // Resumen completo
                 'resumenCobranza' => $resumenCobranza,
-                'chequesEnCarteraDetalle' => $chequesEnCarteraDetalle,
-                'chequesProtestadosDetalle' => $chequesProtestadosDetalle,
-                'chequesEnCarteraPagination' => $chequesEnCarteraPagination,
-                'chequesProtestadosPagination' => $chequesProtestadosPagination,
                 'tipoUsuario' => 'Supervisor'
             ];
 
@@ -333,73 +410,6 @@ class DashboardController extends Controller
                 ],
                 'tipoUsuario' => 'Supervisor'
             ];
-        }
-    }
-
-    /**
-     * Obtener cheques paginados vía AJAX
-     */
-    public function getCheques()
-    {
-        try {
-            $tipo = request()->get('tipo', 'cartera'); // 'cartera' o 'protestados'
-            $page = (int)request()->get('page', 1);
-            $perPage = 10;
-            
-            if ($tipo === 'cartera') {
-                // Obtener cheques en cartera con paginación
-                $chequesResult = $this->cobranzaService->getChequesEnCarteraDetalle(null, $perPage, ($page - 1) * $perPage);
-                $cheques = is_array($chequesResult) && isset($chequesResult['data']) ? $chequesResult['data'] : $chequesResult;
-                $pagination = null;
-                
-                if (is_array($chequesResult) && isset($chequesResult['total'])) {
-                    $pagination = [
-                        'current_page' => $chequesResult['current_page'] ?? $page,
-                        'last_page' => $chequesResult['last_page'] ?? 1,
-                        'total' => $chequesResult['total'] ?? count($cheques),
-                        'per_page' => $perPage
-                    ];
-                }
-            } else {
-                // Obtener cheques protestados con paginación
-                $total = \DB::table('cheques_protestados')->count();
-                $cheques = \DB::table('cheques_protestados')
-                    ->orderBy('fecha_vencimiento', 'desc')
-                    ->offset(($page - 1) * $perPage)
-                    ->limit($perPage)
-                    ->get()
-                    ->map(function($cheque) {
-                        return [
-                            'numero' => $cheque->numero_documento ?? '',
-                            'cliente' => mb_convert_encoding($cheque->nombre_cliente ?? '', 'UTF-8', 'ISO-8859-1'),
-                            'codigo_cliente' => $cheque->codigo_cliente ?? '',
-                            'valor' => $cheque->valor ?? 0,
-                            'fecha_vencimiento' => $cheque->fecha_vencimiento ?? null,
-                            'vendedor' => mb_convert_encoding($cheque->nombre_vendedor ?? '', 'UTF-8', 'ISO-8859-1')
-                        ];
-                    })
-                    ->toArray();
-                
-                $pagination = [
-                    'current_page' => $page,
-                    'last_page' => ceil($total / $perPage),
-                    'total' => $total,
-                    'per_page' => $perPage
-                ];
-            }
-            
-            return response()->json([
-                'success' => true,
-                'cheques' => $cheques,
-                'pagination' => $pagination
-            ]);
-            
-        } catch (\Exception $e) {
-            \Log::error('Error obteniendo cheques para dashboard: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al obtener cheques: ' . $e->getMessage()
-            ], 500);
         }
     }
 
@@ -479,7 +489,7 @@ class DashboardController extends Controller
             $buscar = strtolower($filtros['buscar']);
             $terminos = array_filter(explode(' ', trim($buscar)));
             
-            $clientes = array_filter($clientes, function($cliente) use ($terminos, $buscar) {
+            $clientes = array_filter($clientes, function($cliente) use ($terminos) {
                 $codigoCliente = strtolower($cliente['CODIGO_CLIENTE']);
                 $nombreCliente = strtolower($cliente['NOMBRE_CLIENTE']);
                 
@@ -558,25 +568,22 @@ class DashboardController extends Controller
     {
         try {
             // 1. FACTURAS PENDIENTES (cantidad y listado) - Solo 10 más recientes
-            $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 10);
+            $facturasPendientes = $this->cobranzaService->getFacturasPendientes(null, 10); // Sin filtro de vendedor, limitado a 10
             $totalFacturasPendientes = count($facturasPendientes);
 
             // 2. TOTAL NOTAS DE VENTAS EN SQL (cantidad) - TODAS las notas del sistema
             $totalNotasVentaSQL = $this->cobranzaService->getTotalNotasVentaSQL();
 
             // 3. TOTAL NOTAS DE VENTAS PENDIENTES POR VALIDAR (cantidad) - TODAS las notas pendientes
-            $notasPendientesSupervisor = Cotizacion::where(function($query) {
-                $query->where('estado_aprobacion', 'pendiente')
+            $notasPendientesSupervisor = Cotizacion::where('estado_aprobacion', 'pendiente')
                 ->orWhere('estado_aprobacion', 'pendiente_picking')
-                      ->orWhere('estado_aprobacion', 'aprobada_supervisor');
-            })->count();
+                ->orWhere('estado_aprobacion', 'aprobada_supervisor')
+                ->count();
 
             // 4. NOTAS DE VENTA PENDIENTES (listado limitado) - Solo 10 más recientes
-            $notasPendientes = Cotizacion::where(function($query) {
-                $query->where('estado_aprobacion', 'pendiente')
+            $notasPendientes = Cotizacion::where('estado_aprobacion', 'pendiente')
                 ->orWhere('estado_aprobacion', 'pendiente_picking')
-                      ->orWhere('estado_aprobacion', 'aprobada_supervisor');
-            })
+                ->orWhere('estado_aprobacion', 'aprobada_supervisor')
                 ->with(['user', 'cliente'])
                 ->latest()
                 ->take(10)
@@ -586,78 +593,42 @@ class DashboardController extends Controller
             $notasVentaSQL = $this->cobranzaService->getNotasVentaSQL(10);
 
             // 6. CHEQUES EN CARTERA - TODOS los cheques del sistema
-            $chequesEnCartera = $this->cobranzaService->getChequesEnCartera(null);
+            $chequesEnCartera = $this->cobranzaService->getChequesEnCartera(null); // Sin filtro de vendedor
 
-            // 7. CHEQUES PROTESTADOS - TODOS los cheques protestados del sistema
-            $chequesProtestados = $this->cobranzaService->getChequesProtestados(null);
+            // 7. RESUMEN DE FACTURAS PENDIENTES - TODAS las facturas del sistema
+            $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes(null); // Sin filtro de vendedor
 
-            // 8. RESUMEN DE FACTURAS PENDIENTES - TODAS las facturas del sistema
-            $resumenFacturasPendientes = $this->cobranzaService->getResumenFacturasPendientes(null);
-
-            // 9. INFORMACIÓN DE USUARIOS - Todos los roles
+            // 8. INFORMACIÓN DE USUARIOS
             $totalUsuarios = User::count();
             $usuariosPorRol = [];
             
-            // Mostrar usuarios por todos los roles
-            try {
-                $roles = \Spatie\Permission\Models\Role::all();
-                foreach ($roles as $role) {
-                    $usuariosPorRol[$role->name] = User::role($role->name)->count();
+            $roles = ['Super Admin', 'Vendedor', 'Supervisor', 'Compras', 'Picking'];
+            foreach ($roles as $rol) {
+                try {
+                    $usuariosPorRol[$rol] = User::role($rol)->count();
+                } catch (\Exception $e) {
+                    $usuariosPorRol[$rol] = 0;
                 }
-            } catch (\Exception $e) {
-                $usuariosPorRol['Super Admin'] = User::role('Super Admin')->count();
             }
 
-            // 10. CONTADORES DE MANEJO STOCK (Super Admin ve todos)
-            $productosIngresados = Temporal::count();
-            $productosModificados = CodigoBarraLog::count();
-
-            // 11. NVV DEL MES ACTUAL (cantidad)
-            $nvvMesActual = $this->cobranzaService->getTotalNotasVentaMesActual();
-
-            // 12. FACTURAS DEL MES ACTUAL
-            $facturasMesActual = $this->cobranzaService->getFacturasPendientesMesActual(null);
-
-            // 13. NVV Pendientes Detalle
-            $nvvPendientes = $this->cobranzaService->getNvvPendientesDetalle(null, 10);
-            $resumenNvvPendientes = $this->cobranzaService->getResumenNvvPendientes(null);
-
-            // 14. Productos bajo stock
-            $productosBajoStock = $this->getProductosBajoStockMySQL();
-
-            // 15. Resumen de Compras
-            $resumenCompras = $this->getResumenComprasMySQL();
-
-            // Resumen para las tarjetas principales (incluye todos los datos)
+            // Resumen para las tarjetas principales
             $resumenCobranza = [
-                'TOTAL_FACTURAS_PENDIENTES' => $resumenFacturasPendientes['total_facturas'] ?? 0,
+                'TOTAL_FACTURAS_PENDIENTES' => $totalFacturasPendientes,
                 'TOTAL_NOTAS_VENTA_SQL' => $totalNotasVentaSQL,
                 'TOTAL_NOTAS_PENDIENTES_VALIDAR' => $notasPendientesSupervisor,
-                'TOTAL_FACTURAS' => $resumenFacturasPendientes['total_facturas'] ?? 0,
+                'TOTAL_FACTURAS' => $totalFacturasPendientes,
                 'TOTAL_NOTAS_VENTA' => $totalNotasVentaSQL,
-                'TOTAL_NOTAS_VENTA_MES_ACTUAL' => $nvvMesActual,
-                'TOTAL_FACTURAS_MES_ACTUAL' => count($facturasMesActual),
                 'CHEQUES_EN_CARTERA' => $chequesEnCartera,
-                'CHEQUES_PROTESTADOS' => $chequesProtestados,
-                'SALDO_VENCIDO' => ($resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] ?? 0) + 
-                                   ($resumenFacturasPendientes['por_estado']['MOROSO']['valor'] ?? 0) + 
-                                   ($resumenFacturasPendientes['por_estado']['BLOQUEAR']['valor'] ?? 0)
+                'SALDO_VENCIDO' => $resumenFacturasPendientes['por_estado']['VENCIDO']['valor'] + $resumenFacturasPendientes['por_estado']['MOROSO']['valor'] + $resumenFacturasPendientes['por_estado']['BLOQUEAR']['valor']
             ];
 
             return [
                 'notasPendientes' => $notasPendientes,
                 'notasVentaSQL' => $notasVentaSQL,
-                'facturasPendientes' => $facturasPendientes,
+                'facturasPendientes' => $facturasPendientes, // Agregado para la tabla
                 'resumenCobranza' => $resumenCobranza,
-                'resumenFacturasPendientes' => $resumenFacturasPendientes,
-                'nvvPendientes' => $nvvPendientes,
-                'resumenNvvPendientes' => $resumenNvvPendientes,
-                'productosBajoStock' => $productosBajoStock,
-                'resumenCompras' => $resumenCompras,
                 'totalUsuarios' => $totalUsuarios,
                 'usuariosPorRol' => $usuariosPorRol,
-                'productosIngresados' => $productosIngresados,
-                'productosModificados' => $productosModificados,
                 'tipoUsuario' => 'Super Admin'
             ];
 
@@ -675,31 +646,10 @@ class DashboardController extends Controller
                     'TOTAL_NOTAS_PENDIENTES_VALIDAR' => 0,
                     'TOTAL_FACTURAS' => 0,
                     'TOTAL_NOTAS_VENTA' => 0,
-                    'TOTAL_NOTAS_VENTA_MES_ACTUAL' => 0,
-                    'TOTAL_FACTURAS_MES_ACTUAL' => 0,
-                    'CHEQUES_EN_CARTERA' => 0,
-                    'CHEQUES_PROTESTADOS' => 0,
-                    'SALDO_VENCIDO' => 0
+                    'CHEQUES_EN_CARTERA' => 0
                 ],
-                'resumenFacturasPendientes' => [
-                    'total_facturas' => 0,
-                    'total_saldo' => 0,
-                    'por_estado' => [
-                        'VIGENTE' => ['cantidad' => 0, 'valor' => 0],
-                        'POR VENCER' => ['cantidad' => 0, 'valor' => 0],
-                        'VENCIDO' => ['cantidad' => 0, 'valor' => 0],
-                        'MOROSO' => ['cantidad' => 0, 'valor' => 0],
-                        'BLOQUEAR' => ['cantidad' => 0, 'valor' => 0]
-                    ]
-                ],
-                'nvvPendientes' => [],
-                'resumenNvvPendientes' => ['total_nvv' => 0, 'total_pendiente' => 0, 'total_valor_pendiente' => 0],
-                'productosBajoStock' => [],
-                'resumenCompras' => ['total_compras_mes' => 0, 'productos_bajo_stock' => 0, 'compras_pendientes' => 0],
                 'totalUsuarios' => 0,
                 'usuariosPorRol' => [],
-                'productosIngresados' => 0,
-                'productosModificados' => 0,
                 'tipoUsuario' => 'Super Admin'
             ];
         }
@@ -1183,15 +1133,6 @@ class DashboardController extends Controller
                 ->get();
 
             return $cotizaciones->map(function($cotizacion) {
-                // Verificar si viene de una separación
-                $esSeparada = !is_null($cotizacion->nota_original_id);
-                
-                // Si viene de separación y está pendiente, mostrar estado especial
-                $estadoMostrar = $cotizacion->estado_aprobacion;
-                if ($esSeparada && $cotizacion->estado_aprobacion === 'pendiente') {
-                    $estadoMostrar = 'separado_pendiente_compras';
-                }
-                
                 return [
                     'id' => $cotizacion->id,
                     'numero' => 'N°' . $cotizacion->id,
@@ -1203,9 +1144,7 @@ class DashboardController extends Controller
                     'productos_count' => $cotizacion->productos->count(),
                     'tiene_problemas_stock' => $cotizacion->tiene_problemas_stock ?? false,
                     'tiene_problemas_credito' => $cotizacion->tiene_problemas_credito ?? false,
-                    'estado' => $estadoMostrar,
-                    'es_separada' => $esSeparada,
-                    'nota_original_id' => $cotizacion->nota_original_id,
+                    'estado' => $cotizacion->estado_aprobacion,
                     'url' => route('aprobaciones.show', $cotizacion->id)
                 ];
             })->toArray();
@@ -1237,33 +1176,6 @@ class DashboardController extends Controller
                 'cantidad' => 0,
                 'valor_total' => 0,
                 'cheques' => []
-            ];
-        }
-    }
-
-    private function getManejoStockDashboard($user)
-    {
-        try {
-            // Contador de productos ingresados (capturas en temporales)
-            $productosIngresados = Temporal::where('funcionario', $user->codigo_vendedor ?? 'PZZ')
-                ->count();
-            
-            // Contador de productos modificados (códigos de barras modificados)
-            $productosModificados = CodigoBarraLog::where('user_id', $user->id)
-                ->count();
-            
-            return [
-                'productosIngresados' => $productosIngresados,
-                'productosModificados' => $productosModificados,
-                'tipoUsuario' => 'Manejo Stock'
-            ];
-        } catch (\Exception $e) {
-            Log::error("Error en getManejoStockDashboard: " . $e->getMessage());
-            
-            return [
-                'productosIngresados' => 0,
-                'productosModificados' => 0,
-                'tipoUsuario' => 'Manejo Stock'
             ];
         }
     }
