@@ -1922,12 +1922,10 @@ class ManejoStockController extends Controller
      * Entra directo sin seleccionar bodega/ubicación
      * Solo permite escanear códigos de barras y asociarlos
      */
-    public function barridoSimplificado(Request $request = null)
+    public function barridoSimplificado(Request $request)
     {
-        $user = auth()->user();
-        
         // Si viene bodega_id en el request, usarla; sino usar la primera disponible
-        if ($request && $request->has('bodega_id')) {
+        if ($request->has('bodega_id') && $request->filled('bodega_id')) {
             $data = $request->validate([
                 'bodega_id' => ['required', 'exists:bodegas,id'],
                 'ubicacion_id' => ['nullable', 'exists:ubicaciones,id'],
