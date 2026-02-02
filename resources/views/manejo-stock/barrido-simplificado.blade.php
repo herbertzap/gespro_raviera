@@ -364,7 +364,7 @@
                 modalCodigo.modal('hide');
                 return;
             }
-            const url = new URL("{{ route('manejo-stock.asociar-barrido') }}", window.location.origin);
+            const url = new URL("{{ route('manejo-stock.asociar') }}", window.location.origin);
             url.searchParams.set('barcode', codigoPendiente);
             url.searchParams.set('bodega_id', bodegaId);
             url.searchParams.set('origen', 'barrido-simplificado');
