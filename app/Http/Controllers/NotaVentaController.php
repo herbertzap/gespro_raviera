@@ -2090,8 +2090,20 @@ class NotaVentaController extends Controller
             
             \Log::info('Siguiente ID para MAEEDO: ' . $siguienteId);
             
-            // Calcular fecha de vencimiento (30 días desde hoy)
-            $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
+            // Obtener días de pago del cliente (DIPRVE)
+            $diasPago = $this->obtenerDiasPagoCliente($cotizacion->cliente_codigo);
+            \Log::info('Días de pago del cliente (DIPRVE): ' . $diasPago);
+            
+            // Calcular fecha de vencimiento: fecha de emisión + días de pago del cliente
+            // Si días de pago es 0, usar la fecha de creación (sin agregar días)
+            $fechaEmision = now();
+            if ($diasPago > 0) {
+                $fechaVencimiento = $fechaEmision->copy()->addDays($diasPago)->format('Y-m-d');
+            } else {
+                // Si es 0, usar la fecha de creación (misma fecha de emisión)
+                $fechaVencimiento = $fechaEmision->format('Y-m-d');
+            }
+            \Log::info('Fecha de vencimiento calculada: ' . $fechaVencimiento . ' (días de pago: ' . $diasPago . ')');
             
             // Obtener información del vendedor
             $codigoVendedor = auth()->user()->codigo_vendedor ?? '001';
@@ -2137,7 +2149,9 @@ class NotaVentaController extends Controller
             // Insertar detalles en MAEDDO
             foreach ($cotizacion->detalles as $index => $detalle) {
                 $lineaId = $index + 1;
-                
+                $nombreProducto = \App\Helpers\ProductoHelper::limpiarNombreParaNVV($detalle->producto_nombre ?? '');
+                $nombreProducto = substr(str_replace("'", "''", $nombreProducto), 0, 50);
+
                 $insertMAEDDO = "
                     INSERT INTO MAEDDO (
                         IDMAEEDO, IDMAEDDO, KOPRCT, NOKOPR, CAPRCO1, PPPRNE, 
@@ -2149,7 +2163,7 @@ class NotaVentaController extends Controller
                         KOFUGE6, KOFUGE7, KOFUGE8, KOFUGE9, KOFUGE10
                     ) VALUES (
                         {$siguienteId}, {$lineaId}, '{$detalle->producto_codigo}', 
-                        '{$detalle->producto_nombre}', {$detalle->cantidad}, 
+                        '{$nombreProducto}', {$detalle->cantidad}, 
                         {$detalle->precio}, 0, 0, '01', 'NVV', {$siguienteId},
                         '{$cotizacion->cliente_codigo}', '001', GETDATE(),
                         '{$fechaVencimiento}', " . ($detalle->cantidad * $detalle->precio) . ",
@@ -2179,13 +2193,48 @@ class NotaVentaController extends Controller
             }
             
             \Log::info('Detalles MAEDDO insertados correctamente');
+
+            // UPDATE CONFIEST: MODALIDAD en BD es CHAR(5)+CHAR(32)+CHAR(5)+CHAR(32)+CHAR(5) (hex 05 20 05 20 05), no 5 espacios
+            $nvvSiguiente = str_pad((string) ($siguienteId + 1), 10, '0', STR_PAD_LEFT);
+            $updateConfiest = "UPDATE CONFIEST SET NVV = '{$nvvSiguiente}' WHERE MODALIDAD = CHAR(5)+CHAR(32)+CHAR(5)+CHAR(32)+CHAR(5)";
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $updateConfiest . "\ngo\nquit");
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $resultConfiest = shell_exec($command);
+            unlink($tempFile);
+            \Log::info('CONFIEST UPDATE ejecutado', [
+                'nvv_insertada' => $siguienteId,
+                'nvv_siguiente_en_tabla' => $nvvSiguiente,
+                'sql' => $updateConfiest,
+            ]);
+            if ($resultConfiest && (stripos($resultConfiest, 'Msg ') !== false || stripos($resultConfiest, 'error') !== false)) {
+                \Log::warning('CONFIEST UPDATE puede haber fallado: ' . substr($resultConfiest, 0, 300));
+            }
+            // Verificación: SELECT después del UPDATE (mismo que ver_confiest.php)
+            $selectConfiest = "SELECT EMPRESA,MODALIDAD,NVV FROM CONFIEST WHERE MODALIDAD = CHAR(5)+CHAR(32)+CHAR(5)+CHAR(32)+CHAR(5)";
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $selectConfiest . "\ngo\nquit");
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $outVerif = shell_exec($command);
+            unlink($tempFile);
+            if ($outVerif && preg_match('/\b(\d{4,10})\b/', $outVerif, $m)) {
+                \Log::info('CONFIEST verificado después del UPDATE: NVV = ' . $m[1]);
+            }
+
+            // MAEEDOOB: estructura real en SQL (IDMAEEDO, OBDO, CPDO, OCDO, TEXTO1, TEXTO2, TEXTO3) - sin IDMAEDOOB ni EMPRESA
+            $obdo = str_replace("'", "''", 'Cotización generada desde sistema web');
+            $cliente = Cliente::where('codigo_cliente', $cotizacion->cliente_codigo)->first();
+            $cpdo = $cliente && $cliente->condicion_pago ? str_replace("'", "''", trim($cliente->condicion_pago)) : ' ';
+            $ocdo = str_replace("'", "''", substr(trim($cotizacion->numero_orden_compra ?? ''), 0, 40) ?: ' ');
+            $texto1 = str_replace("'", "''", substr(trim($cotizacion->guia_picking_separado_por ?? ''), 0, 100) ?: ' ');
+            $texto2 = str_replace("'", "''", substr(trim($cotizacion->guia_picking_revisado_por ?? ''), 0, 100) ?: ' ');
+            $texto3 = str_replace("'", "''", substr(trim($cotizacion->guia_picking_numero_bultos ?? ''), 0, 50) ?: ' ');
             
-            // Insertar en MAEEDOOB (Observaciones)
             $insertMAEEDOOB = "
                 INSERT INTO MAEEDOOB (
-                    IDMAEEDO, IDMAEDOOB, OBSERVACION, EMPRESA
+                    IDMAEEDO, OBDO, CPDO, OCDO, TEXTO1, TEXTO2, TEXTO3
                 ) VALUES (
-                    {$siguienteId}, 1, 'Cotización generada desde sistema web', '01'
+                    {$siguienteId}, '{$obdo}', '{$cpdo}', '{$ocdo}', '{$texto1}', '{$texto2}', '{$texto3}'
                 )
             ";
             
@@ -3149,6 +3198,36 @@ class NotaVentaController extends Controller
                 'valor_total' => 0,
                 'cheques' => []
             ];
+        }
+    }
+    
+    /**
+     * Obtener días de pago del cliente desde SQL Server
+     */
+    private function obtenerDiasPagoCliente($codigoCliente)
+    {
+        try {
+            $query = "SELECT ISNULL(DIPRVE, 0) as DIPRVE FROM MAEEN WHERE KOEN = '{$codigoCliente}'";
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+            file_put_contents($tempFile, $query . "\ngo\nquit");
+            
+            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+            $result = shell_exec($command);
+            unlink($tempFile);
+            
+            if ($result && !str_contains($result, 'error')) {
+                $lines = explode("\n", $result);
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if (is_numeric($line)) {
+                        return (int)$line;
+                    }
+                }
+            }
+            return 0;
+        } catch (\Exception $e) {
+            \Log::warning("Error obteniendo días de pago: " . $e->getMessage());
+            return 0;
         }
     }
     

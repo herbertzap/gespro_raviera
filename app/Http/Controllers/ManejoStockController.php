@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Bodega;
 use App\Models\CodigoBarraLog;
+use App\Models\Producto;
 use App\Models\Temporal;
 use App\Models\Ubicacion;
 use Illuminate\Http\Request;
@@ -402,10 +403,14 @@ class ManejoStockController extends Controller
             $detalle = $this->obtenerDetalleProducto($data['sku'], $bodega);
 
             if (!$detalle) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Producto no encontrado en SQL Server.',
-                ], 404);
+                // Fallback: buscar en MySQL (tabla productos) por si existe solo ahí
+                $detalle = $this->obtenerDetalleProductoDesdeMySQL($data['sku']);
+                if (!$detalle) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Producto no encontrado en SQL Server.',
+                    ], 404);
+                }
             }
 
             try {
@@ -417,7 +422,7 @@ class ManejoStockController extends Controller
                 } else {
                     $barcodes = DB::connection('sqlsrv_external')
                         ->table('TABCODAL')
-                        ->where('KOPR', trim($data['sku']))
+                        ->whereRaw('RTRIM(KOPR) = ?', [trim($data['sku'])])
                         ->orderBy('KOPRAL')
                         ->pluck('KOPRAL')
                         ->map(fn ($codigo) => trim($codigo))
@@ -473,11 +478,12 @@ class ManejoStockController extends Controller
                 return $this->obtenerDetalleProductoPDO($sku, $bodega);
             }
             
-            // Usar conexión Laravel normal para servidores modernos con TLS
+            // Usar conexión Laravel normal para servidores modernos con TLS (RTRIM(KOPR) por si tiene espacios)
+            $skuTrim = trim($sku);
             $producto = DB::connection('sqlsrv_external')
                 ->table('MAEPR')
                 ->select('KOPR', 'NOKOPR', 'RLUD', 'UD01PR', 'UD02PR')
-                ->where('KOPR', trim($sku))
+                ->whereRaw('RTRIM(KOPR) = ?', [$skuTrim])
                 ->first();
 
             if (!$producto) {
@@ -487,7 +493,7 @@ class ManejoStockController extends Controller
             $stockQuery = DB::connection('sqlsrv_external')
                 ->table('MAEST')
                 ->selectRaw('SUM(ISNULL(STFI1,0)) as stock_fisico, SUM(ISNULL(STOCNV1,0)) as stock_comprometido')
-                ->where('KOPR', trim($sku));
+                ->whereRaw('RTRIM(KOPR) = ?', [$skuTrim]);
 
             if ($bodega && $bodega->kobo) {
                 $stockQuery->where('KOBO', $bodega->kobo);
@@ -522,6 +528,32 @@ class ManejoStockController extends Controller
     }
 
     /**
+     * Fallback: obtener detalle de producto desde MySQL (tabla productos) cuando no está en SQL Server.
+     */
+    private function obtenerDetalleProductoDesdeMySQL(string $sku): ?array
+    {
+        $p = Producto::where('KOPR', trim($sku))->first();
+        if (!$p) {
+            return null;
+        }
+        $funcionario = null;
+        if (auth()->user() && auth()->user()->codigo_vendedor) {
+            $funcionario = auth()->user()->codigo_vendedor;
+        }
+        return [
+            'codigo' => trim($p->KOPR),
+            'nombre' => trim($p->NOKOPR ?? ''),
+            'rlud' => (float) ($p->RLUD ?? 1),
+            'unidad_1' => trim($p->UD01PR ?? ''),
+            'unidad_2' => trim($p->UD02PR ?? ''),
+            'stock_fisico' => (float) ($p->stock_fisico ?? 0),
+            'stock_comprometido' => (float) ($p->stock_comprometido ?? 0),
+            'stock_disponible' => (float) ($p->stock_disponible ?? 0),
+            'funcionario' => $funcionario,
+        ];
+    }
+
+    /**
      * Obtener detalle de producto usando tsql (para SQL Server 2012 sin TLS)
      */
     private function obtenerDetalleProductoPDO(string $sku, ?Bodega $bodega = null): ?array
@@ -552,7 +584,7 @@ class ManejoStockController extends Controller
                     CAST(ISNULL(SUM(MAEST.STOCNV1), 0) AS VARCHAR(30)) AS DATOS_PRODUCTO
                 FROM MAEPR
                 LEFT JOIN MAEST ON MAEPR.KOPR = MAEST.KOPR {$stockCondition}
-                WHERE MAEPR.KOPR = '{$skuEscapado}'
+                WHERE RTRIM(MAEPR.KOPR) = '{$skuEscapado}'
                 GROUP BY MAEPR.KOPR, MAEPR.NOKOPR, MAEPR.RLUD, MAEPR.UD01PR, MAEPR.UD02PR
             ";
 
@@ -608,18 +640,18 @@ class ManejoStockController extends Controller
                 }
                 
                 // Buscar línea con datos separados por | (después del header)
-                // La línea debe tener pipes y el primer campo debe ser un número (código de producto)
-                // Formato esperado: "0000008503050|ARPILLERA NATURAL 30 X 50|1|UN|UN|14|0"
-                if ($encontradoHeader && strpos($line, '|') !== false) {
-                    // Buscar patrón: código numérico seguido de pipe (puede tener espacios antes)
-                    // Usar regex similar a SincronizarClientesSimple: /^(\d+)\s*\|(.+)$/
-                    if (preg_match('/^(\d+)\s*\|(.+)$/', $line, $matches)) {
-                        $codigo = $matches[1];
+                // Quitar prefijo tsql "1> " o "2> " si existe
+                $lineData = preg_replace('/^\d+>\s*/', '', $line);
+                // Aceptar código alfanumérico (ej. DEPCAZPIS016) o numérico
+                // Formato: "DEPCAZPIS016|Nombre producto|1|UN|UN|14|0"
+                if ($encontradoHeader && strpos($lineData, '|') !== false) {
+                    if (preg_match('/^([^|]+)\|(.+)$/', $lineData, $matches)) {
+                        $codigo = trim($matches[1]);
                         $resto = $matches[2];
                         $campos = explode('|', $resto);
                         
                         Log::debug("Línea de datos encontrada", [
-                            'line' => $line,
+                            'line' => $lineData,
                             'codigo' => $codigo,
                             'campos_count' => count($campos),
                             'campos' => $campos
@@ -694,7 +726,7 @@ class ManejoStockController extends Controller
 
         try {
             $skuEscapado = str_replace("'", "''", trim($sku));
-            $query = "SELECT KOPRAL FROM TABCODAL WHERE KOPR = '{$skuEscapado}' ORDER BY KOPRAL";
+            $query = "SELECT KOPRAL FROM TABCODAL WHERE RTRIM(KOPR) = '{$skuEscapado}' ORDER BY KOPRAL";
 
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_barcodes_');
             file_put_contents($tempFile, $query . "\ngo\nquit");

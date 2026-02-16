@@ -1199,9 +1199,6 @@ class AprobacionController extends Controller
             Log::info("Máximo NUDO de NVV encontrado: {$maxNudo}");
             Log::info("✅ NUDO asignado: {$nudoFormateado}");
             
-            // Calcular fecha de vencimiento (30 días desde hoy)
-            $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
-            
             // Obtener información del vendedor
             $codigoVendedor = $cotizacion->user->codigo_vendedor ?? '001';
             $nombreVendedor = $cotizacion->user->name ?? 'Vendedor Sistema';
@@ -1280,11 +1277,22 @@ class AprobacionController extends Controller
             
             // Si la sucursal está vacía o no se encontró, dejar vacío (no usar '001' como fallback)
             Log::info("Sucursal del cliente '{$cotizacion->cliente_codigo}': '{$sucursalCliente}' " . (empty($sucursalCliente) ? "(vacía - correcto)" : ""));
+            Log::info("Días de pago del cliente (DIPRVE): {$diasPago}");
+            
+            // Calcular fecha de vencimiento: fecha de emisión + días de pago del cliente
+            // Si días de pago es 0, usar la fecha de creación (sin agregar días)
+            $fechaEmision = now();
+            if ($diasPago > 0) {
+                $fechaVencimiento = $fechaEmision->copy()->addDays($diasPago)->format('Y-m-d');
+            } else {
+                // Si es 0, usar la fecha de creación (misma fecha de emisión)
+                $fechaVencimiento = $fechaEmision->format('Y-m-d');
+            }
+            Log::info("Fecha de vencimiento calculada: {$fechaVencimiento} (días de pago: {$diasPago})");
             
             // Calcular HORAGRAB (función de Excel: convertir fecha/hora a número serial)
-            $fechaActual = now();
-            $diasDesde1900 = $fechaActual->diffInDays('1900-01-01') + 2; // +2 por bug de Excel (año 1900 bisiesto)
-            $horaDecimal = ($fechaActual->hour * 3600 + $fechaActual->minute * 60 + $fechaActual->second) / 86400;
+            $diasDesde1900 = $fechaEmision->diffInDays('1900-01-01') + 2; // +2 por bug de Excel (año 1900 bisiesto)
+            $horaDecimal = ($fechaEmision->hour * 3600 + $fechaEmision->minute * 60 + $fechaEmision->second) / 86400;
             $horagrab = $diasDesde1900 + $horaDecimal;
             
             // CAPRCO = suma de cantidades de productos
@@ -1343,7 +1351,7 @@ class AprobacionController extends Controller
                     {$siguienteId}, '01', 'NVV', '{$nudoFormateado}', '{$cotizacion->cliente_codigo}', 
                     '{$sucursalCliente}', '', 'LIB',
                     'I', '', 'N', 'S',
-                    CONVERT(DATETIME, CONVERT(DATE, GETDATE())), CONVERT(DATETIME, DATEADD(DAY, {$diasPago}, CONVERT(DATE, GETDATE()))), CONVERT(DATETIME, DATEADD(DAY, {$diasPago}, CONVERT(DATE, GETDATE()))), CONVERT(DATETIME, CONVERT(DATE, GETDATE())),
+                    CONVERT(DATETIME, CONVERT(DATE, GETDATE())), CONVERT(DATETIME, '{$fechaVencimiento}'), CONVERT(DATETIME, '{$fechaVencimiento}'), CONVERT(DATETIME, CONVERT(DATE, GETDATE())),
                     {$sumaCantidades}, 0, 0, 0,
                     '$', 'N', 1,
                     {$VAIVDO}, {$VANEDO}, {$VABRDO}, 0,
@@ -2165,14 +2173,25 @@ class AprobacionController extends Controller
             Log::info("🧪 Sucursal Cliente: '{$sucursalCliente}'");
             Log::info("🧪 Vendedor: {$codigoVendedor}");
             
-            // Calcular HORAGRAB (función de Excel: convertir fecha/hora a número serial)
-            $fechaActual = now();
-            $diasDesde1900 = $fechaActual->diffInDays('1900-01-01') + 2; // +2 por bug de Excel (año 1900 bisiesto)
-            $horaDecimal = ($fechaActual->hour * 3600 + $fechaActual->minute * 60 + $fechaActual->second) / 86400;
-            $horagrab = $diasDesde1900 + $horaDecimal;
+            // Obtener días de pago del cliente (DIPRVE)
+            $diasPago = $this->obtenerDiasPagoCliente($cotizacion->cliente_codigo);
+            Log::info("🧪 Días de pago del cliente (DIPRVE): {$diasPago}");
             
-            // Fecha de vencimiento
-            $fechaVencimiento = date('Y-m-d', strtotime('+30 days'));
+            // Calcular fecha de vencimiento: fecha de emisión + días de pago del cliente
+            // Si días de pago es 0, usar la fecha de creación (sin agregar días)
+            $fechaEmision = now();
+            if ($diasPago > 0) {
+                $fechaVencimiento = $fechaEmision->copy()->addDays($diasPago)->format('Y-m-d');
+            } else {
+                // Si es 0, usar la fecha de creación (misma fecha de emisión)
+                $fechaVencimiento = $fechaEmision->format('Y-m-d');
+            }
+            Log::info("🧪 Fecha de vencimiento calculada: {$fechaVencimiento} (días de pago: {$diasPago})");
+            
+            // Calcular HORAGRAB (función de Excel: convertir fecha/hora a número serial)
+            $diasDesde1900 = $fechaEmision->diffInDays('1900-01-01') + 2; // +2 por bug de Excel (año 1900 bisiesto)
+            $horaDecimal = ($fechaEmision->hour * 3600 + $fechaEmision->minute * 60 + $fechaEmision->second) / 86400;
+            $horagrab = $diasDesde1900 + $horaDecimal;
             
             // INSERT SIMPLIFICADO DE MAEEDO
             $insertMAEEDO = "
@@ -2191,7 +2210,7 @@ class AprobacionController extends Controller
                     {$siguienteId}, '01', 'NVV', '{$nudoFormateado}', '{$cotizacion->cliente_codigo}', 
                     '{$sucursalCliente}', '', 'LIB',
                     'I', '', 'N', 'S',
-                    CONVERT(DATETIME, CONVERT(DATE, GETDATE())), CONVERT(DATETIME, DATEADD(DAY, 30, CONVERT(DATE, GETDATE()))), CONVERT(DATETIME, DATEADD(DAY, 30, CONVERT(DATE, GETDATE()))), CONVERT(DATETIME, CONVERT(DATE, GETDATE())),
+                    CONVERT(DATETIME, CONVERT(DATE, GETDATE())), CONVERT(DATETIME, '{$fechaVencimiento}'), CONVERT(DATETIME, '{$fechaVencimiento}'), CONVERT(DATETIME, CONVERT(DATE, GETDATE())),
                     {$cotizacion->subtotal_neto}, 0, 0, 0,
                     '$', 'N', 1,
                     {$cotizacion->iva}, {$cotizacion->subtotal_neto}, {$cotizacion->total}, 0,
@@ -2240,7 +2259,8 @@ class AprobacionController extends Controller
                 }
                 
                 $subtotal = $producto->cantidad * $producto->precio_unitario;
-                
+                $nombreProductoNVV = substr(str_replace("'", "''", \App\Helpers\ProductoHelper::limpiarNombreParaNVV($producto->nombre_producto ?? '')), 0, 50);
+
                 $insertMAEDDO = "
                     INSERT INTO MAEDDO (
                         IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
@@ -2258,7 +2278,7 @@ class AprobacionController extends Controller
                         '{$cotizacion->cliente_codigo}', '{$sucursalCliente}',
                         'SI', '{$lineaId}', 'LIB', 'LIB', '', '{$codigoVendedor}', 'FPN',
                         {$udtrpr}, {$rludpr}, '{$ud01pr}', '{$ud02pr}',
-                        '{$producto->codigo_producto}', '{$producto->nombre_producto}',
+                        '{$producto->codigo_producto}', '{$nombreProductoNVV}',
                         {$producto->cantidad}, {$producto->cantidad},
                         'TABPP01P', '$', 'N', 1,
                         {$producto->precio_unitario}, {$producto->precio_unitario}, {$precioBruto}, {$precioBruto},
@@ -2592,23 +2612,7 @@ class AprobacionController extends Controller
         if (empty($nombreProducto)) {
             return $nombreProducto;
         }
-        
-        $nombreLimpio = $nombreProducto;
-        
-        // Remover patrones como "xxxxxxxmultiplo: X" o "xxxxxmultiplo: X" al final (case insensitive)
-        $nombreLimpio = preg_replace('/\s*xxxxxxx?multiplo:\s*\d+.*$/i', '', $nombreLimpio);
-        // Remover "Múltiplo: X" o "multiplo: X" al final (con o sin acento, case insensitive)
-        $nombreLimpio = preg_replace('/\s*[Mm][úu]ltiplo:\s*\d+.*$/i', '', $nombreLimpio);
-        // Remover "MULTIPLO: X" al final
-        $nombreLimpio = preg_replace('/\s*MULTIPLO:\s*\d+.*$/i', '', $nombreLimpio);
-        // Remover "UN.Múltiplo: X" o "UN.MULTIPLO: X" al final
-        $nombreLimpio = preg_replace('/\s*UN\.\s*[Mm][úu]?ltiplo:\s*\d+.*$/i', '', $nombreLimpio);
-        // Remover la palabra "adicional" si aparece
-        $nombreLimpio = preg_replace('/\s*adicional\s*/i', ' ', $nombreLimpio);
-        // Limpiar espacios múltiples y recortar
-        $nombreLimpio = preg_replace('/\s+/', ' ', trim($nombreLimpio));
-        
-        return $nombreLimpio;
+        return \App\Helpers\ProductoHelper::limpiarNombreParaNVV($nombreProducto);
     }
 
     /**
