@@ -1130,9 +1130,14 @@ class AprobacionController extends Controller
     {
         try {
             // Aumentar tiempo límite para proceso de inserción que puede tardar 60-120 segundos
-            set_time_limit(180); // 3 minutos para asegurar que complete el proceso
+            set_time_limit(300); // 5 minutos para asegurar que complete el proceso
+            
+            $tiempoInicio = microtime(true);
+            Log::info("⏱️ INICIO INSERT SQL Server - Tiempo límite: 300 segundos");
             
             // Obtener siguiente correlativo para IDMAEEDO
+            $tiempoPaso = microtime(true);
+            Log::info("⏱️ Paso 1: Obteniendo siguiente IDMAEEDO...");
             $queryCorrelativo = "SELECT TOP 1 ISNULL(MAX(IDMAEEDO), 0) + 1 AS siguiente_id FROM MAEEDO WHERE EMPRESA = '01'";
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
@@ -1142,6 +1147,7 @@ class AprobacionController extends Controller
             $result = shell_exec($command);
             
             unlink($tempFile);
+            Log::info("⏱️ Paso 1 completado en " . round(microtime(true) - $tiempoPaso, 2) . " segundos");
             
             // Parsear el resultado para obtener el siguiente ID
             $siguienteId = 1; // Valor por defecto
@@ -1171,6 +1177,8 @@ class AprobacionController extends Controller
             // Obtener el máximo NUDO de NVV y sumarle 1 (consulta simple y directa)
             // IMPORTANTE: Filtrar por TIDO = 'NVV' porque cada tipo de documento tiene su propia numeración
             // Usar MAX directamente para obtener el mayor valor numérico en una sola consulta
+            $tiempoPaso = microtime(true);
+            Log::info("⏱️ Paso 2: Obteniendo máximo NUDO...");
             $queryNudo = "SELECT MAX(CAST(NUDO AS INT)) as max_nudo FROM MAEEDO WHERE TIDO = 'NVV' AND ISNUMERIC(NUDO) = 1";
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
@@ -1179,6 +1187,7 @@ class AprobacionController extends Controller
             $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
             $result = shell_exec($command);
             unlink($tempFile);
+            Log::info("⏱️ Paso 2 completado en " . round(microtime(true) - $tiempoPaso, 2) . " segundos");
             
             Log::info("Resultado query máximo NUDO: " . substr($result, 0, 200));
             
@@ -1208,6 +1217,8 @@ class AprobacionController extends Controller
             $nombreVendedor = $cotizacion->user->name ?? 'Vendedor Sistema';
             
             // OPTIMIZACIÓN: Combinar todas las consultas de datos del cliente en una sola
+            $tiempoPaso = microtime(true);
+            Log::info("⏱️ Paso 3: Obteniendo datos del cliente...");
             $queryCliente = "SELECT 
                 LTRIM(RTRIM(SUEN)) as SUCURSAL,
                 ISNULL(DIPRVE, 0) as DIPRVE,
@@ -1221,6 +1232,7 @@ class AprobacionController extends Controller
             $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
             $result = shell_exec($command);
             unlink($tempFile);
+            Log::info("⏱️ Paso 3 completado en " . round(microtime(true) - $tiempoPaso, 2) . " segundos");
             
             // Parsear todos los datos del cliente de una vez
             $sucursalCliente = '';
@@ -1366,6 +1378,8 @@ class AprobacionController extends Controller
                 SET IDENTITY_INSERT MAEEDO OFF
             ";
             
+            $tiempoPaso = microtime(true);
+            Log::info("⏱️ Paso 0: Insertando encabezado MAEEDO...");
             Log::info("=== SQL INSERT MAEEDO ===");
             Log::info("IDMAEEDO: {$siguienteId}");
             Log::info("NUDO: {$nudoFormateado}");
@@ -1384,6 +1398,7 @@ class AprobacionController extends Controller
             $result = shell_exec($command);
             
             unlink($tempFile);
+            Log::info("⏱️ Paso 0 completado en " . round(microtime(true) - $tiempoPaso, 2) . " segundos");
             
             // Log completo del resultado para debugging
             Log::info("=== RESULTADO INSERT MAEEDO ===");
@@ -1467,6 +1482,8 @@ class AprobacionController extends Controller
             Log::info('Encabezado MAEEDO insertado correctamente' . ($nudoDuplicado ? ' (NUDO corregido)' : ''));
             
             // OPTIMIZACIÓN: Obtener todos los precios mínimos en una sola consulta
+            $tiempoPaso = microtime(true);
+            Log::info("⏱️ Paso 4: Obteniendo precios mínimos para " . count($cotizacion->productos) . " productos...");
             $codigosProductos = [];
             foreach ($cotizacion->productos as $producto) {
                 $codigosProductos[] = "'" . substr($producto->codigo_producto, 0, 13) . "'";
@@ -1481,6 +1498,7 @@ class AprobacionController extends Controller
                 $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
                 $result = shell_exec($command);
                 unlink($tempFile);
+                Log::info("⏱️ Paso 4 completado en " . round(microtime(true) - $tiempoPaso, 2) . " segundos");
                 
                 if ($result && !str_contains($result, 'error')) {
                     $lines = explode("\n", $result);
@@ -1576,6 +1594,8 @@ class AprobacionController extends Controller
             
             // OPTIMIZACIÓN: INSERT masivo de todos los detalles en una sola consulta
             if (!empty($insertsMAEDDO)) {
+                $tiempoPaso = microtime(true);
+                Log::info("⏱️ Paso 5: Insertando " . count($insertsMAEDDO) . " líneas en MAEDDO...");
                 $insertMAEDDOMasivo = "
                     INSERT INTO MAEDDO (
                         IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
@@ -1599,6 +1619,7 @@ class AprobacionController extends Controller
                 $result = shell_exec($command);
                 
                 unlink($tempFile);
+                Log::info("⏱️ Paso 5 completado en " . round(microtime(true) - $tiempoPaso, 2) . " segundos");
                 
                 if (str_contains($result, 'Msg') || str_contains($result, 'Error') || str_contains($result, 'Violation')) {
                     Log::error("Error en INSERT masivo MAEDDO: " . substr($result, 0, 500));
@@ -1698,6 +1719,8 @@ class AprobacionController extends Controller
                 };
                 
                 // UPDATE masivo MAEST (STOCKSALIDA)
+                $tiempoPaso = microtime(true);
+                Log::info("⏱️ Paso 6.1: Actualizando MAEST STOCKSALIDA...");
                 $updateMAESTMasivo = "
                     UPDATE MAEST 
                     SET STOCKSALIDA = CASE " . implode(' ', $caseStocksalida) . " ELSE STOCKSALIDA END
@@ -1709,6 +1732,7 @@ class AprobacionController extends Controller
                 $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
                 $resultMAEST = shell_exec($command);
                 unlink($tempFile);
+                Log::info("⏱️ Paso 6.1 completado en " . round(microtime(true) - $tiempoPaso, 2) . " segundos");
                 
                 // Verificar si el UPDATE de MAEST tuvo errores reales
                 $maestActualizado = !$detectarErrorReal($resultMAEST);
@@ -1748,6 +1772,8 @@ class AprobacionController extends Controller
                 }
                 
                 // UPDATE MAEPR (STOCNV1, STOCNV2) - Usar UPDATEs individuales (más confiable)
+                $tiempoPaso = microtime(true);
+                Log::info("⏱️ Paso 6: Actualizando MAEPR STOCNV1/STOCNV2 para " . count($cotizacion->productos) . " productos...");
                 Log::info("🔄 Actualizando MAEPR STOCNV1/STOCNV2 para " . count($cotizacion->productos) . " productos");
                 foreach ($cotizacion->productos as $producto) {
                     $codigo = trim(substr($producto->codigo_producto, 0, 13));
@@ -1819,9 +1845,12 @@ class AprobacionController extends Controller
                         Log::warning("⚠️ No se pudieron verificar los valores para producto {$codigo}. Resultado antes: " . substr($resultAntes, 0, 100) . " | Resultado después: " . substr($resultDespues, 0, 100));
                     }
                 }
+                Log::info("⏱️ Paso 6 completado en " . round(microtime(true) - $tiempoPaso, 2) . " segundos");
                 Log::info("✅ UPDATE MAEPR STOCNV1/STOCNV2 completado para todos los productos");
                 
                 // UPDATE masivo MAEST (STOCNV1, STOCNV2) - IMPORTANTE: En MAEST los campos son STOCNV1/STOCNV2 (sin K)
+                $tiempoPaso = microtime(true);
+                Log::info("⏱️ Paso 7: Actualizando MAEST y MAEPREM...");
                 // IMPORTANTE: MAEST requiere EMPRESA, KOSU y KOBO (no KOPRST)
                 $updateMAESTStockMasivo = "
                     UPDATE MAEST 
@@ -1865,7 +1894,13 @@ class AprobacionController extends Controller
                 }
                 
                 Log::info('Stock comprometido y STOCNV actualizados correctamente (consultas masivas)');
+                Log::info("⏱️ Paso 7 completado en " . round(microtime(true) - $tiempoPaso, 2) . " segundos");
             }
+            
+            $tiempoTotal = microtime(true) - $tiempoInicio;
+            Log::info("⏱️ ========================================");
+            Log::info("⏱️ TOTAL INSERT SQL Server completado en " . round($tiempoTotal, 2) . " segundos");
+            Log::info("⏱️ ========================================");
             
             Log::info('Productos MAEPR actualizados correctamente');
             
