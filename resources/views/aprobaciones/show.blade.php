@@ -652,7 +652,7 @@
                                                                min="0" 
                                                                step="0.01"
                                                                data-producto-id="{{ $producto->id }}"
-                                                               onchange="actualizarPrecio({{ $producto->id }})"
+                                                               data-precio-original="{{ $producto->precio_unitario }}"
                                                                style="width: 100px;">
                                                     @else
                                                         ${{ number_format($producto->precio_unitario, 0) }}
@@ -667,6 +667,7 @@
                                                                max="100" 
                                                                step="0.01"
                                                                data-producto-id="{{ $producto->id }}"
+                                                               data-descuento-original="{{ $producto->descuento_porcentaje ?? 0 }}"
                                                                onchange="actualizarDescuento({{ $producto->id }})"
                                                                style="width: 80px;">
                                                     @else
@@ -2173,9 +2174,12 @@ function actualizarDescuento(productoId) {
         return;
     }
     
-    // Obtener cantidad y precio desde data-* del <tr>
+    // Obtener cantidad desde data-* del <tr>
     const cantidad = parseFloat(row?.dataset?.cantidad || '0');
-    const precioUnitario = parseFloat(row?.dataset?.precio || '0');
+    
+    // Obtener precio desde el input de precio actual (si existe) o desde el dataset del tr
+    const precioInput = row.querySelector(`input.precio-unitario[data-producto-id="${productoId}"]`);
+    const precioUnitario = precioInput ? parseFloat(precioInput.value || precioInput.getAttribute('data-precio-original') || '0') : parseFloat(row?.dataset?.precio || '0');
     
     // Calcular valores
     const subtotal = cantidad * precioUnitario;
@@ -2215,23 +2219,50 @@ function actualizarDescuento(productoId) {
     }
 }
 
-// Función para guardar cambios de descuentos
+// Función para guardar cambios de descuentos y precios
 function guardarCambiosDescuentos(notaId) {
     const descuentos = [];
+    const precios = [];
     
     // Recopilar todos los descuentos modificados
     document.querySelectorAll('.descuento-porcentaje').forEach(input => {
         const productoId = input.dataset.productoId;
         const porcentaje = parseFloat(input.value) || 0;
+        const descuentoOriginal = parseFloat(input.getAttribute('data-descuento-original') || '0');
         
-        descuentos.push({
-            producto_id: productoId,
-            descuento_porcentaje: porcentaje
-        });
+        // Solo agregar si cambió
+        if (porcentaje !== descuentoOriginal) {
+            descuentos.push({
+                producto_id: productoId,
+                descuento_porcentaje: porcentaje
+            });
+        }
     });
     
-    if (descuentos.length === 0) {
-        alert('No hay descuentos para guardar');
+    // Recopilar todos los precios modificados
+    document.querySelectorAll('.precio-unitario').forEach(input => {
+        const productoId = input.dataset.productoId;
+        const nuevoPrecio = parseFloat(input.value) || 0;
+        const precioOriginal = parseFloat(input.getAttribute('data-precio-original') || '0');
+        
+        // Validar que el precio sea positivo
+        if (nuevoPrecio <= 0) {
+            showNotification('El precio debe ser mayor a 0 para el producto ID: ' + productoId, 'error');
+            input.value = precioOriginal;
+            return;
+        }
+        
+        // Solo agregar si cambió
+        if (nuevoPrecio !== precioOriginal) {
+            precios.push({
+                producto_id: productoId,
+                precio_unitario: nuevoPrecio
+            });
+        }
+    });
+    
+    if (descuentos.length === 0 && precios.length === 0) {
+        alert('No hay cambios para guardar');
         return;
     }
     
@@ -2244,53 +2275,113 @@ function guardarCambiosDescuentos(notaId) {
         btn.innerHTML = '<i class="material-icons">hourglass_empty</i> Guardando...';
     }
     
-    // Enviar petición AJAX
-    fetch(`/aprobaciones/${notaId}/modificar-descuentos`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': '{{ csrf_token() }}'
-        },
-        body: JSON.stringify({
-            descuentos: descuentos
-        })
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.text().then(text => {
-                throw new Error(text);
-            });
+    // Función para actualizar totales en la vista
+    const actualizarTotales = (totales) => {
+        if (totales) {
+            const resumenSub = document.getElementById('resumen-subtotal');
+            const resumenDesc = document.getElementById('resumen-descuento');
+            const resumenTotal = document.getElementById('resumen-total');
+            if (resumenSub) resumenSub.textContent = '$' + Math.round(totales.subtotal_neto || 0).toLocaleString('es-CL');
+            if (resumenDesc) resumenDesc.textContent = '$' + Math.round(totales.descuento || 0).toLocaleString('es-CL');
+            if (resumenTotal) resumenTotal.textContent = '$' + Math.round(totales.total || 0).toLocaleString('es-CL');
         }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            showNotification('Descuentos actualizados correctamente', 'success');
-            if (data.totales) {
-                const resumenSub = document.getElementById('resumen-subtotal');
-                const resumenDesc = document.getElementById('resumen-descuento');
-                const resumenTotal = document.getElementById('resumen-total');
-                if (resumenSub) resumenSub.textContent = '$' + Math.round(data.totales.subtotal_neto || 0).toLocaleString('es-CL');
-                if (resumenDesc) resumenDesc.textContent = '$' + Math.round(data.totales.descuento || 0).toLocaleString('es-CL');
-                if (resumenTotal) resumenTotal.textContent = '$' + Math.round(data.totales.total || 0).toLocaleString('es-CL');
+    };
+    
+    // Guardar precios primero (si hay cambios)
+    const guardarPrecios = () => {
+        if (precios.length === 0) {
+            return Promise.resolve(null);
+        }
+        
+        return fetch(`/aprobaciones/${notaId}/modificar-precios`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}'
+            },
+            body: JSON.stringify({
+                precios: precios
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.text().then(text => {
+                    throw new Error(text);
+                });
             }
+            return response.json();
+        });
+    };
+    
+    // Guardar descuentos después (si hay cambios)
+    const guardarDescuentos = () => {
+        if (descuentos.length === 0) {
+            return Promise.resolve(null);
+        }
+        
+        return fetch(`/aprobaciones/${notaId}/modificar-descuentos`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}'
+            },
+            body: JSON.stringify({
+                descuentos: descuentos
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.text().then(text => {
+                    throw new Error(text);
+                });
+            }
+            return response.json();
+        });
+    };
+    
+    // Ejecutar ambas operaciones secuencialmente
+    guardarPrecios()
+        .then(preciosResult => {
+            if (preciosResult && preciosResult.success) {
+                actualizarTotales(preciosResult.totales);
+            }
+            return guardarDescuentos();
+        })
+        .then(descuentosResult => {
+            if (descuentosResult && descuentosResult.success) {
+                actualizarTotales(descuentosResult.totales);
+            }
+            
+            // Mensaje final
+            const mensajes = [];
+            if (precios.length > 0) mensajes.push(`${precios.length} precio(s)`);
+            if (descuentos.length > 0) mensajes.push(`${descuentos.length} descuento(s)`);
+            
+            showNotification('Cambios guardados correctamente: ' + mensajes.join(' y '), 'success');
+            
+            // Actualizar valores originales en los inputs
+            document.querySelectorAll('.precio-unitario').forEach(input => {
+                input.setAttribute('data-precio-original', input.value);
+            });
+            document.querySelectorAll('.descuento-porcentaje').forEach(input => {
+                input.setAttribute('data-descuento-original', input.value);
+            });
+            
+            // Recargar la página para reflejar todos los cambios
+            setTimeout(() => {
+                location.reload();
+            }, 1500);
+            
             if (btn) { btn.disabled = false; btn.innerHTML = originalText; }
-        } else {
-            showNotification('Error al actualizar descuentos: ' + (data.message || 'Error desconocido'), 'error');
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('Error al guardar cambios: ' + error.message, 'error');
             if (btn) {
                 btn.disabled = false;
                 btn.innerHTML = originalText;
             }
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showNotification('Error al actualizar descuentos: ' + error.message, 'error');
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = originalText;
-        }
-    });
+        });
 }
 
 // Mostrar notificación
