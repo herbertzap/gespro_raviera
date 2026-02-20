@@ -493,7 +493,8 @@ class AprobacionController extends Controller
         Log::info("Request data: " . json_encode($request->all()));
         Log::info("========================================");
         
-        // Establecer timeout de 30 segundos para evitar cuelgues
+        // Establecer timeout inicial de 30 segundos para validaciones rápidas
+        // Se aumentará antes del proceso de inserción en SQL Server que puede tardar más
         set_time_limit(30);
         
         // IMPORTANTE: Cerrar la sesión inmediatamente para no bloquear otras peticiones
@@ -1128,6 +1129,9 @@ class AprobacionController extends Controller
     private function insertarEnSQLServer($cotizacion, $datosPicking = [])
     {
         try {
+            // Aumentar tiempo límite para proceso de inserción que puede tardar 60-120 segundos
+            set_time_limit(180); // 3 minutos para asegurar que complete el proceso
+            
             // Obtener siguiente correlativo para IDMAEEDO
             $queryCorrelativo = "SELECT TOP 1 ISNULL(MAX(IDMAEEDO), 0) + 1 AS siguiente_id FROM MAEEDO WHERE EMPRESA = '01'";
             

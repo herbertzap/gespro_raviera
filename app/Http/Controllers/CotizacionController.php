@@ -1918,6 +1918,9 @@ class CotizacionController extends Controller
     private function insertarNotaVentaSQLServer($cotizacion)
     {
         try {
+            // Aumentar tiempo límite para proceso de inserción que puede tardar 60-120 segundos
+            set_time_limit(180); // 3 minutos para asegurar que complete el proceso
+            
             // Obtener siguiente correlativo para MAEEDO
             $queryCorrelativo = "SELECT TOP 1 ISNULL(MAX(IDMAEEDO), 0) + 1 AS siguiente_id FROM MAEEDO WHERE EMPRESA = '01'";
             
@@ -1991,7 +1994,9 @@ class CotizacionController extends Controller
             // Insertar detalles en MAEDDO
             foreach ($cotizacion->detalles as $index => $detalle) {
                 $lineaId = $index + 1;
-                
+                $nombreProducto = \App\Helpers\ProductoHelper::limpiarNombreParaNVV($detalle->producto_nombre ?? '');
+                $nombreProducto = substr(str_replace("'", "''", $nombreProducto), 0, 50);
+
                 $insertMAEDDO = "
                     INSERT INTO MAEDDO (
                         IDMAEEDO, IDMAEDDO, KOPRCT, NOKOPR, CAPRCO1, PPPRNE, 
@@ -2003,7 +2008,7 @@ class CotizacionController extends Controller
                         KOFUGE6, KOFUGE7, KOFUGE8, KOFUGE9, KOFUGE10
                     ) VALUES (
                         {$siguienteId}, {$lineaId}, '{$detalle->producto_codigo}', 
-                        '{$detalle->producto_nombre}', {$detalle->cantidad}, 
+                        '{$nombreProducto}', {$detalle->cantidad}, 
                         {$detalle->precio}, 0, 0, '01', 'NVV', {$siguienteId},
                         '{$cotizacion->cliente_codigo}', '001', GETDATE(),
                         '{$fechaVencimiento}', " . ($detalle->cantidad * $detalle->precio) . ",

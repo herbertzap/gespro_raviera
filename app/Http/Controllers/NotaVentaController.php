@@ -2064,6 +2064,9 @@ class NotaVentaController extends Controller
     private function insertarNotaVentaSQLServer($cotizacion)
     {
         try {
+            // Aumentar tiempo límite para proceso de inserción que puede tardar 60-120 segundos
+            set_time_limit(180); // 3 minutos para asegurar que complete el proceso
+            
             // Obtener siguiente correlativo para MAEEDO
             $queryCorrelativo = "SELECT TOP 1 ISNULL(MAX(IDMAEEDO), 0) + 1 AS siguiente_id FROM MAEEDO WHERE EMPRESA = '01'";
             
