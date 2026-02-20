@@ -653,6 +653,7 @@
                                                                step="0.01"
                                                                data-producto-id="{{ $producto->id }}"
                                                                data-precio-original="{{ $producto->precio_unitario }}"
+                                                               oninput="actualizarCalculosProducto({{ $producto->id }})"
                                                                style="width: 100px;">
                                                     @else
                                                         ${{ number_format($producto->precio_unitario, 0) }}
@@ -668,7 +669,7 @@
                                                                step="0.01"
                                                                data-producto-id="{{ $producto->id }}"
                                                                data-descuento-original="{{ $producto->descuento_porcentaje ?? 0 }}"
-                                                               onchange="actualizarDescuento({{ $producto->id }})"
+                                                               oninput="actualizarCalculosProducto({{ $producto->id }})"
                                                                style="width: 80px;">
                                                     @else
                                                         <span class="badge badge-warning">{{ $producto->descuento_porcentaje ?? 0 }}%</span>
@@ -2083,25 +2084,11 @@ function separarProductosSeleccionados() {
     }
 }
 
-// Función para actualizar descuento en tiempo real (solo visual, no guarda)
-function actualizarDescuento(productoId) {
-    const input = document.querySelector(`input[data-producto-id="${productoId}"]`);
-    if (!input) {
-        console.error('No se encontró el input para el producto:', productoId);
-        return;
-    }
-    
-    const porcentaje = parseFloat(input.value) || 0;
-    
-    // Validar que el porcentaje esté entre 0 y 100
-    if (porcentaje < 0 || porcentaje > 100) {
-        alert('El descuento debe estar entre 0 y 100%');
-        input.value = 0;
-        return;
-    }
-    
-    // Obtener datos del producto desde la fila de la tabla
-    const row = input.closest('tr');
+// Función para actualizar cálculos del producto en tiempo real (solo visual, no guarda)
+// Se ejecuta cuando cambia el precio o el descuento
+function actualizarCalculosProducto(productoId) {
+    // Obtener la fila del producto
+    const row = document.querySelector(`tr[data-producto-id="${productoId}"]`);
     if (!row) {
         console.error('No se encontró la fila para el producto:', productoId);
         return;
@@ -2112,11 +2099,37 @@ function actualizarDescuento(productoId) {
     
     // Obtener precio desde el input de precio actual (si existe) o desde el dataset del tr
     const precioInput = row.querySelector(`input.precio-unitario[data-producto-id="${productoId}"]`);
-    const precioUnitario = precioInput ? parseFloat(precioInput.value || precioInput.getAttribute('data-precio-original') || '0') : parseFloat(row?.dataset?.precio || '0');
+    let precioUnitario = 0;
+    if (precioInput) {
+        precioUnitario = parseFloat(precioInput.value) || parseFloat(precioInput.getAttribute('data-precio-original') || '0');
+        // Validar que el precio sea positivo
+        if (precioUnitario <= 0) {
+            precioUnitario = parseFloat(precioInput.getAttribute('data-precio-original') || '0');
+        }
+    } else {
+        precioUnitario = parseFloat(row?.dataset?.precio || '0');
+    }
+    
+    // Obtener descuento desde el input de descuento actual (si existe) o desde el dataset
+    const descuentoInput = row.querySelector(`input.descuento-porcentaje[data-producto-id="${productoId}"]`);
+    let porcentajeDescuento = 0;
+    if (descuentoInput) {
+        porcentajeDescuento = parseFloat(descuentoInput.value) || 0;
+        // Validar que el porcentaje esté entre 0 y 100
+        if (porcentajeDescuento < 0) {
+            porcentajeDescuento = 0;
+            descuentoInput.value = 0;
+        } else if (porcentajeDescuento > 100) {
+            porcentajeDescuento = 100;
+            descuentoInput.value = 100;
+        }
+    } else {
+        porcentajeDescuento = parseFloat(row?.dataset?.descuento || '0');
+    }
     
     // Calcular valores
     const subtotal = cantidad * precioUnitario;
-    const descuentoValor = (subtotal * porcentaje) / 100;
+    const descuentoValor = (subtotal * porcentajeDescuento) / 100;
     const subtotalConDescuento = subtotal - descuentoValor;
     const iva = subtotalConDescuento * 0.19;
     const total = subtotalConDescuento + iva;
@@ -2129,27 +2142,79 @@ function actualizarDescuento(productoId) {
     
     if (descuentoValorEl) {
         descuentoValorEl.textContent = '$' + Math.round(descuentoValor).toLocaleString('es-CL');
-    } else {
-        console.warn('No se encontró el elemento de descuento valor para el producto:', productoId);
     }
     
     if (subtotalEl) {
         subtotalEl.textContent = '$' + Math.round(subtotalConDescuento).toLocaleString('es-CL');
-    } else {
-        console.warn('No se encontró el elemento de subtotal para el producto:', productoId);
     }
     
     if (ivaEl) {
         ivaEl.textContent = '$' + Math.round(iva).toLocaleString('es-CL');
-    } else {
-        console.warn('No se encontró el elemento de IVA para el producto:', productoId);
     }
     
     if (totalEl) {
         totalEl.textContent = '$' + Math.round(total).toLocaleString('es-CL');
-    } else {
-        console.warn('No se encontró el elemento de total para el producto:', productoId);
     }
+    
+    // Actualizar totales generales sumando todos los productos
+    actualizarTotalesGenerales();
+}
+
+// Función para actualizar totales generales sumando todos los productos
+function actualizarTotalesGenerales() {
+    let subtotalNetoTotal = 0;
+    let descuentoTotal = 0;
+    let totalGeneral = 0;
+    
+    // Recorrer todas las filas de productos
+    document.querySelectorAll('tr[data-producto-id]').forEach(row => {
+        const productoId = row.dataset.productoId;
+        const cantidad = parseFloat(row?.dataset?.cantidad || '0');
+        
+        // Obtener precio actual
+        const precioInput = row.querySelector(`input.precio-unitario[data-producto-id="${productoId}"]`);
+        let precioUnitario = 0;
+        if (precioInput) {
+            precioUnitario = parseFloat(precioInput.value) || parseFloat(precioInput.getAttribute('data-precio-original') || '0');
+            if (precioUnitario <= 0) {
+                precioUnitario = parseFloat(precioInput.getAttribute('data-precio-original') || '0');
+            }
+        } else {
+            precioUnitario = parseFloat(row?.dataset?.precio || '0');
+        }
+        
+        // Obtener descuento actual
+        const descuentoInput = row.querySelector(`input.descuento-porcentaje[data-producto-id="${productoId}"]`);
+        let porcentajeDescuento = 0;
+        if (descuentoInput) {
+            porcentajeDescuento = parseFloat(descuentoInput.value) || 0;
+            if (porcentajeDescuento < 0) porcentajeDescuento = 0;
+            if (porcentajeDescuento > 100) porcentajeDescuento = 100;
+        } else {
+            porcentajeDescuento = parseFloat(row?.dataset?.descuento || '0');
+        }
+        
+        // Calcular valores del producto
+        const subtotal = cantidad * precioUnitario;
+        const descuentoValor = (subtotal * porcentajeDescuento) / 100;
+        const subtotalConDescuento = subtotal - descuentoValor;
+        const iva = subtotalConDescuento * 0.19;
+        const total = subtotalConDescuento + iva;
+        
+        // Sumar a totales
+        subtotalNetoTotal += subtotalConDescuento;
+        descuentoTotal += descuentoValor;
+        totalGeneral += total;
+    });
+    
+    // Actualizar resumen en la vista
+    const resumenSub = document.getElementById('resumen-subtotal');
+    const resumenDesc = document.getElementById('resumen-descuento');
+    const resumenTotal = document.getElementById('resumen-total');
+    
+    if (resumenSub) resumenSub.textContent = '$' + Math.round(subtotalNetoTotal).toLocaleString('es-CL');
+    if (resumenDesc) resumenDesc.textContent = '$' + Math.round(descuentoTotal).toLocaleString('es-CL');
+    if (resumenTotal) resumenTotal.textContent = '$' + Math.round(totalGeneral).toLocaleString('es-CL');
 }
 
 // Función para guardar cambios de descuentos y precios
