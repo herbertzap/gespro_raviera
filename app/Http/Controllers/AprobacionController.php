@@ -1130,7 +1130,7 @@ class AprobacionController extends Controller
     {
         try {
             // Aumentar tiempo límite para proceso de inserción que puede tardar 60-120 segundos
-            set_time_limit(300); // 5 minutos para asegurar que complete el proceso
+            set_time_limit(600); // 10 minutos para asegurar que complete el proceso sin errores de timeout
             
             $tiempoInicio = microtime(true);
             Log::info("⏱️ INICIO INSERT SQL Server - Tiempo límite: 300 segundos");
@@ -4021,6 +4021,118 @@ class AprobacionController extends Controller
             DB::rollback();
             \Log::error('Error modificando descuentos: ' . $e->getMessage());
             return response()->json(['error' => 'Error al modificar descuentos: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Modificar precios de productos (Supervisor)
+     */
+    public function modificarPreciosProductos(Request $request, $id)
+    {
+        try {
+            $cotizacion = Cotizacion::findOrFail($id);
+            
+            // Verificar permisos - solo supervisor puede modificar precios
+            if (!auth()->user()->hasRole('Supervisor')) {
+                return response()->json(['error' => 'No tienes permisos para modificar precios'], 403);
+            }
+            
+            // Verificar que puede aprobar supervisor o está pendiente de aprobación
+            if (!$cotizacion->puedeAprobarSupervisor() && $cotizacion->estado_aprobacion !== 'pendiente') {
+                return response()->json(['error' => 'Esta nota de venta no permite modificación de precios en este estado'], 400);
+            }
+            
+            // Verificar que no se haya insertado en SQL Server aún
+            if ($cotizacion->numero_nvv && $cotizacion->id_maeedo) {
+                return response()->json(['error' => 'No se pueden modificar precios después de insertar en SQL Server'], 400);
+            }
+            
+            $precios = $request->input('precios', []);
+            
+            if (empty($precios)) {
+                return response()->json(['error' => 'No se proporcionaron precios para modificar'], 400);
+            }
+            
+            DB::beginTransaction();
+            
+            foreach ($precios as $precioData) {
+                $producto = $cotizacion->productos()->find($precioData['producto_id']);
+                
+                if ($producto) {
+                    $nuevoPrecio = floatval($precioData['precio_unitario']);
+                    
+                    // Validar que el precio sea positivo
+                    if ($nuevoPrecio <= 0) {
+                        throw new \Exception('El precio debe ser mayor a 0');
+                    }
+                    
+                    // Calcular valores con el nuevo precio
+                    $subtotal = $producto->cantidad * $nuevoPrecio;
+                    $porcentajeDescuento = $producto->descuento_porcentaje ?? 0;
+                    $descuentoValor = ($subtotal * $porcentajeDescuento) / 100;
+                    $subtotalConDescuento = $subtotal - $descuentoValor;
+                    $iva = $subtotalConDescuento * 0.19;
+                    $total = $subtotalConDescuento + $iva;
+                    
+                    // Actualizar producto con nuevo precio
+                    $producto->update([
+                        'precio_unitario' => $nuevoPrecio,
+                        'subtotal' => $subtotal,
+                        'descuento_valor' => $descuentoValor,
+                        'subtotal_con_descuento' => $subtotalConDescuento,
+                        'iva_valor' => $iva,
+                        'total_producto' => $total
+                    ]);
+                }
+            }
+            
+            // Recalcular totales de la cotización
+            $productos = $cotizacion->productos;
+            $subtotal = $productos->sum('subtotal');
+            $descuentoGlobal = $productos->sum('descuento_valor');
+            $subtotalNeto = $productos->sum('subtotal_con_descuento');
+            $iva = $productos->sum('iva_valor');
+            $total = $productos->sum('total_producto');
+            
+            $cotizacion->update([
+                'subtotal' => $subtotal,
+                'descuento_global' => $descuentoGlobal,
+                'subtotal_neto' => $subtotalNeto,
+                'iva' => $iva,
+                'total' => $total
+            ]);
+            
+            // Registrar en historial
+            \App\Models\CotizacionHistorial::crearRegistro(
+                $cotizacion->id,
+                $cotizacion->estado_aprobacion,
+                'aprobacion',
+                $cotizacion->estado_aprobacion,
+                'Precios modificados por supervisor',
+                [
+                    'modificado_por' => auth()->id(),
+                    'productos_modificados' => count($precios)
+                ]
+            );
+            
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Precios actualizados correctamente',
+                'totales' => [
+                    'subtotal' => (float) $subtotal,
+                    'descuento' => (float) $descuentoGlobal,
+                    'subtotal_neto' => (float) $subtotalNeto,
+                    'iva' => (float) $iva,
+                    'total' => (float) $total,
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollback();
+            \Log::error('Error modificando precios: ' . $e->getMessage());
+            return response()->json(['error' => 'Error al modificar precios: ' . $e->getMessage()], 500);
         }
     }
 

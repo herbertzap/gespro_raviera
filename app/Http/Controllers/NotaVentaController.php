@@ -2065,7 +2065,7 @@ class NotaVentaController extends Controller
     {
         try {
             // Aumentar tiempo límite para proceso de inserción que puede tardar 60-120 segundos
-            set_time_limit(300); // 5 minutos para asegurar que complete el proceso
+            set_time_limit(600); // 10 minutos para asegurar que complete el proceso sin errores de timeout
             
             // Obtener siguiente correlativo para MAEEDO
             $queryCorrelativo = "SELECT TOP 1 ISNULL(MAX(IDMAEEDO), 0) + 1 AS siguiente_id FROM MAEEDO WHERE EMPRESA = '01'";

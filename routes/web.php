@@ -153,6 +153,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/aprobaciones/{id}/separar-productos', [App\Http\Controllers\AprobacionController::class, 'separarProductos'])->name('aprobaciones.separar-productos');
     Route::post('/aprobaciones/{id}/modificar-cantidades', [App\Http\Controllers\AprobacionController::class, 'modificarCantidadesProductos'])->name('aprobaciones.modificar-cantidades');
     Route::post('/aprobaciones/{id}/modificar-descuentos', [App\Http\Controllers\AprobacionController::class, 'modificarDescuentosProductos'])->name('aprobaciones.modificar-descuentos');
+    Route::post('/aprobaciones/{id}/modificar-precios', [App\Http\Controllers\AprobacionController::class, 'modificarPreciosProductos'])->name('aprobaciones.modificar-precios');
     Route::post('/aprobaciones/{id}/sincronizar-stock', [App\Http\Controllers\AprobacionController::class, 'sincronizarStock'])->name('aprobaciones.sincronizar-stock');
 });
 

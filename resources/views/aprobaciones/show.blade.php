@@ -645,7 +645,18 @@
                                                     @endif
                                                 </td>
                                                 <td>
-                                                    ${{ number_format($producto->precio_unitario, 0) }}
+                                                    @if(Auth::user()->hasRole('Supervisor') && $cotizacion->puedeAprobarSupervisor() && $cotizacion->estado_aprobacion !== 'rechazada' && !$cotizacion->numero_nvv)
+                                                        <input type="number" 
+                                                               class="form-control form-control-sm precio-unitario" 
+                                                               value="{{ $producto->precio_unitario }}" 
+                                                               min="0" 
+                                                               step="0.01"
+                                                               data-producto-id="{{ $producto->id }}"
+                                                               onchange="actualizarPrecio({{ $producto->id }})"
+                                                               style="width: 100px;">
+                                                    @else
+                                                        ${{ number_format($producto->precio_unitario, 0) }}
+                                                    @endif
                                                 </td>
                                                 <td>
                                                     @if(Auth::user()->hasRole('Supervisor') && $cotizacion->puedeAprobarSupervisor() && $cotizacion->estado_aprobacion !== 'rechazada')
@@ -2072,6 +2083,73 @@ function separarProductosSeleccionados() {
 }
 
 // Función para actualizar descuento en tiempo real
+function actualizarPrecio(productoId) {
+    const input = document.querySelector(`input[data-producto-id="${productoId}"].precio-unitario`);
+    if (!input) {
+        console.error('No se encontró el input de precio para el producto:', productoId);
+        return;
+    }
+    
+    const nuevoPrecio = parseFloat(input.value);
+    
+    if (isNaN(nuevoPrecio) || nuevoPrecio <= 0) {
+        showNotification('El precio debe ser un número mayor a 0', 'error');
+        // Restaurar valor anterior
+        input.value = input.getAttribute('data-precio-anterior') || input.value;
+        return;
+    }
+    
+    // Guardar precio anterior para poder restaurarlo si falla
+    if (!input.getAttribute('data-precio-anterior')) {
+        input.setAttribute('data-precio-anterior', input.value);
+    }
+    
+    fetch('{{ route("aprobaciones.modificar-precios", $cotizacion->id) }}', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            precios: [{
+                producto_id: productoId,
+                precio_unitario: nuevoPrecio
+            }]
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('Precio actualizado correctamente', 'success');
+            if (data.totales) {
+                const resumenSub = document.getElementById('resumen-subtotal');
+                const resumenDesc = document.getElementById('resumen-descuento');
+                const resumenTotal = document.getElementById('resumen-total');
+                if (resumenSub) resumenSub.textContent = '$' + Math.round(data.totales.subtotal_neto || 0).toLocaleString('es-CL');
+                if (resumenDesc) resumenDesc.textContent = '$' + Math.round(data.totales.descuento || 0).toLocaleString('es-CL');
+                if (resumenTotal) resumenTotal.textContent = '$' + Math.round(data.totales.total || 0).toLocaleString('es-CL');
+            }
+            // Actualizar precio anterior guardado
+            input.setAttribute('data-precio-anterior', nuevoPrecio);
+            // Recargar la página para reflejar cambios en todos los campos
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+        } else {
+            showNotification('Error al actualizar precio: ' + (data.error || 'Error desconocido'), 'error');
+            // Restaurar valor anterior
+            input.value = input.getAttribute('data-precio-anterior') || input.value;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Error al actualizar precio: ' + error.message, 'error');
+        // Restaurar valor anterior
+        input.value = input.getAttribute('data-precio-anterior') || input.value;
+    });
+}
+
 function actualizarDescuento(productoId) {
     const input = document.querySelector(`input[data-producto-id="${productoId}"]`);
     if (!input) {
