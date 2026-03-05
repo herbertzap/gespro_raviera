@@ -61,13 +61,18 @@ class SincronizarClientesSimple extends Command
             
             $this->info("📋 Procesando datos...");
             
+            // Convertir salida de tsql (suele venir en Latin1/CP1252) a UTF-8 para ñ y acentos
+            if (!mb_check_encoding($output, 'UTF-8')) {
+                $output = @mb_convert_encoding($output, 'UTF-8', 'ISO-8859-1') ?: $output;
+            }
+            if (!mb_check_encoding($output, 'UTF-8')) {
+                $output = @mb_convert_encoding($output, 'UTF-8', 'Windows-1252') ?: $output;
+            }
+            
             // Procesar la salida línea por línea (como funcionaba con GOP)
             $lines = explode("\n", $output);
             $clientesExternos = [];
             $lineaNumero = 0;
-            
-            // Asegurar que la salida esté en UTF-8
-            $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
             
             foreach ($lines as $line) {
                 $line = trim($line);
@@ -172,11 +177,30 @@ class SincronizarClientesSimple extends Command
         }
     }
     
+    /**
+     * Asegurar que un texto esté en UTF-8 (para ñ, acentos desde SQL Server/Latin1).
+     */
+    public static function asegurarUtf8($str)
+    {
+        if ($str === '' || $str === null) {
+            return (string) $str;
+        }
+        if (mb_check_encoding($str, 'UTF-8')) {
+            return $str;
+        }
+        $converted = @mb_convert_encoding($str, 'UTF-8', 'ISO-8859-1');
+        if ($converted !== false) {
+            return $converted;
+        }
+        $converted = @mb_convert_encoding($str, 'UTF-8', 'Windows-1252');
+        return $converted !== false ? $converted : $str;
+    }
+
     public static function extraerClienteDeLinea($line, $vendedor = null)
     {
         try {
-            // Asegurar que la línea esté en UTF-8
-            $line = mb_convert_encoding($line, 'UTF-8', 'UTF-8');
+            // Asegurar que la línea esté en UTF-8 (tsql suele devolver Latin1)
+            $line = self::asegurarUtf8($line);
             
             // Buscar líneas que contengan datos (código de cliente seguido de | con o sin espacios)
             if (!preg_match('/^(\d+)\s*\|(.+)$/', $line, $matches)) {
@@ -216,61 +240,60 @@ class SincronizarClientesSimple extends Command
             // Nota: Después de extraer el código cliente, el formato ejecutarSincronizacion tiene 12 campos
             if ($numCampos >= 12) {
                 // Formato ejecutarSincronizacion (después de extraer código): NOKOEN(0), DIEN(1), FOEN(2), KOFUEN(3), NOKOFU(4), NOKOCI(5), NOKOCM(6), CRTO(7), SUEN(8), BLOQUEADO(9), CPEN(10), DIPRVE(11)
-                $nombreCliente = trim($campos[0] ?? '');
-                $direccion = trim($campos[1] ?? '');
-                $telefono = trim($campos[2] ?? '');
+                $nombreCliente = self::asegurarUtf8(trim($campos[0] ?? ''));
+                $direccion = self::asegurarUtf8(trim($campos[1] ?? ''));
+                $telefono = self::asegurarUtf8(trim($campos[2] ?? ''));
                 $codigoVendedor = trim($campos[3] ?? $vendedor ?? 'LCB');
-                $nombreVendedor = trim($campos[4] ?? '');
-                $region = trim($campos[5] ?? ''); // NOKOCI - nombre de región
-                $comuna = trim($campos[6] ?? ''); // NOKOCM - nombre de comuna
+                $nombreVendedor = self::asegurarUtf8(trim($campos[4] ?? ''));
+                $region = self::asegurarUtf8(trim($campos[5] ?? '')); // NOKOCI - nombre de región
+                $comuna = self::asegurarUtf8(trim($campos[6] ?? '')); // NOKOCM - nombre de comuna
                 // CRTO puede venir en notación científica (1e+007), convertir correctamente
                 $creditoTotalStr = trim($campos[7] ?? '0');
                 $creditoTotal = (float)$creditoTotalStr;
                 $saldoUtilizadoStr = trim($campos[8] ?? '0');
                 $saldoUtilizado = (float)$saldoUtilizadoStr;
                 $bloqueado = trim($campos[9] ?? '0');
-                $condicionPago = trim($campos[10] ?? ''); // CPEN - posición 10
-                $diasCredito = intval(trim($campos[11] ?? 0)); // DIPRVE - posición 11
+                $condicionPago = self::asegurarUtf8(trim($campos[10] ?? ''));
+                $diasCredito = intval(trim($campos[11] ?? 0));
             } elseif ($numCampos == 12) {
                 // Formato handle/sincronizar-simple: NOKOEN(0), DIEN(1), FOEN(2), KOFUEN(3), EMAIL(4), BLOQUEADO(5), CPEN(6), DIPRVE(7), OBEN(8), RTEN(9), CIEN(10), CMEN(11)
-                $nombreCliente = trim($campos[0] ?? '');
-                $direccion = trim($campos[1] ?? '');
-                $telefono = trim($campos[2] ?? '');
+                $nombreCliente = self::asegurarUtf8(trim($campos[0] ?? ''));
+                $direccion = self::asegurarUtf8(trim($campos[1] ?? ''));
+                $telefono = self::asegurarUtf8(trim($campos[2] ?? ''));
                 $codigoVendedor = trim($campos[3] ?? $vendedor ?? 'LCB');
                 $email = trim($campos[4] ?? '');
                 $bloqueado = trim($campos[5] ?? '0');
-                $condicionPago = trim($campos[6] ?? '');
+                $condicionPago = self::asegurarUtf8(trim($campos[6] ?? ''));
                 $diasCredito = intval(trim($campos[7] ?? 0));
-                $comentarioAdmin = trim($campos[8] ?? '');
+                $comentarioAdmin = self::asegurarUtf8(trim($campos[8] ?? ''));
                 $rutCliente = trim($campos[9] ?? '');
-                $region = trim($campos[10] ?? ''); // CIEN - código de región
-                $comuna = trim($campos[11] ?? ''); // CMEN - código de comuna
+                $region = self::asegurarUtf8(trim($campos[10] ?? ''));
+                $comuna = self::asegurarUtf8(trim($campos[11] ?? ''));
             } elseif ($numCampos == 10) {
-                // Formato sincronizarTodosLosClientes: NOKOEN(0), DIEN(1), FOEN(2), KOFUEN(3), NOKOFU(4), NOKOCI(5), NOKOCM(6), 0(7), CPEN(8), DIPRVE(9)
-                // Nota: El campo 7 es un 0 fijo, no se usa
-                $nombreCliente = trim($campos[0] ?? '');
-                $direccion = trim($campos[1] ?? '');
-                $telefono = trim($campos[2] ?? '');
+                // Formato sincronizarTodosLosClientes
+                $nombreCliente = self::asegurarUtf8(trim($campos[0] ?? ''));
+                $direccion = self::asegurarUtf8(trim($campos[1] ?? ''));
+                $telefono = self::asegurarUtf8(trim($campos[2] ?? ''));
                 $codigoVendedor = trim($campos[3] ?? $vendedor ?? 'LCB');
-                $nombreVendedor = trim($campos[4] ?? '');
-                $region = trim($campos[5] ?? ''); // NOKOCI - posición 5
-                $comuna = trim($campos[6] ?? ''); // NOKOCM - posición 6
-                $condicionPago = trim($campos[8] ?? ''); // CPEN - posición 8 (saltando el 0 en posición 7)
-                $diasCredito = intval(trim($campos[9] ?? 0)); // DIPRVE - posición 9
+                $nombreVendedor = self::asegurarUtf8(trim($campos[4] ?? ''));
+                $region = self::asegurarUtf8(trim($campos[5] ?? ''));
+                $comuna = self::asegurarUtf8(trim($campos[6] ?? ''));
+                $condicionPago = self::asegurarUtf8(trim($campos[8] ?? ''));
+                $diasCredito = intval(trim($campos[9] ?? 0));
             } else {
-                // Formato antiguo o desconocido - intentar extraer campos básicos
-                $nombreCliente = trim($campos[0] ?? '');
-                $direccion = trim($campos[1] ?? '');
-                $telefono = trim($campos[2] ?? '');
+                // Formato antiguo o desconocido
+                $nombreCliente = self::asegurarUtf8(trim($campos[0] ?? ''));
+                $direccion = self::asegurarUtf8(trim($campos[1] ?? ''));
+                $telefono = self::asegurarUtf8(trim($campos[2] ?? ''));
                 $codigoVendedor = trim($campos[3] ?? $vendedor ?? 'LCB');
                 if ($numCampos > 4) {
-                    $nombreVendedor = trim($campos[4] ?? '');
+                    $nombreVendedor = self::asegurarUtf8(trim($campos[4] ?? ''));
                 }
                 if ($numCampos > 5) {
-                    $region = trim($campos[5] ?? '');
+                    $region = self::asegurarUtf8(trim($campos[5] ?? ''));
                 }
                 if ($numCampos > 6) {
-                    $comuna = trim($campos[6] ?? '');
+                    $comuna = self::asegurarUtf8(trim($campos[6] ?? ''));
                 }
             }
             
@@ -379,15 +402,20 @@ class SincronizarClientesSimple extends Command
                 throw new \Exception('Error ejecutando consulta tsql: ' . $output);
             }
             
+            // Convertir salida de tsql a UTF-8 (ñ, acentos)
+            if (!mb_check_encoding($output, 'UTF-8')) {
+                $output = @mb_convert_encoding($output, 'UTF-8', 'ISO-8859-1') ?: $output;
+            }
+            if (!mb_check_encoding($output, 'UTF-8')) {
+                $output = @mb_convert_encoding($output, 'UTF-8', 'Windows-1252') ?: $output;
+            }
+            
             // Procesar la salida línea por línea (como funcionaba con GOP)
             $lines = explode("\n", $output);
             $clientesExternos = [];
             
-            // Asegurar que la salida esté en UTF-8
-            $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
-            
             foreach ($lines as $line) {
-                $line = trim($line);
+                $line = self::asegurarUtf8(trim($line));
                 
                 // Saltar líneas vacías o de configuración
                 if (empty($line) || 
@@ -535,15 +563,20 @@ class SincronizarClientesSimple extends Command
                 throw new \Exception('Error ejecutando consulta tsql: ' . $output);
             }
             
+            // Convertir salida de tsql a UTF-8 (ñ, acentos)
+            if (!mb_check_encoding($output, 'UTF-8')) {
+                $output = @mb_convert_encoding($output, 'UTF-8', 'ISO-8859-1') ?: $output;
+            }
+            if (!mb_check_encoding($output, 'UTF-8')) {
+                $output = @mb_convert_encoding($output, 'UTF-8', 'Windows-1252') ?: $output;
+            }
+            
             // Procesar la salida línea por línea
             $lines = explode("\n", $output);
             $clientesExternos = [];
             
-            // Asegurar que la salida esté en UTF-8
-            $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
-            
             foreach ($lines as $line) {
-                $line = trim($line);
+                $line = self::asegurarUtf8(trim($line));
                 
                 // Saltar líneas vacías o de configuración
                 if (empty($line) || 
@@ -635,8 +668,7 @@ class SincronizarClientesSimple extends Command
     public static function extraerClienteDeTabla($line)
     {
         try {
-            // Asegurar que la línea esté en UTF-8
-            $line = mb_convert_encoding($line, 'UTF-8', 'UTF-8');
+            $line = self::asegurarUtf8($line);
             
             // Buscar líneas que contengan datos de cliente (formato de tabla con campos separados por espacios)
             if (!preg_match('/^(\d{8})\s+(.+?)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+(.+?)\s+([^\s]+)\s+([^\s]+)\s+(\d+)$/', $line, $matches)) {
@@ -644,13 +676,13 @@ class SincronizarClientesSimple extends Command
             }
             
             $codigoCliente = trim($matches[1]);
-            $nombreCliente = trim($matches[2]);
-            $direccion = trim($matches[3]);
-            $telefono = trim($matches[4]);
+            $nombreCliente = self::asegurarUtf8(trim($matches[2]));
+            $direccion = self::asegurarUtf8(trim($matches[3]));
+            $telefono = self::asegurarUtf8(trim($matches[4]));
             $codigoVendedor = trim($matches[5]);
-            $nombreVendedor = trim($matches[6]);
-            $region = trim($matches[7]);
-            $comuna = trim($matches[8]);
+            $nombreVendedor = self::asegurarUtf8(trim($matches[6]));
+            $region = self::asegurarUtf8(trim($matches[7]));
+            $comuna = self::asegurarUtf8(trim($matches[8]));
             $bloqueado = trim($matches[9]);
             
             // Limpiar campos NULL y espacios

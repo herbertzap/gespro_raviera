@@ -155,6 +155,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/aprobaciones/{id}/modificar-descuentos', [App\Http\Controllers\AprobacionController::class, 'modificarDescuentosProductos'])->name('aprobaciones.modificar-descuentos');
     Route::post('/aprobaciones/{id}/modificar-precios', [App\Http\Controllers\AprobacionController::class, 'modificarPreciosProductos'])->name('aprobaciones.modificar-precios');
     Route::post('/aprobaciones/{id}/sincronizar-stock', [App\Http\Controllers\AprobacionController::class, 'sincronizarStock'])->name('aprobaciones.sincronizar-stock');
+    Route::post('/aprobaciones/{id}/reinsertar-sql', [App\Http\Controllers\AprobacionController::class, 'reinsertarNvvEnSqlServer'])->name('aprobaciones.reinsertar-sql');
 });
 
 // Ruta de prueba para historial

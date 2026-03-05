@@ -428,7 +428,7 @@ class Cotizacion extends Model
         \App\Models\CotizacionHistorial::crearRegistro(
             $this->id,
             $estadoAprobacion,
-            'conversion',
+            'generacion_nvv',
             $estadoAprobacion,
             $mensajeHistorial,
             [

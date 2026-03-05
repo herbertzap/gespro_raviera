@@ -120,7 +120,7 @@ class BarcodeLinkController extends Controller
                 $producto = DB::connection('sqlsrv_external')
                     ->table('MAEPR')
                     ->select('KOPR', 'NOKOPR')
-                    ->where('KOPR', $sku)
+                    ->whereRaw('RTRIM(KOPR) = ?', [trim($sku)])
                     ->first();
             }
 
@@ -288,11 +288,11 @@ class BarcodeLinkController extends Controller
                 // Usar tsql para consultar producto
                 $producto = $this->obtenerProductoTSQL($sku);
             } else {
-                // Usar conexión Laravel normal
+                // Usar conexión Laravel normal (RTRIM(KOPR) por si tiene espacios)
                 $producto = DB::connection('sqlsrv_external')
                     ->table('MAEPR')
                     ->select('KOPR', 'NOKOPR')
-                    ->where('KOPR', $sku)
+                    ->whereRaw('RTRIM(KOPR) = ?', [trim($sku)])
                     ->first();
             }
 
@@ -467,7 +467,7 @@ class BarcodeLinkController extends Controller
         $password = env('SQLSRV_EXTERNAL_PASSWORD');
 
         $skuEscapado = str_replace("'", "''", trim($sku));
-        $query = "SELECT TOP 1 CAST(KOPR AS VARCHAR(30)) + '|' + CAST(NOKOPR AS VARCHAR(200)) AS DATOS FROM MAEPR WHERE KOPR = '{$skuEscapado}'";
+        $query = "SELECT TOP 1 CAST(KOPR AS VARCHAR(30)) + '|' + CAST(NOKOPR AS VARCHAR(200)) AS DATOS FROM MAEPR WHERE RTRIM(KOPR) = '{$skuEscapado}'";
 
         $tempFile = tempnam(sys_get_temp_dir(), 'sql_producto_');
         file_put_contents($tempFile, $query . "\ngo\nquit");
@@ -496,9 +496,10 @@ class BarcodeLinkController extends Controller
                 continue;
             }
             if ($encontradoHeader && strpos($line, '|') !== false) {
-                if (preg_match('/^(\d+)\s*\|(.+)$/', $line, $matches)) {
+                $lineData = preg_replace('/^\d+>\s*/', '', $line);
+                if (preg_match('/^([^|]+)\|(.+)$/', $lineData, $matches)) {
                     return (object)[
-                        'KOPR' => $matches[1],
+                        'KOPR' => trim($matches[1]),
                         'NOKOPR' => trim($matches[2]),
                     ];
                 }

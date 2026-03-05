@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Cotizacion;
 use App\Models\Cliente;
+use App\Models\StockComprometido;
 use App\Services\CobranzaService;
 use App\Services\StockService;
 use App\Services\StockConsultaService;
@@ -675,6 +676,63 @@ class AprobacionController extends Controller
     }
 
     /**
+     * Reintentar el insert en SQL Server para una NVV ya aprobada por picking.
+     * Los datos ya están en la cotización; se vuelve a enviar y se asigna un nuevo N° NVV.
+     * Solo Super Admin.
+     */
+    public function reinsertarNvvEnSqlServer(Request $request, $id)
+    {
+        if (!auth()->user()->hasRole('Super Admin')) {
+            if ($request->expectsJson()) {
+                return response()->json(['error' => 'Solo Super Admin puede reintentar el insert en SQL'], 403);
+            }
+            return redirect()->route('aprobaciones.show', $id)->with('error', 'Solo Super Admin puede reintentar el insert en SQL.');
+        }
+
+        $cotizacion = Cotizacion::with('productos', 'user')->findOrFail($id);
+
+        if ($cotizacion->tipo_documento !== 'nota_venta') {
+            return redirect()->route('aprobaciones.show', $id)->with('error', 'Solo aplica a notas de venta.');
+        }
+        if (!in_array($cotizacion->estado_aprobacion, ['aprobada_picking', 'pendiente_entrega'])) {
+            return redirect()->route('aprobaciones.show', $id)->with('error', 'La NVV debe estar aprobada por picking para reintentar el insert.');
+        }
+
+        try {
+            $resultado = $this->reinsertarNvvEnSqlServerById($id);
+            $numeroNVV = $resultado['numero_correlativo'] ?? $resultado['nota_venta_id'];
+            $mensaje = "✅ NVV reenviada correctamente a SQL Server.\n\nN° NVV: {$numeroNVV}\nID interno: {$resultado['nota_venta_id']}";
+            return redirect()->route('aprobaciones.show', $id)
+                ->with('success', $mensaje)
+                ->with('numero_nvv', $numeroNVV)
+                ->with('id_nvv_interno', $resultado['nota_venta_id']);
+        } catch (\Exception $e) {
+            Log::error("Error reintentando insert SQL para cotización {$id}: " . $e->getMessage());
+            return redirect()->route('aprobaciones.show', $id)->with('error', 'Error al reintentar insert en SQL: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Lógica de reinsert: usado por la ruta web (con permiso) y por el comando Artisan.
+     */
+    public function reinsertarNvvEnSqlServerById($id)
+    {
+        $cotizacion = Cotizacion::with('productos', 'user')->findOrFail($id);
+        if ($cotizacion->tipo_documento !== 'nota_venta') {
+            throw new \Exception('Solo aplica a notas de venta.');
+        }
+        if (!in_array($cotizacion->estado_aprobacion, ['aprobada_picking', 'pendiente_entrega'])) {
+            throw new \Exception('La NVV debe estar aprobada por picking para reintentar el insert.');
+        }
+        Log::info("Reintento de insert en SQL Server para cotización {$id} (NVV anterior: {$cotizacion->numero_nvv})");
+        $resultado = $this->insertarEnSQLServer($cotizacion, []);
+        if (!$resultado['success']) {
+            throw new \Exception($resultado['message'] ?? 'Error al insertar en SQL Server');
+        }
+        return $resultado;
+    }
+
+    /**
      * Previsualizar datos que se insertarán en SQL Server (sin ejecutar)
      */
     private function previsualizarInsertSQL($cotizacion)
@@ -1124,7 +1182,18 @@ class AprobacionController extends Controller
     }
 
     /**
-     * Insertar cotización en SQL Server
+     * Insertar cotización (NVV) en SQL Server.
+     *
+     * Verificación de pasos y tablas:
+     * 1. MAEEDO   - Encabezado del documento (IDMAEEDO, NUDO, ENDO, totales, ESDO, fechas, etc.)
+     * 2. MAEDDO   - Detalle por producto (KOPRCT, cantidad, precios, PODTGLLI/VADTNELI descuentos, VANELI, IVA, total)
+     * 3. MAEEDOOB - Observaciones y picking (IDMAEEDO, OBDO, CPDO, OCDO, TEXTO1/2/3: separador, revisor, bultos)
+     * 4. MAEDTLI  - Descuentos por línea (solo líneas con descuento: IDMAEEDO, NULIDO, KODT, PODT, VADT)
+     * 5. MAEPR    - Stock NVV pendiente: STOCNV1, STOCNV2 += cantidad por producto
+     * 6. MAEST    - STOCKSALIDA += cantidad; STOCNV1, STOCNV2 += cantidad (por KOSU/KOBO LIB)
+     * 7. MAEPREM  - STOCNV1, STOCNV2 += cantidad por producto
+     * 8. CONFIEST - UPDATE NVV = siguiente número (correlativo) para que el ERP conozca el próximo N° NVV
+     * 9. MySQL    - cotizacion.numero_nvv = NUDO formateado
      */
     private function insertarEnSQLServer($cotizacion, $datosPicking = [])
     {
@@ -1904,12 +1973,21 @@ class AprobacionController extends Controller
             
             Log::info('Productos MAEPR actualizados correctamente');
             
-            // NOTA: No actualizamos stock comprometido en MySQL aquí
-            // MySQL es solo una tabla de paso/caché. Los datos principales están en SQL Server.
-            // El stock comprometido en MySQL se actualiza automáticamente cuando se ejecuta
-            // la sincronización de productos desde SQL Server (StockService::sincronizarStockDesdeSQLServer)
-            // que obtiene STOCNV1 de SQL Server y lo sincroniza con MySQL.
-            Log::info('Stock comprometido actualizado en SQL Server (MAEPR, MAEST, MAEPREM). MySQL se sincronizará automáticamente en la próxima sincronización de productos.');
+            // Marcar stock comprometido local de esta cotización como "procesado" para no contarlo dos veces:
+            // Ya actualizamos STOCNV1 en SQL Server (MAEST, MAEPR, MAEPREM), por lo que ese compromiso
+            // se reflejará en MySQL cuando corra la sincronización. Si seguimos sumando estos registros
+            // en calcularStockComprometido(), estaríamos duplicando (local + SQL).
+            StockComprometido::porCotizacion($cotizacion->id)
+                ->activo()
+                ->get()
+                ->each(function ($stock) {
+                    $stock->procesar();
+                });
+            Log::info('Stock comprometido local marcado como procesado para cotización #' . $cotizacion->id . ' (ya reflejado en SQL Server STOCNV1).');
+            
+            // NOTA: El stock comprometido en MySQL (productos.stock_comprometido) se actualiza cuando
+            // se ejecuta la consulta/sincronización que obtiene STOCNV1 de SQL Server.
+            Log::info('Stock comprometido actualizado en SQL Server (MAEPR, MAEST, MAEPREM). MySQL se sincronizará con STOCNV1 en la próxima consulta de stock.');
             
             // INSERT MAEEDOOB - Observaciones, orden de compra y datos de picking
             $observacionVendedor = $cotizacion->observacion_vendedor ?? '';
@@ -2091,7 +2169,10 @@ class AprobacionController extends Controller
             
             unlink($tempFile);
             
-            // Verificar si se encontró el registro
+            // Log del resultado crudo para diagnóstico (si la NVV no aparece en el sistema)
+            Log::info("Verificación SQL Server - Cotización ID: {$cotizacion->id}, IDMAEEDO: {$siguienteId}, NUDO: {$nudoFormateado}. Resultado crudo (primeras 500 chars): " . substr($resultVerificacion ?? '', 0, 500));
+            
+            // Verificar si se encontró el registro (COUNT(*) devuelve 1)
             $insertado = false;
             if ($resultVerificacion) {
                 $lines = explode("\n", $resultVerificacion);
@@ -2104,11 +2185,29 @@ class AprobacionController extends Controller
             }
             
             if (!$insertado) {
-                Log::error("NVV {$siguienteId} no se encontró en SQL Server después del insert");
+                Log::error("NVV {$siguienteId} no se encontró en SQL Server después del insert. Cotización ID: {$cotizacion->id}. Resultado verificación: " . substr($resultVerificacion ?? '', 0, 800));
                 throw new \Exception("No se pudo verificar que la NVV fue insertada correctamente en SQL Server");
             }
             
-            Log::info("NVV {$siguienteId} verificada exitosamente en SQL Server");
+            Log::info("NVV {$siguienteId} (NUDO {$nudoFormateado}) verificada exitosamente en SQL Server. Cotización ID: {$cotizacion->id}");
+            
+            // Actualizar CONFIEST con el siguiente número NVV para evitar duplicados (ERP y app usan este correlativo)
+            $siguientePorId = $siguienteId + 1;
+            $siguientePorNudo = (int) $nudoFormateado + 1;
+            $siguienteNvv = max($siguientePorId, $siguientePorNudo);
+            $nvvSiguiente = str_pad((string) $siguienteNvv, 10, '0', STR_PAD_LEFT);
+            $updateConfiest = "UPDATE CONFIEST SET NVV = '{$nvvSiguiente}' WHERE MODALIDAD = CHAR(5)+CHAR(32)+CHAR(5)+CHAR(32)+CHAR(5)";
+            $tempFileConfiest = tempnam(sys_get_temp_dir(), 'sql_confiest_');
+            file_put_contents($tempFileConfiest, $updateConfiest . "\ngo\nquit");
+            $commandConfiest = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFileConfiest} 2>&1";
+            $resultConfiest = shell_exec($commandConfiest);
+            unlink($tempFileConfiest);
+            Log::info("CONFIEST UPDATE ejecutado (siguiente NVV: {$nvvSiguiente}) para evitar NVV duplicadas");
+            if ($resultConfiest && (stripos($resultConfiest, 'Msg ') !== false || stripos($resultConfiest, 'error') !== false)) {
+                if (preg_match('/Msg \d+, Level (1[1-9]|2\d)/', $resultConfiest)) {
+                    Log::warning('CONFIEST UPDATE puede haber fallado: ' . substr($resultConfiest, 0, 300));
+                }
+            }
             
             // Guardar el número correlativo (NUDO) en la cotización
             $cotizacion->numero_nvv = $nudoFormateado;
@@ -4061,9 +4160,9 @@ class AprobacionController extends Controller
                 if ($producto) {
                     $nuevoPrecio = floatval($precioData['precio_unitario']);
                     
-                    // Validar que el precio sea positivo
+                    // Validar que el precio no sea 0 ni negativo (no se permite guardar precio 0)
                     if ($nuevoPrecio <= 0) {
-                        throw new \Exception('El precio debe ser mayor a 0');
+                        throw new \Exception('El precio no puede ser 0. Debe ser mayor a 0 para poder guardar.');
                     }
                     
                     // Calcular valores con el nuevo precio
@@ -4132,7 +4231,9 @@ class AprobacionController extends Controller
         } catch (\Exception $e) {
             DB::rollback();
             \Log::error('Error modificando precios: ' . $e->getMessage());
-            return response()->json(['error' => 'Error al modificar precios: ' . $e->getMessage()], 500);
+            $esValidacionPrecio = (strpos($e->getMessage(), 'precio no puede ser 0') !== false || strpos($e->getMessage(), 'mayor a 0') !== false);
+            $codigo = $esValidacionPrecio ? 400 : 500;
+            return response()->json(['error' => $e->getMessage()], $codigo);
         }
     }
 

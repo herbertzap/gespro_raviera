@@ -168,19 +168,22 @@ class DashboardController extends Controller
             // 3. FACTURAS DEL MES ACTUAL
             $facturasMesActual = $this->cobranzaService->getFacturasPendientesMesActual(null);
             
-            // 4. TOTAL NOTAS DE VENTAS PENDIENTES POR VALIDAR (cantidad) - TODAS las notas pendientes
-            $notasPendientesSupervisor = Cotizacion::where(function($query) {
-                $query->where('estado_aprobacion', 'pendiente')
-                      ->orWhere('estado_aprobacion', 'pendiente_picking')
-                      ->orWhere('estado_aprobacion', 'aprobada_supervisor');
-            })->count();
+            // 4. TOTAL NOTAS DE VENTAS PENDIENTES POR VALIDAR (cantidad) - SOLO notas de venta (no cotizaciones)
+            $notasPendientesSupervisor = Cotizacion::where('tipo_documento', 'nota_venta')
+                ->where(function($query) {
+                    $query->where('estado_aprobacion', 'pendiente')
+                          ->orWhere('estado_aprobacion', 'pendiente_picking')
+                          ->orWhere('estado_aprobacion', 'aprobada_supervisor');
+                })
+                ->count();
 
-            // 5. NOTAS DE VENTA PENDIENTES (listado limitado) - Solo 10 más recientes
-            $notasPendientes = Cotizacion::where(function($query) {
-                $query->where('estado_aprobacion', 'pendiente')
-                      ->orWhere('estado_aprobacion', 'pendiente_picking')
-                      ->orWhere('estado_aprobacion', 'aprobada_supervisor');
-            })
+            // 5. NOTAS DE VENTA PENDIENTES (listado limitado) - Solo 10 más recientes, SOLO notas de venta
+            $notasPendientes = Cotizacion::where('tipo_documento', 'nota_venta')
+                ->where(function($query) {
+                    $query->where('estado_aprobacion', 'pendiente')
+                          ->orWhere('estado_aprobacion', 'pendiente_picking')
+                          ->orWhere('estado_aprobacion', 'aprobada_supervisor');
+                })
                 ->with(['user', 'cliente'])
                 ->latest()
                 ->take(10)
@@ -1138,12 +1141,13 @@ class DashboardController extends Controller
     private function getNvvPendientesCompras()
     {
         try {
-            // Obtener cotizaciones pendientes de aprobación por Compras
-            // Incluir todas las cotizaciones que necesitan aprobación por Compras:
+            // Obtener solo NOTAS DE VENTA pendientes de aprobación por Compras (no cotizaciones)
+            // Incluir NVVs que necesitan aprobación por Compras:
             // 1. Las que ya fueron aprobadas por supervisor pero no por compras
             // 2. Las que están pendientes (necesitan aprobación por Compras)
             // 3. Las que están pendiente_picking (necesitan aprobación por Compras)
             $cotizaciones = \App\Models\Cotizacion::with(['user', 'productos'])
+                ->where('tipo_documento', 'nota_venta')
                 ->where(function($query) {
                     $query->where(function($q) {
                         // Ya aprobadas por supervisor pero no por compras
@@ -1158,7 +1162,7 @@ class DashboardController extends Controller
                     });
                 })
                 ->orderBy('created_at', 'desc')
-                ->limit(20) // Aumentar límite para incluir más cotizaciones
+                ->limit(20)
                 ->get();
 
             return $cotizaciones->map(function($cotizacion) {

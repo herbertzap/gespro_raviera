@@ -412,6 +412,14 @@
                                                 <a href="{{ route('nvv-pendientes.ver', str_pad($cotizacion->numero_nvv, 10, '0', STR_PAD_LEFT)) }}" class="btn btn-sm btn-info mt-2">
                                                     <i class="material-icons">visibility</i> Ver NVV en Sistema
                                                 </a>
+                                                @if(auth()->user()->hasRole('Super Admin'))
+                                                <form action="{{ route('aprobaciones.reinsertar-sql', $cotizacion->id) }}" method="POST" class="d-inline-block mt-2" onsubmit="return confirm('¿Reenviar esta NVV a SQL Server? Se generará un nuevo número NVV. Los datos de la cotización no cambian.');">
+                                                    @csrf
+                                                    <button type="submit" class="btn btn-sm btn-warning">
+                                                        <i class="material-icons">refresh</i> Reintentar insert en SQL
+                                                    </button>
+                                                </form>
+                                                @endif
                                             </div>
                                             @endif
                                 </div>
@@ -649,8 +657,9 @@
                                                         <input type="number" 
                                                                class="form-control form-control-sm precio-unitario" 
                                                                value="{{ $producto->precio_unitario }}" 
-                                                               min="0" 
+                                                               min="0.01" 
                                                                step="0.01"
+                                                               title="El precio no puede ser 0"
                                                                data-producto-id="{{ $producto->id }}"
                                                                data-precio-original="{{ $producto->precio_unitario }}"
                                                                oninput="actualizarCalculosProducto({{ $producto->id }})"
@@ -2237,21 +2246,29 @@ function guardarCambiosDescuentos(notaId) {
         }
     });
     
+    // Validar que NINGÚN precio sea 0 antes de guardar (evitar guardar precios en 0 por error)
+    let hayPrecioEnCero = false;
+    document.querySelectorAll('.precio-unitario').forEach(input => {
+        const precioActual = parseFloat(input.value) || 0;
+        const precioOriginal = parseFloat(input.getAttribute('data-precio-original') || '0');
+        if (precioActual <= 0) {
+            hayPrecioEnCero = true;
+            input.value = precioOriginal > 0 ? precioOriginal : '';
+            showNotification('El precio no puede ser 0. Corrija los precios antes de guardar.', 'error');
+        }
+    });
+    if (hayPrecioEnCero) {
+        return;
+    }
+    
     // Recopilar todos los precios modificados
     document.querySelectorAll('.precio-unitario').forEach(input => {
         const productoId = input.dataset.productoId;
         const nuevoPrecio = parseFloat(input.value) || 0;
         const precioOriginal = parseFloat(input.getAttribute('data-precio-original') || '0');
         
-        // Validar que el precio sea positivo
-        if (nuevoPrecio <= 0) {
-            showNotification('El precio debe ser mayor a 0 para el producto ID: ' + productoId, 'error');
-            input.value = precioOriginal;
-            return;
-        }
-        
-        // Solo agregar si cambió
-        if (nuevoPrecio !== precioOriginal) {
+        // Solo agregar si cambió y sigue siendo mayor a 0
+        if (nuevoPrecio > 0 && nuevoPrecio !== precioOriginal) {
             precios.push({
                 producto_id: productoId,
                 precio_unitario: nuevoPrecio

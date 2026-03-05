@@ -2714,10 +2714,12 @@ class NotaVentaController extends Controller
             \Log::info('Nombre cliente: ' . ($cotizacion->cliente_nombre ?: 'VACÍO'));
             \Log::info('Vendedor ID: ' . ($cotizacion->user_id ?: 'VACÍO'));
             
-            // Verificar que el usuario pueda editar esta cotización
-            if (!auth()->user()->hasPermissionTo('edit_quotations') && 
-                auth()->id() !== $cotizacion->user_id) {
-                abort(403, 'No tienes permisos para editar esta cotización');
+            // Verificar que el usuario pueda editar (Super Admin puede siempre; resto por permiso o ser dueño)
+            $user = auth()->user();
+            if (!$user->hasRole('Super Admin')) {
+                if (!$user->hasPermissionTo('edit_quotations') && auth()->id() !== $cotizacion->user_id) {
+                    abort(403, 'No tienes permisos para editar esta cotización');
+                }
             }
             
             // Verificar que la cotización no haya sido aprobada por ningún perfil

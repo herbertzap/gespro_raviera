@@ -216,21 +216,21 @@ class CotizacionSimpleController extends Controller
                 abort(404, 'No se encontró la cotización solicitada');
             }
             
-            // Obtener datos del cliente
+            // Obtener datos del cliente (puede no existir en BD local)
             $clienteDB = Cliente::where('codigo_cliente', $cotizacion->cliente_codigo)->first();
             
-            // Preparar objeto cliente compatible con la vista
+            // Preparar objeto cliente compatible con la vista (seguro si $clienteDB es null)
             $cliente = (object) [
                 'codigo' => $cotizacion->cliente_codigo ?? '',
                 'nombre' => $cotizacion->cliente_nombre ?? 'Cliente no asignado',
-                'direccion' => $cotizacion->cliente_direccion ?? ($clienteDB->direccion ?? ''),
-                'telefono' => $cotizacion->cliente_telefono ?? ($clienteDB->telefono ?? ''),
-                'email' => $clienteDB->email ?? '',
-                'region' => $clienteDB->region ?? '',
-                'comuna' => $clienteDB->comuna ?? '',
-                'lista_precios_codigo' => $cotizacion->cliente_lista_precios ?? ($clienteDB->lista_precios_codigo ?? '01P'),
-                'lista_precios_nombre' => 'Lista Precios ' . ($cotizacion->cliente_lista_precios ?? ($clienteDB->lista_precios_codigo ?? '01P')),
-                'bloqueado' => $clienteDB->bloqueado ?? false,
+                'direccion' => $cotizacion->cliente_direccion ?? ($clienteDB ? ($clienteDB->direccion ?? '') : ''),
+                'telefono' => $cotizacion->cliente_telefono ?? ($clienteDB ? ($clienteDB->telefono ?? '') : ''),
+                'email' => $clienteDB ? ($clienteDB->email ?? '') : '',
+                'region' => $clienteDB ? ($clienteDB->region ?? '') : '',
+                'comuna' => $clienteDB ? ($clienteDB->comuna ?? '') : '',
+                'lista_precios_codigo' => $cotizacion->cliente_lista_precios ?? ($clienteDB ? ($clienteDB->lista_precios_codigo ?? '01P') : '01P'),
+                'lista_precios_nombre' => 'Lista Precios ' . ($cotizacion->cliente_lista_precios ?? ($clienteDB ? ($clienteDB->lista_precios_codigo ?? '01P') : '01P')),
+                'bloqueado' => $clienteDB ? ($clienteDB->bloqueado ?? false) : false,
                 'puede_generar_nota_venta' => true
             ];
             

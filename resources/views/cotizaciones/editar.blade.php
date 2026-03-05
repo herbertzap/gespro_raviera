@@ -1039,13 +1039,23 @@ function agregarProductosSeleccionados() {
         const row = checkbox.closest('tr');
         const codigo = row.cells[1].textContent.trim();
         const nombre = row.cells[2].textContent.trim();
-        // Obtener el precio desde el atributo data-precio para evitar problemas de parsing
-        const precioElement = row.cells[4].querySelector('[data-precio]');
+        // Obtener el precio desde el atributo data-precio (está en cells[3], no cells[4])
+        const precioElement = row.cells[3].querySelector('[data-precio]');
         const precio = precioElement ? parseFloat(precioElement.getAttribute('data-precio')) : 0;
-        console.log('Precio desde data-precio:', precio);
-        const stockText = row.cells[3].textContent;
-        const stock = parseFloat(stockText.split(' ')[0]) || 0;
-        const unidad = stockText.includes('UN') ? 'UN' : 'UN';
+        console.log('Precio desde data-precio:', precio, 'Elemento encontrado:', precioElement !== null);
+        // El stock no está en la tabla de búsqueda, se obtiene del data-producto del botón o se usa 0
+        const botonAgregar = row.cells[4].querySelector('[data-producto]');
+        let stock = 0;
+        let unidad = 'UN';
+        if (botonAgregar) {
+            try {
+                const productoData = JSON.parse(botonAgregar.getAttribute('data-producto'));
+                stock = productoData.stock || 0;
+                unidad = productoData.unidad || 'UN';
+            } catch(e) {
+                console.error('Error parseando data-producto:', e);
+            }
+        }
         
         // Obtener múltiplo y descuento máximo desde los data attributes del checkbox
         const multiplo = parseInt(checkbox.getAttribute('data-multiplo')) || 1;

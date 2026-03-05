@@ -18,12 +18,12 @@
                             Ver Cliente
                         </a>
 
-                        <!-- Editar cotización (si es posible) -->
+                        <!-- Editar cotización / nota de venta (si es posible) -->
                         @if(in_array($cotizacion->estado, ['borrador', 'enviada', 'pendiente_stock']))
-                        <a href="{{ route('cotizacion.editar', $cotizacion->id) }}" 
+                        <a href="{{ $cotizacion->tipo_documento === 'nota_venta' ? route('nota-venta.editar', $cotizacion->id) : route('cotizacion.editar', $cotizacion->id) }}" 
                            class="btn btn-warning btn-block">
                             <i class="tim-icons icon-pencil"></i>
-                            Editar Cotización
+                            {{ $cotizacion->tipo_documento === 'nota_venta' ? 'Editar Nota de Venta' : 'Editar Cotización' }}
                         </a>
                         @endif
 
