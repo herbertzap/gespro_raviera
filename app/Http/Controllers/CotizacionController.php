@@ -1022,28 +1022,11 @@ class CotizacionController extends Controller
                 
                 // Verificar si hay stock suficiente
                 if ($stockDisponibleReal >= $producto['cantidad']) {
-                    // Hay stock suficiente, comprometer el stock
-                    \Log::info("📦 Comprometiendo stock para producto {$producto['codigo']}: {$producto['cantidad']} unidades");
-                    
-                    \App\Models\StockComprometido::create([
-                        'producto_codigo' => $producto['codigo'],
-                        'producto_nombre' => $producto['nombre'],
-                        'bodega_codigo' => '01',
-                        'bodega_nombre' => 'Bodega Principal',
-                        'cantidad_comprometida' => $producto['cantidad'],
-                        'stock_disponible_original' => $stockDisponibleReal,
-                        'stock_disponible_actual' => $stockDisponibleReal - $producto['cantidad'],
-                        'unidad_medida' => $producto['unidad'] ?? 'UN',
-                        'cotizacion_id' => $cotizacion->id,
-                        'cotizacion_estado' => 'pendiente',
-                        'vendedor_id' => auth()->id(),
-                        'vendedor_nombre' => auth()->user()->name,
-                        'cliente_codigo' => $request->cliente_codigo,
-                        'cliente_nombre' => $request->cliente_nombre,
-                        'fecha_compromiso' => now(),
-                        'observaciones' => 'Stock comprometido por cotización'
-                    ]);
-                    
+                    // IMPORTANTE:
+                    // Ya NO comprometemos stock en la tabla stock_comprometidos al nivel de cotización.
+                    // La idea es que las cotizaciones NO afecten el stock disponible de los productos;
+                    // el compromiso real se hace recién cuando la cotización pasa a NVV y se envía a SQL.
+                    // Aquí solo marcamos si la cotización tiene stock suficiente para información al usuario.
                     $productosConStockComprometido[] = $producto['codigo'];
                 } else {
                     // No hay stock suficiente

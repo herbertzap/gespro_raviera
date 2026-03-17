@@ -104,8 +104,18 @@ class StockComprometido extends Model
      */
     public static function calcularStockComprometido($productoCodigo, $bodegaCodigo = '01')
     {
+        // Solo considerar como stock comprometido local las reservas que:
+        // - Siguen en estado "activo"
+        // - Y cuya cotización asociada AÚN no tiene numero_nvv (no ha sido enviada a SQL)
+        //   o bien no tienen cotización (pueden venir de otras fuentes locales)
         return self::porProducto($productoCodigo, $bodegaCodigo)
-                  ->sum('cantidad_comprometida');
+            ->where(function ($q) {
+                $q->whereNull('cotizacion_id')
+                  ->orWhereHas('cotizacion', function ($qc) {
+                      $qc->whereNull('numero_nvv');
+                  });
+            })
+            ->sum('cantidad_comprometida');
     }
 
     /**

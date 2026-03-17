@@ -62,18 +62,26 @@
                                         <tr>
                                             <th>Código</th>
                                             <th>Nombre</th>
-                                            <th>Stock Físico</th>
-                                            <th>Stock Comprometido (SQL)</th>
-                                            <th>Stock Comprometido (Local)</th>
-                                            <th>Stock Disponible</th>
-                                            <th>Cantidad NVV Pendiente</th>
-                                            <th>N° NVV</th>
-                                            <th>Detalle NVV</th>
+                                            <th style="width: 140px;">Acción</th>
                                         </tr>
                                     </thead>
                                     <tbody id="tbodyResultadosBusqueda">
                                     </tbody>
                                 </table>
+                            </div>
+                        </div>
+
+                        <!-- Card de detalle de producto -->
+                        <div id="detalleProductoWrapper" style="display:none;">
+                            <hr>
+                            <div class="card">
+                                <div class="card-header card-header-primary">
+                                    <h4 class="card-title" id="detalleProductoTitulo">Detalle de producto</h4>
+                                    <p class="card-category" id="detalleProductoSubtitulo"></p>
+                                </div>
+                                <div class="card-body" id="detalleProductoBody">
+                                    <!-- Contenido se llena por JavaScript -->
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -461,55 +469,205 @@ function buscarProductosConNvv(termino) {
             },
             success: function(response) {
                 if (response.length === 0) {
-                    $('#tbodyResultadosBusqueda').html('<tr><td colspan="9" class="text-center text-muted">No se encontraron productos</td></tr>');
+                    $('#tbodyResultadosBusqueda').html('<tr><td colspan="3" class="text-center text-muted">No se encontraron productos</td></tr>');
                     return;
                 }
                 
                 let html = '';
                 response.forEach(function(producto) {
-                    // Determinar clase de stock disponible
-                    let stockClass = 'text-success';
-                    if (producto.stock_disponible <= 0) {
-                        stockClass = 'text-danger';
-                    } else if (producto.stock_disponible < 10) {
-                        stockClass = 'text-warning';
-                    }
-                    
-                    // Formatear detalle de NVV
-                    let detalleNvvHtml = '';
-                    if (producto.detalle_nvv && producto.detalle_nvv.length > 0) {
-                        detalleNvvHtml = '<ul class="list-unstyled mb-0">';
-                        producto.detalle_nvv.forEach(function(nvv) {
-                            detalleNvvHtml += `<li><small>NVV ${nvv.nvv}: ${nvv.cantidad.toLocaleString()}</small></li>`;
-                        });
-                        detalleNvvHtml += '</ul>';
-                    } else {
-                        detalleNvvHtml = '<span class="text-muted">-</span>';
-                    }
-                    
                     html += `
-                        <tr>
+                        <tr onclick="cargarDetalleProducto('${producto.codigo}')" style="cursor:pointer;">
                             <td><strong>${producto.codigo}</strong></td>
                             <td>${producto.nombre}</td>
-                            <td>${producto.stock_fisico.toLocaleString()}</td>
-                            <td class="text-warning">${producto.stock_comprometido_sql.toLocaleString()}</td>
-                            <td class="text-info">${producto.stock_comprometido_local.toLocaleString()}</td>
-                            <td class="${stockClass}"><strong>${producto.stock_disponible.toLocaleString()}</strong></td>
-                            <td class="text-danger">${producto.cantidad_nvv_pendiente.toLocaleString()}</td>
-                            <td>${producto.numero_nvv}</td>
-                            <td>${detalleNvvHtml}</td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-primary" onclick="event.stopPropagation(); cargarDetalleProducto('${producto.codigo}')">
+                                    <i class="material-icons" style="font-size:16px;">info</i> Más información
+                                </button>
+                            </td>
                         </tr>
                     `;
                 });
                 
                 $('#tbodyResultadosBusqueda').html(html);
+                // Mostrar wrapper de detalle vacío (se llenará al seleccionar un producto)
+                $('#detalleProductoWrapper').show();
             },
             error: function(xhr) {
                 console.error('Error buscando productos:', xhr);
-                $('#tbodyResultadosBusqueda').html('<tr><td colspan="9" class="text-center text-danger">Error al buscar productos</td></tr>');
+                $('#tbodyResultadosBusqueda').html('<tr><td colspan="3" class="text-center text-danger">Error al buscar productos</td></tr>');
             }
         });
     }, 500);
+}
+
+function cargarDetalleProducto(codigo) {
+    if (!codigo) return;
+    
+    $('#detalleProductoWrapper').show();
+    $('#detalleProductoTitulo').text('Cargando detalle de ' + codigo + '...');
+    $('#detalleProductoSubtitulo').text('');
+    $('#detalleProductoBody').html('<p class="text-center"><i class="material-icons">hourglass_empty</i> Cargando información desde SQL Server y sistema local...</p>');
+    
+    $.ajax({
+        url: '{{ url("/api/productos/detalle") }}/' + encodeURIComponent(codigo),
+        method: 'GET',
+        success: function(response) {
+            if (!response.success) {
+                $('#detalleProductoTitulo').text('Detalle de producto');
+                $('#detalleProductoBody').html('<div class="alert alert-danger">' + (response.message || 'No se pudo obtener el detalle del producto') + '</div>');
+                return;
+            }
+            
+            const p = response.producto;
+            const stock = response.stock || {};
+            const mysql = stock.mysql || {};
+            const sql = stock.sql || {};
+            
+            $('#detalleProductoTitulo').text(p.codigo + ' - ' + p.nombre);
+            $('#detalleProductoSubtitulo').text('Unidad: ' + (p.unidad || 'UN') + ' | Precio 01P: $' + Math.round(p.precio_01p || 0).toLocaleString('es-CL'));
+            
+            let html = '';
+            
+            // Sección de stock
+            html += `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h5><i class="material-icons">storage</i> Stock en APP</h5>
+                        <ul>
+                            <li><strong>Stock físico:</strong> ${Number(mysql.stock_fisico || 0).toLocaleString('es-CL')}</li>
+                            <li><strong>Comprometido SQL (NVV):</strong> ${Number(mysql.stock_comprometido_sql || 0).toLocaleString('es-CL')}</li>
+                            <li><strong>Comprometido local (app):</strong> ${Number(mysql.stock_comprometido_local || 0).toLocaleString('es-CL')}</li>
+                            <li><strong>Disponible (app):</strong> ${Number(mysql.stock_disponible || 0).toLocaleString('es-CL')}</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h5><i class="material-icons">dns</i> Stock en RAMDON (bodega ${sql.bodega || 'LIB'})</h5>
+                        <ul>
+                            <li><strong>Stock físico (STFI1):</strong> ${sql.stock_fisico !== null && sql.stock_fisico !== undefined ? Number(sql.stock_fisico).toLocaleString('es-CL') : 'N/D'}</li>
+                            <li><strong>Disponible (STFI1 - STOCNV1 - local):</strong> ${sql.stock_disponible !== null && sql.stock_disponible !== undefined ? Number(sql.stock_disponible).toLocaleString('es-CL') : 'N/D'}</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+            
+            // NVV pendientes
+            const detalleNvv = response.nvv_pendientes || [];
+            html += `<hr><h5><i class="material-icons">assignment</i> NVV pendientes en RAMDON</h5>`;
+            if (detalleNvv.length === 0) {
+                html += `<p class="text-muted">No hay NVV pendientes para este producto.</p>`;
+            } else {
+                html += `<ul>`;
+                detalleNvv.forEach(function(nvv) {
+                    html += `<li>NVV ${nvv.nvv}: ${Number(nvv.cantidad || 0).toLocaleString('es-CL')} unidades pendientes</li>`;
+                });
+                html += `</ul>`;
+            }
+
+            // Compromisos locales en la app (stock_comprometidos)
+            const compromisosLocales = response.compromisos_locales || [];
+            html += `<hr><h5><i class="material-icons">assignment_ind</i> Cotizaciones con stock comprometido en la app</h5>`;
+            if (compromisosLocales.length === 0) {
+                html += `<p class="text-muted">No hay stock comprometido local para este producto.</p>`;
+            } else {
+                html += `
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Cotización</th>
+                                    <th>NVV local</th>
+                                    <th>Cliente</th>
+                                    <th>Cantidad comprometida</th>
+                                    <th>Estado</th>
+                                    <th>Cuenta como comprometido</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                compromisosLocales.forEach(function(c) {
+                    const urlNvv = c.cotizacion_id ? '{{ url("/nota-venta/ver") }}/' + encodeURIComponent(c.cotizacion_id) : null;
+                    const enlaceCot = c.cotizacion_id
+                        ? `<a href="${urlNvv}" target="_blank">${c.cotizacion_id}</a>`
+                        : '';
+
+                    html += `
+                        <tr>
+                            <td>${enlaceCot}</td>
+                            <td>${c.numero_nvv_local || '-'}</td>
+                            <td>${c.cliente || ''}</td>
+                            <td>${Number(c.cantidad || 0).toLocaleString('es-CL')}</td>
+                            <td>${c.estado || ''}</td>
+                            <td>${c.cuenta_como_comprometido ? 'Sí' : 'No (ya enviada a SQL)'}</td>
+                        </tr>
+                    `;
+                });
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+            
+            // Estadísticas de ventas
+            const stats = response.estadisticas_ventas || {};
+            html += `
+                <hr>
+                <h5><i class="material-icons">trending_up</i> Ventas (últimos 6 meses)</h5>
+                <ul>
+                    <li><strong>NVV con este producto:</strong> ${Number(stats.total_nvv || 0).toLocaleString('es-CL')}</li>
+                    <li><strong>Unidades vendidas:</strong> ${Number(stats.total_unidades || 0).toLocaleString('es-CL')}</li>
+                    <li><strong>Precio promedio:</strong> $${Math.round(stats.precio_promedio || 0).toLocaleString('es-CL')}</li>
+                </ul>
+            `;
+            
+            // Últimas NVV
+            const ultimas = response.ultimas_nvv || [];
+            html += `<hr><h5><i class="material-icons">history</i> Últimas NVV con este producto</h5>`;
+            if (ultimas.length === 0) {
+                html += `<p class="text-muted">No hay NVV recientes con este producto.</p>`;
+            } else {
+                html += `
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>NVV</th>
+                                    <th>Fecha</th>
+                                    <th>Cliente</th>
+                                    <th>Vendedor</th>
+                                    <th>Cantidad</th>
+                                    <th>Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                ultimas.forEach(function(item) {
+                    html += `
+                        <tr>
+                            <td>${item.cotizacion_id}</td>
+                            <td>${item.fecha || ''}</td>
+                            <td>${item.cliente || ''}</td>
+                            <td>${item.vendedor || ''}</td>
+                            <td>${Number(item.cantidad || 0).toLocaleString('es-CL')}</td>
+                            <td>$${Number(item.total || 0).toLocaleString('es-CL')}</td>
+                        </tr>
+                    `;
+                });
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+            
+            $('#detalleProductoBody').html(html);
+        },
+        error: function(xhr) {
+            console.error('Error cargando detalle de producto:', xhr);
+            $('#detalleProductoTitulo').text('Detalle de producto');
+            $('#detalleProductoBody').html('<div class="alert alert-danger">Error al cargar el detalle del producto.</div>');
+        }
+    });
 }
 
 // Variables globales para la sincronización

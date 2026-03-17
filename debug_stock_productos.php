@@ -14,8 +14,9 @@ use Illuminate\Support\Facades\DB;
 echo "=== DEBUG DE STOCK DE PRODUCTOS ===\n\n";
 
 $productos = [
-    '2240340008000' => 'Producto con 20 stock físico, 1300 comprometido',
-    'PALOESC000000' => 'Producto con 41700 stock físico, 0 comprometido'
+    '1010020400100' => 'Producto que en app muestra 17 y en SQL hay 57',
+    'AAMM030040000' => 'Producto que en app aparece sin stock pero en SQL hay 5',
+    'CDFA010070'    => 'Producto que en app aparece sin stock pero en SQL hay 14',
 ];
 
 foreach ($productos as $codigo => $descripcion) {
@@ -83,12 +84,11 @@ foreach ($productos as $codigo => $descripcion) {
     $query = "
         SELECT 
             KOPR,
-            STOCKSALIDA,
-            STOCKNV1,
-            STOCKNV2,
-            STOCKFISICO
+            STFI1      AS STOCK_FISICO,
+            STOCNV1    AS STOCK_NVV,
+            STTR1      AS STOCK_TRANSITO
         FROM MAEST 
-        WHERE KOPR = '{$codigo}' AND EMPRESA = '01'
+        WHERE KOPR = '{$codigo}' AND EMPRESA = '01' AND KOSU = 'LIB' AND KOBO = 'LIB'
     ";
     
     $tempFile = tempnam(sys_get_temp_dir(), 'sql_');

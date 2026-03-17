@@ -188,8 +188,8 @@
             </li>
             @endif
 
-            <!-- Mantenedor - Solo Super Admin -->
-            @if(auth()->user()->hasRole('Super Admin'))
+            <!-- Mantenedor - Super Admin y Manejo Stock -->
+            @if(auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Manejo Stock'))
             <li>
                 <a data-toggle="collapse" href="#MantenedorMenu" aria-expanded="false">
                     <i class="tim-icons icon-settings-gear-63"></i>

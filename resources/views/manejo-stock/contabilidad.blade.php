@@ -138,6 +138,7 @@
                                         <button type="button" id="btnGuardarCaptura" class="btn btn-primary btn-block" disabled>
                                             <i class="tim-icons icon-check-2"></i> Guardar Captura
                                         </button>
+                                        <small id="hintGuardarCaptura" class="form-text text-muted mt-2" style="display: none;"></small>
                                     </div>
                                 </div>
                             </div>
@@ -409,6 +410,8 @@
             validarFormulario();
         }
 
+        const hintGuardarCaptura = document.getElementById('hintGuardarCaptura');
+
         function validarFormulario() {
             const tieneProducto = productoActual !== null;
             const tieneCaptura = Number(inputCaptura1.value || 0) > 0;
@@ -416,40 +419,70 @@
 
             const puedeGuardar = tieneProducto && tieneCaptura && tieneUbicacion;
             btnGuardarCaptura.disabled = !puedeGuardar;
-            
-            // Debug: mostrar estado de validación
-            console.log('Validación:', {
-                tieneProducto,
-                tieneCaptura,
-                tieneUbicacion,
-                ubicacionId,
-                puedeGuardar
-            });
+
+            // Mostrar mensaje claro cuando el botón está deshabilitado
+            if (hintGuardarCaptura) {
+                if (puedeGuardar) {
+                    hintGuardarCaptura.style.display = 'none';
+                    hintGuardarCaptura.textContent = '';
+                } else {
+                    hintGuardarCaptura.style.display = 'block';
+                    if (!tieneUbicacion) {
+                        hintGuardarCaptura.textContent = 'Debes seleccionar una ubicación antes de guardar (o entrar por "Manejo de Stock" eligiendo bodega y ubicación).';
+                        hintGuardarCaptura.className = 'form-text text-warning mt-2';
+                    } else if (!tieneProducto) {
+                        hintGuardarCaptura.textContent = 'Busca un producto y haz clic en "Seleccionar" (o escanea el código) para habilitar Guardar.';
+                        hintGuardarCaptura.className = 'form-text text-muted mt-2';
+                    } else if (!tieneCaptura) {
+                        hintGuardarCaptura.textContent = 'Ingresa la cantidad contada en "Captura 1" para poder guardar.';
+                        hintGuardarCaptura.className = 'form-text text-muted mt-2';
+                    } else {
+                        hintGuardarCaptura.textContent = '';
+                        hintGuardarCaptura.style.display = 'none';
+                    }
+                }
+            }
         }
 
         function renderResultados(items) {
+            const list = Array.isArray(items) ? items : (items?.data ?? items?.productos ?? []);
             resultados.innerHTML = '';
-            if (!items.length) {
+            if (!list.length) {
                 resultados.innerHTML = '<div class="list-group-item text-muted">Sin resultados</div>';
                 resultados.style.display = 'block';
                 return;
             }
 
-            items.forEach(item => {
+            // Si solo hay un resultado, auto-seleccionarlo para evitar que olviden hacer clic en "Seleccionar"
+            if (list.length === 1) {
+                const primer = list[0];
+                const codigoUnico = primer.codigo ?? primer.CODIGO_PRODUCTO ?? primer.KOPR;
+                if (codigoUnico) {
+                    cargarProductoPorSku(codigoUnico).then(() => {
+                        resultados.innerHTML = '';
+                        resultados.style.display = 'none';
+                    });
+                }
+                return;
+            }
+
+            list.forEach(item => {
+                const codigo = item.codigo ?? item.CODIGO_PRODUCTO ?? item.KOPR;
+                const nombre = item.nombre ?? item.NOMBRE_PRODUCTO ?? item.NOKOPR ?? '-';
                 const element = document.createElement('div');
                 element.className = 'list-group-item d-flex justify-content-between align-items-center';
                 element.innerHTML = `
                     <div>
-                        <strong>${item.codigo}</strong><br>
-                        <small>${item.nombre}</small>
+                        <strong>${codigo}</strong><br>
+                        <small>${nombre}</small>
                     </div>
                     <div>
-                        <button class="btn btn-sm btn-outline-primary" data-codigo="${item.codigo}">Seleccionar</button>
+                        <button class="btn btn-sm btn-outline-primary" data-codigo="${codigo}">Seleccionar</button>
                     </div>
                 `;
 
                 element.querySelector('button').addEventListener('click', () => {
-                    cargarProductoPorSku(item.codigo).then(() => {
+                    cargarProductoPorSku(codigo).then(() => {
                         resultados.innerHTML = '';
                         resultados.style.display = 'none';
                     });

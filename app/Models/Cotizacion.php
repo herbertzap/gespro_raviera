@@ -184,8 +184,12 @@ class Cotizacion extends Model
                         $q->whereNull('aprobado_por_picking')
                           ->orWhere('aprobado_por_picking', false);
                     })
-                    // Excluir NVV separadas por Picking (estas deben ir solo a Compras)
-                    ->whereNull('nota_original_id');
+                    // NVV separadas (nota_original_id) deben pasar por Compras primero.
+                    // Una vez aprobadas por Compras, sí deben aparecer en Picking.
+                    ->where(function ($q) {
+                        $q->whereNull('nota_original_id')
+                          ->orWhereNotNull('aprobado_por_compras');
+                    });
     }
 
     public function scopePendientesPickingSinProblemas($query)
@@ -208,8 +212,11 @@ class Cotizacion extends Model
     public function scopePendientesEntrega($query)
     {
         return $query->where('estado_aprobacion', 'pendiente_entrega')
-                    // Excluir NVV separadas
-                    ->whereNull('nota_original_id');
+                    // Permitir NVV separadas solo si ya pasaron por Compras
+                    ->where(function ($q) {
+                        $q->whereNull('nota_original_id')
+                          ->orWhereNotNull('aprobado_por_compras');
+                    });
     }
 
     public function scopeConProblemasStock($query)
