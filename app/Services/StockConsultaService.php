@@ -71,6 +71,10 @@ class StockConsultaService
             foreach ($lines as $line) {
                 $line = trim($line);
                 
+                // tsql a veces devuelve el formato tabular con prompts tipo "1> ", "2> ", etc.
+                // Removemos esos tokens para que el parseo no desplace columnas.
+                $line = preg_replace('/\d+>\s*/', '', $line);
+                
                 // Saltar líneas de configuración y numeración de tsql
                 if (empty($line) || 
                     strpos($line, 'locale') !== false || 
@@ -95,10 +99,14 @@ class StockConsultaService
                 if ($headerFound) {
                     // Intentar parsear línea usando regex (más robusto para tabs y espacios)
                     // Formato: CODIGO (alfanumérico) seguido de dos números (puede haber tabs o espacios)
-                    if (preg_match('/^([0-9A-Z]{3,})[\s\t]+([0-9.]+)[\s\t]+([0-9.]+)/i', $line, $matches)) {
+                    // Permitir negativos en STOCK_COMPROMETIDO (ej: -200)
+                    if (preg_match('/^([0-9A-Z]{3,})[\s\t]+(-?[0-9.]+)[\s\t]+(-?[0-9.]+)/i', $line, $matches)) {
                         $codigo = trim($matches[1]);
                         $stockFisico = (float)trim($matches[2]);
                         $stockComprometido = (float)trim($matches[3]);
+                        // Si SQL trae STOCNV1 negativo, tratamos la magnitud como "comprometido"
+                        // para evitar que reste stock disponible en vez de reservarlo.
+                        $stockComprometido = abs($stockComprometido);
                         
                         // Validar que tenemos valores válidos
                         if (!empty($codigo) && strlen($codigo) >= 3 && is_numeric($stockFisico) && is_numeric($stockComprometido)) {
@@ -132,6 +140,7 @@ class StockConsultaService
                         $codigo = trim($parts[0]);
                             $stockFisico = (float)trim($parts[1]);
                             $stockComprometido = (float)trim($parts[2]);
+                            $stockComprometido = abs($stockComprometido);
                         
                             // Validar que el código no esté vacío y sea válido
                             if (!empty($codigo) && strlen($codigo) >= 3 && is_numeric($stockFisico) && is_numeric($stockComprometido)) {

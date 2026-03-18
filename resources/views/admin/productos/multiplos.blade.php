@@ -85,6 +85,49 @@
                     </div>
                 </div>
 
+                <!-- Sección de Búsqueda Manual de Productos -->
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">
+                                    <i class="material-icons">search</i>
+                                    Agregar / Editar Múltiplos Manualmente
+                                </h5>
+                                <p class="text-muted">
+                                    Usa el buscador para encontrar productos (igual que en NVV) y configurar su múltiplo de venta, aunque aún no aparezcan en la tabla inferior.
+                                </p>
+
+                                <div class="form-row">
+                                    <div class="col-md-6">
+                                        <div class="input-group mb-2">
+                                            <div class="input-group-prepend">
+                                                <span class="input-group-text">
+                                                    <i class="material-icons">search</i>
+                                                </span>
+                                            </div>
+                                            <input type="text"
+                                                   class="form-control"
+                                                   id="buscarProductoMultiplo"
+                                                   placeholder="Buscar producto por código o nombre (mínimo 2 caracteres)">
+                                            <div class="input-group-append">
+                                                <button class="btn btn-outline-secondary" type="button" id="limpiarBusquedaProductoMultiplo" style="display:none;">
+                                                    <i class="material-icons">clear</i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <small class="form-text text-muted">
+                                            Escribe al menos 2 caracteres. Se buscará en todos los productos activos (mismo criterio que cotizaciones).
+                                        </small>
+                                    </div>
+                                </div>
+
+                                <div id="resultadosProductoMultiplo" class="list-group mt-3" style="max-height: 260px; overflow-y: auto; display:none;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Tabla de Productos con Múltiplos -->
                 <div class="row">
                     <div class="col-md-12">
@@ -352,6 +395,102 @@ $(document).ready(function() {
             contadorProductos.text(filasVisibles);
         });
     }
+
+    // --- Buscador manual de productos (para agregar/editar múltiplos) ---
+    const inputBuscarProductoMultiplo = $('#buscarProductoMultiplo');
+    const btnLimpiarBusquedaProductoMultiplo = $('#limpiarBusquedaProductoMultiplo');
+    const resultadosProductoMultiplo = $('#resultadosProductoMultiplo');
+    let timeoutBuscarProducto = null;
+
+    function renderResultadosProductoMultiplo(items) {
+        resultadosProductoMultiplo.empty();
+        if (!items || items.length === 0) {
+            resultadosProductoMultiplo
+                .html('<div class="list-group-item text-muted">Sin resultados</div>')
+                .show();
+            return;
+        }
+
+        items.forEach(item => {
+            const id = item.id;
+            const codigo = item.codigo || '';
+            const nombre = item.nombre || '';
+            const multiploActual = item.multiplo_venta || 1;
+
+            const row = $(`
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>${codigo}</strong><br>
+                        <small>${nombre}</small><br>
+                        <small class="text-muted">Múltiplo actual: ${multiploActual}</small>
+                    </div>
+                    <div>
+                        <button class="btn btn-sm btn-primary">
+                            <i class="material-icons">edit</i> Configurar
+                        </button>
+                    </div>
+                </div>
+            `);
+
+            row.find('button').on('click', function () {
+                if (!id) {
+                    alert('No se pudo obtener el ID del producto para editar el múltiplo.');
+                    return;
+                }
+                editarMultiplo(id, codigo, multiploActual);
+            });
+
+            resultadosProductoMultiplo.append(row);
+        });
+
+        resultadosProductoMultiplo.show();
+    }
+
+    function buscarProductoMultiplo(query) {
+        if (!query || query.length < 2) {
+            resultadosProductoMultiplo
+                .html('<div class="list-group-item text-muted">Ingresa al menos 2 caracteres</div>')
+                .show();
+            return;
+        }
+
+        $.ajax({
+            url: '{{ route('productos.buscar') }}',
+            method: 'GET',
+            data: { q: query },
+            success: function (data) {
+                renderResultadosProductoMultiplo(data || []);
+            },
+            error: function () {
+                resultadosProductoMultiplo
+                    .html('<div class="list-group-item text-danger">Error al buscar productos</div>')
+                    .show();
+            }
+        });
+    }
+
+    inputBuscarProductoMultiplo.on('input', function () {
+        const q = $(this).val().trim();
+        if (q.length === 0) {
+            resultadosProductoMultiplo.hide().empty();
+            btnLimpiarBusquedaProductoMultiplo.hide();
+            return;
+        }
+        btnLimpiarBusquedaProductoMultiplo.show();
+
+        if (timeoutBuscarProducto) {
+            clearTimeout(timeoutBuscarProducto);
+        }
+        timeoutBuscarProducto = setTimeout(() => {
+            buscarProductoMultiplo(q);
+        }, 300);
+    });
+
+    btnLimpiarBusquedaProductoMultiplo.on('click', function () {
+        inputBuscarProductoMultiplo.val('');
+        resultadosProductoMultiplo.hide().empty();
+        btnLimpiarBusquedaProductoMultiplo.hide();
+    });
 });
 
 let productoIdActual = null;

@@ -80,12 +80,14 @@ class ProductoController extends Controller
                     $nombreLimpio = $this->limpiarNombreProducto($producto->NOKOPR);
                     
                     return [
+                        'id' => $producto->id,
                         'codigo' => $producto->KOPR,
                         'nombre' => $nombreLimpio,
                         'precio' => $precio,
                         'stock_actual' => $producto->stock_disponible ?? 0,
                         'stock_minimo' => 10, // Valor predeterminado
-                        'activo' => $producto->activo
+                        'activo' => $producto->activo,
+                        'multiplo_venta' => $producto->multiplo_venta ?? 1,
                     ];
                 });
             
