@@ -4646,7 +4646,6 @@ class CobranzaService
             // Procesar la salida línea por línea
             $lines = explode("\n", $output);
             $cheques = [];
-            $chequesUnicos = [];
             
             // Convertir la salida a UTF-8 desde ISO-8859-1 (Latin1) que es común en SQL Server
             $output = mb_convert_encoding($output, 'UTF-8', 'ISO-8859-1');
@@ -4688,25 +4687,12 @@ class CobranzaService
                         // Convertir a entero (los cheques no tienen decimales)
                         $valor = (int)floatval($valorStr);
                         
-                        $numeroCheque = mb_convert_encoding(trim($datos[1] ?? ''), 'UTF-8', 'ISO-8859-1');
-                        $clienteNombre = mb_convert_encoding(trim($datos[3] ?? ''), 'UTF-8', 'ISO-8859-1');
-                        $codigoClienteVal = mb_convert_encoding(trim($datos[2] ?? ''), 'UTF-8', 'ISO-8859-1');
-                        $fechaNormalizada = $this->parseFecha($fechaVencimientoStr); // devuelve string 'Y-m-d' o null
-                        $fechaClave = $fechaNormalizada ?: '';
-                        
-                        // Clave para evitar duplicados: número + cliente + valor + fecha
-                        $claveCheque = $numeroCheque . '|' . $codigoClienteVal . '|' . $valor . '|' . $fechaClave;
-                        if (isset($chequesUnicos[$claveCheque])) {
-                            continue;
-                        }
-                        $chequesUnicos[$claveCheque] = true;
-                        
                         $cheques[] = [
-                            'numero' => $numeroCheque,
-                            'cliente' => $clienteNombre,
-                            'codigo_cliente' => $codigoClienteVal,
+                            'numero' => mb_convert_encoding(trim($datos[1] ?? ''), 'UTF-8', 'ISO-8859-1'),
+                            'cliente' => mb_convert_encoding(trim($datos[3] ?? ''), 'UTF-8', 'ISO-8859-1'),
+                            'codigo_cliente' => mb_convert_encoding(trim($datos[2] ?? ''), 'UTF-8', 'ISO-8859-1'),
                             'valor' => $valor,
-                            'fecha_vencimiento' => $fechaNormalizada,
+                            'fecha_vencimiento' => $this->parseFecha($fechaVencimientoStr),
                             'vendedor' => mb_convert_encoding(trim($datos[12] ?? ''), 'UTF-8', 'ISO-8859-1')
                         ];
                     }

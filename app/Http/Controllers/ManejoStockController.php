@@ -1397,6 +1397,7 @@ class ManejoStockController extends Controller
                 'ENDO' => $endo,
                 'SUENDO' => $suendoDetalle,
                 'LILG' => 'SI',
+                'LINCONDESP' => 1,
                 'NULIDO' => $nulido,
                 'SULIDO' => $sulido,
                 'BOSULIDO' => $bosulido,
@@ -1472,7 +1473,7 @@ class ManejoStockController extends Controller
     {
         $sql = "INSERT INTO MAEDDO (\n";
         $sql .= "    IDMAEDDO, IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO,\n";
-        $sql .= "    LILG, NULIDO, SULIDO, BOSULIDO, LUVTLIDO, KOFULIDO, TIPR,\n";
+        $sql .= "    LILG, LINCONDESP, NULIDO, SULIDO, BOSULIDO, LUVTLIDO, KOFULIDO, TIPR,\n";
         $sql .= "    UDTRPR, RLUDPR, UD01PR, UD02PR,\n";
         $sql .= "    KOPRCT, NOKOPR, CAPRCO1, CAPRCO2,\n";
         $sql .= "    KOLTPR, MOPPPR, TIMOPPPR, TAMOPPPR,\n";
@@ -1483,7 +1484,7 @@ class ManejoStockController extends Controller
         $sql .= "    POTENCIA, HUMEDAD, IDTABITPRE, FEERLIMODI\n";
         $sql .= ") VALUES (\n";
         $sql .= "    {$datos['IDMAEDDO']}, {$datos['IDMAEEDO']}, '{$datos['EMPRESA']}', '{$datos['TIDO']}', '{$datos['NUDO']}', '{$datos['ENDO']}', '{$datos['SUENDO']},\n";
-        $sql .= "    '{$datos['LILG']}', '{$datos['NULIDO']}', '{$datos['SULIDO']}', '{$datos['BOSULIDO']}', '{$datos['LUVTLIDO']}', '{$datos['KOFULIDO']}', '{$datos['TIPR']},\n";
+        $sql .= "    '{$datos['LILG']}', {$datos['LINCONDESP']}, '{$datos['NULIDO']}', '{$datos['SULIDO']}', '{$datos['BOSULIDO']}', '{$datos['LUVTLIDO']}', '{$datos['KOFULIDO']}', '{$datos['TIPR']},\n";
         $sql .= "    {$datos['UDTRPR']}, {$datos['RLUDPR']}, '{$datos['UD01PR']}', '{$datos['UD02PR']},\n";
         $sql .= "    '{$datos['KOPRCT']}', '{$datos['NOKOPR']}', {$datos['CAPRCO1']}, {$datos['CAPRCO2']},\n";
         $sql .= "    '{$datos['KOLTPR']}', '{$datos['MOPPPR']}', '{$datos['TIMOPPPR']}', {$datos['TAMOPPPR']},\n";
@@ -1696,7 +1697,7 @@ class ManejoStockController extends Controller
             $insertMAEDDO = "
                 INSERT INTO MAEDDO (
                     IDMAEDDO, IDMAEEDO, EMPRESA, TIDO, NUDO, ENDO, SUENDO,
-                    LILG, NULIDO, SULIDO, BOSULIDO, LUVTLIDO, KOFULIDO, TIPR,
+                    LILG, LINCONDESP, NULIDO, SULIDO, BOSULIDO, LUVTLIDO, KOFULIDO, TIPR,
                     UDTRPR, RLUDPR, UD01PR, UD02PR,
                     KOPRCT, NOKOPR, CAPRCO1, CAPRAD1, CAPREX1, CAPRNC1, CAPRCO2, CAPRAD2, CAPREX2, CAPRNC2,
                     KOLTPR, MOPPPR, TIMOPPPR, TAMOPPPR,
@@ -1707,7 +1708,7 @@ class ManejoStockController extends Controller
                     POTENCIA, HUMEDAD, IDTABITPRE, FEERLIMODI, PPPRPMSUC, PPPRPMIFRS
                 ) VALUES (
                     {$siguienteId}, {$idmaeedo}, '{$empresa}', '{$tido}', '{$nudo}', '{$endo}', '{$suendoDetalle}',
-                    'SI', '{$nulido}', '{$sulido}', '{$bosulido}', '{$luvtlido}', '{$funcionario}', 'FPN',
+                    'SI', 1, '{$nulido}', '{$sulido}', '{$bosulido}', '{$luvtlido}', '{$funcionario}', 'FPN',
                     {$udtrpr}, {$rludpr}, '{$ud01pr}', '{$ud02pr}',
                     '{$koprct}', '{$nokopr}', {$caprco1}, {$caprad1}, 0, 0, {$caprco2}, {$caprad2}, 0, 0,
                     '{$koltpr}', '$', 'N', 1,

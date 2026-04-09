@@ -202,6 +202,15 @@
                                     <input type="hidden" name="cliente_direccion" value="{{ $cliente->direccion ?? '' }}">
                                     <input type="hidden" name="cliente_region" value="{{ $cliente->region ?? '' }}">
                                     <input type="hidden" name="cliente_comuna" value="{{ $cliente->comuna ?? '' }}">
+                                    <div class="row mt-2" id="filaEntregaSucursal" style="display:none;">
+                                        <div class="col-md-12">
+                                            <small class="text-muted">Entrega / despacho</small>
+                                            <p class="mb-1" id="cliente_entrega_resumen"></p>
+                                            <button type="button" class="btn btn-sm btn-info" id="btnCambiarSucursal" style="display:none;">
+                                                <i class="material-icons" style="font-size:18px;vertical-align:middle;">swap_horiz</i> Cambiar sucursal
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -488,6 +497,27 @@
     </div>
 </div>
 
+<div class="modal fade" id="modalSucursalCliente" tabindex="-1" data-backdrop="static" data-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="material-icons" style="vertical-align:middle;">business</i> Sucursal de entrega</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">Este cliente tiene más de una sucursal. Elija la dirección de despacho para este documento.</p>
+                <div class="form-group">
+                    <label for="selectSucursalCliente">Sucursal</label>
+                    <select class="form-control" id="selectSucursalCliente"></select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="btnConfirmarSucursalCliente">Confirmar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @endsection
 
 <script>
@@ -498,6 +528,81 @@ let clienteData = @json($cliente ?? null);
 let searchTimeout = null;
 let searchCache = new Map();
 let lastSearchTerm = '';
+window.__sucursalesClienteListo = false;
+window.__requiereElegirSucursal = false;
+window.__sucursalElegida = true;
+window.__listaSucursalesApi = [];
+
+function codigoClienteActual() {
+    if (!clienteData) return '';
+    return String(clienteData.codigo_cliente || clienteData.codigo || '').trim();
+}
+function normalizarClienteDataKeys() {
+    if (!clienteData) return;
+    if (!clienteData.codigo_cliente && clienteData.codigo) clienteData.codigo_cliente = clienteData.codigo;
+    if (!clienteData.nombre_cliente && clienteData.nombre) clienteData.nombre_cliente = clienteData.nombre;
+    if (clienteData.direccion === undefined && clienteData.cliente_direccion_entrega) clienteData.direccion = clienteData.cliente_direccion_entrega;
+}
+function aplicarSucursalSeleccionada(s, desdeModal) {
+    if (!clienteData || !s) return;
+    clienteData.cliente_suen = (s.suen !== undefined && s.suen !== null) ? String(s.suen) : '';
+    const baseDir = clienteData.direccion || '';
+    const baseTel = clienteData.telefono || '';
+    clienteData.cliente_direccion_entrega = (s.direccion != null && String(s.direccion).trim() !== '') ? s.direccion : baseDir;
+    clienteData.cliente_telefono_entrega = (s.telefono != null && String(s.telefono).trim() !== '') ? s.telefono : baseTel;
+    let txt = clienteData.cliente_direccion_entrega || '';
+    if (s.comuna) txt += (txt ? ' — ' : '') + s.comuna;
+    if (s.region) txt += (txt ? ' — ' : '') + s.region;
+    const res = document.getElementById('cliente_entrega_resumen');
+    const fila = document.getElementById('filaEntregaSucursal');
+    if (res) res.textContent = txt || '—';
+    if (fila) fila.style.display = 'block';
+    window.__sucursalElegida = true;
+    if (desdeModal && window.jQuery) {
+        jQuery('#modalSucursalCliente').modal('hide');
+    }
+}
+function inicializarSucursalesCliente() {
+    const codigo = codigoClienteActual();
+    normalizarClienteDataKeys();
+    if (!codigo) {
+        window.__sucursalesClienteListo = true;
+        return;
+    }
+    fetch('/api/clientes/' + encodeURIComponent(codigo) + '/sucursales', {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+    })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            window.__sucursalesClienteListo = true;
+            if (!data.success || !data.sucursales || !data.sucursales.length) return;
+            window.__listaSucursalesApi = data.sucursales;
+            const sel = document.getElementById('selectSucursalCliente');
+            const btnCambiar = document.getElementById('btnCambiarSucursal');
+            if (sel) {
+                sel.innerHTML = '';
+                data.sucursales.forEach(function(s, idx) {
+                    const opt = document.createElement('option');
+                    opt.value = String(idx);
+                    opt.textContent = s.etiqueta + (s.direccion ? ' — ' + s.direccion : '');
+                    sel.appendChild(opt);
+                });
+            }
+            if (data.multiple) {
+                window.__requiereElegirSucursal = true;
+                window.__sucursalElegida = false;
+                if (btnCambiar) btnCambiar.style.display = 'inline-block';
+                if (window.jQuery) jQuery('#modalSucursalCliente').modal('show');
+            } else {
+                aplicarSucursalSeleccionada(data.sucursales[0], false);
+                if (btnCambiar) btnCambiar.style.display = 'none';
+            }
+        })
+        .catch(function() {
+            window.__sucursalesClienteListo = true;
+        });
+}
 
 console.log('🔍 Script de cotizaciones cargándose...');
 console.log('🔍 Cliente data:', clienteData);
@@ -1045,6 +1150,11 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
         // Incrementar cantidad según el múltiplo del producto (no usar Math.max)
         const incremento = multiplo > 0 ? multiplo : 1;
         productoExistente.cantidad += incremento;
+        // Refrescar stock/precio por si el borrador viene viejo
+        productoExistente.stock = parseFloat(stock) || 0;
+        productoExistente.unidad = unidad || 'UN';
+        productoExistente.precio = parseFloat(precio) || 0;
+        productoExistente.descuentoMaximo = parseFloat(descuentoMaximo) || 0;
         productoExistente.multiplo = multiplo; // Actualizar múltiplo
         actualizarSubtotal(productosCotizacion.indexOf(productoExistente));
     } else {
@@ -1360,7 +1470,11 @@ function agregarProductosSeleccionados() {
     let productosAgregados = 0;
     productosSeleccionados.forEach(producto => {
         const productoExistente = productosCotizacion.find(p => p.codigo === producto.codigo);
-        if (!productoExistente && productosCotizacion.length < 24) {
+        if (productoExistente) {
+            // Si ya existe, igual agregamos para refrescar stock/precio y subir cantidad
+            agregarProductoDesdePHP(producto.codigo, producto.nombre, producto.precio, producto.stock, producto.unidad, producto.descuentoMaximo, producto.multiplo);
+            productosAgregados++;
+        } else if (productosCotizacion.length < 24) {
             agregarProductoDesdePHP(producto.codigo, producto.nombre, producto.precio, producto.stock, producto.unidad, producto.descuentoMaximo, producto.multiplo);
             productosAgregados++;
         }
@@ -1464,6 +1578,11 @@ async function guardarNotaVenta() {
         return;
     }
 
+    if (!window.__sucursalesClienteListo) {
+        alert('Espere un momento, cargando datos del cliente...');
+        return;
+    }
+
     if (productosCotizacion.length === 0) {
         alert('Debes agregar al menos un producto');
         return;
@@ -1471,6 +1590,18 @@ async function guardarNotaVenta() {
 
     if (!clienteData) {
         alert('No hay cliente seleccionado');
+        return;
+    }
+    normalizarClienteDataKeys();
+    if (clienteData.cliente_direccion_entrega === undefined) {
+        clienteData.cliente_direccion_entrega = clienteData.direccion || '';
+    }
+    if (clienteData.cliente_telefono_entrega === undefined) {
+        clienteData.cliente_telefono_entrega = clienteData.telefono || '';
+    }
+    if (window.__requiereElegirSucursal && !window.__sucursalElegida) {
+        alert('Seleccione la sucursal de entrega.');
+        if (window.jQuery) jQuery('#modalSucursalCliente').modal('show');
         return;
     }
 
@@ -1516,6 +1647,11 @@ async function guardarNotaVenta() {
         solicitar_descuento_extra: solicitarDescuentoExtra,
         _token: csrfToken
     };
+    if (clienteData.cliente_suen !== undefined && clienteData.cliente_suen !== null) {
+        cotizacionData.cliente_suen = clienteData.cliente_suen;
+    }
+    cotizacionData.cliente_direccion_entrega = clienteData.cliente_direccion_entrega;
+    cotizacionData.cliente_telefono_entrega = clienteData.cliente_telefono_entrega;
 
     fetch('/cotizacion/guardar', {
         method: 'POST',
@@ -1637,6 +1773,23 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     console.log('🔍 Lista de precios final:', clienteData?.lista_precios_codigo);
+
+    const btnConfirmSuc = document.getElementById('btnConfirmarSucursalCliente');
+    if (btnConfirmSuc) {
+        btnConfirmSuc.addEventListener('click', function() {
+            const sel = document.getElementById('selectSucursalCliente');
+            const idx = sel ? parseInt(sel.value, 10) : 0;
+            const lista = window.__listaSucursalesApi || [];
+            if (lista[idx]) aplicarSucursalSeleccionada(lista[idx], true);
+        });
+    }
+    const btnCambiarSuc = document.getElementById('btnCambiarSucursal');
+    if (btnCambiarSuc) {
+        btnCambiarSuc.addEventListener('click', function() {
+            if (window.jQuery) jQuery('#modalSucursalCliente').modal('show');
+        });
+    }
+    inicializarSucursalesCliente();
     
     // Configurar cambio de tipo de documento
     const radioNotaVenta = document.getElementById('tipo_nota_venta');

@@ -696,7 +696,13 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
             
             if (data.success) {
                 // Usar el stock actualizado del servidor
-                const stockActualizado = data.stock_disponible || 0;
+                // Para la UI en "nota-venta/editar", el mensaje "sin stock" debe depender del stock FISICO.
+                // Si el comprometido SQL deja stock_disponible en 0 pero hay stock físico, igual permitimos agregar,
+                // y el backend seguirá validando disponibilidad real al momento de aprobar/enviar.
+                const stockActualizado =
+                    (data.stock_disponible !== undefined && Number(data.stock_disponible) > 0)
+                        ? Number(data.stock_disponible)
+                        : (Number(data.stock_fisico) || 0);
                 const stockFisico = data.stock_fisico || 0;
                 const stockComprometido = data.stock_comprometido || 0;
                 
@@ -790,6 +796,11 @@ function agregarProductoConStockOriginal(codigo, nombre, precio, stock, unidad, 
         // Incrementar cantidad según el múltiplo del producto
         const incremento = multiplo > 0 ? multiplo : 1;
         productoExistente.cantidad += incremento;
+        // Refrescar stock/precio por si el fallback viene con información nueva
+        productoExistente.stock = parseFloat(stock) || 0;
+        productoExistente.unidad = unidad || 'UN';
+        productoExistente.precio = parseFloat(precio) || 0;
+        productoExistente.descuentoMaximo = parseFloat(descuentoMaximo) || 0;
         productoExistente.multiplo = multiplo;
         actualizarSubtotal(productosCotizacion.indexOf(productoExistente));
     } else {

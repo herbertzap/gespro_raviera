@@ -532,7 +532,7 @@ function cargarDetalleProducto(codigo) {
             html += `
                 <div class="row">
                     <div class="col-md-6">
-                        <h5><i class="material-icons">storage</i> Stock en APP</h5>
+                        <h5><i class="material-icons">storage</i> Stock en sistema (MySQL)</h5>
                         <ul>
                             <li><strong>Stock físico:</strong> ${Number(mysql.stock_fisico || 0).toLocaleString('es-CL')}</li>
                             <li><strong>Comprometido SQL (NVV):</strong> ${Number(mysql.stock_comprometido_sql || 0).toLocaleString('es-CL')}</li>
@@ -541,7 +541,7 @@ function cargarDetalleProducto(codigo) {
                         </ul>
                     </div>
                     <div class="col-md-6">
-                        <h5><i class="material-icons">dns</i> Stock en RAMDON (bodega ${sql.bodega || 'LIB'})</h5>
+                        <h5><i class="material-icons">dns</i> Stock en SQL Server (bodega ${sql.bodega || 'LIB'})</h5>
                         <ul>
                             <li><strong>Stock físico (STFI1):</strong> ${sql.stock_fisico !== null && sql.stock_fisico !== undefined ? Number(sql.stock_fisico).toLocaleString('es-CL') : 'N/D'}</li>
                             <li><strong>Disponible (STFI1 - STOCNV1 - local):</strong> ${sql.stock_disponible !== null && sql.stock_disponible !== undefined ? Number(sql.stock_disponible).toLocaleString('es-CL') : 'N/D'}</li>
@@ -552,7 +552,7 @@ function cargarDetalleProducto(codigo) {
             
             // NVV pendientes
             const detalleNvv = response.nvv_pendientes || [];
-            html += `<hr><h5><i class="material-icons">assignment</i> NVV pendientes en RAMDON</h5>`;
+            html += `<hr><h5><i class="material-icons">assignment</i> NVV pendientes en SQL Server</h5>`;
             if (detalleNvv.length === 0) {
                 html += `<p class="text-muted">No hay NVV pendientes para este producto.</p>`;
             } else {
@@ -579,25 +579,18 @@ function cargarDetalleProducto(codigo) {
                                     <th>Cliente</th>
                                     <th>Cantidad comprometida</th>
                                     <th>Estado</th>
-                                    <th>Cuenta como comprometido</th>
                                 </tr>
                             </thead>
                             <tbody>
                 `;
                 compromisosLocales.forEach(function(c) {
-                    const urlNvv = c.cotizacion_id ? '{{ url("/nota-venta/ver") }}/' + encodeURIComponent(c.cotizacion_id) : null;
-                    const enlaceCot = c.cotizacion_id
-                        ? `<a href="${urlNvv}" target="_blank">${c.cotizacion_id}</a>`
-                        : '';
-
                     html += `
                         <tr>
-                            <td>${enlaceCot}</td>
+                            <td>${c.cotizacion_id || ''}</td>
                             <td>${c.numero_nvv_local || '-'}</td>
                             <td>${c.cliente || ''}</td>
                             <td>${Number(c.cantidad || 0).toLocaleString('es-CL')}</td>
                             <td>${c.estado || ''}</td>
-                            <td>${c.cuenta_como_comprometido ? 'Sí' : 'No (ya enviada a SQL)'}</td>
                         </tr>
                     `;
                 });

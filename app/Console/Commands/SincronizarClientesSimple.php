@@ -505,11 +505,19 @@ class SincronizarClientesSimple extends Command
                 ->update(['activo' => false]);
             
             \Log::info("Sincronización completada para {$codigoVendedor}: {$sincronizados} nuevos, {$actualizados} actualizados, " . count($clientesExternos) . " total");
+            $sucursalesSync = null;
+            try {
+                $sucursalesSync = \App\Models\ClienteSucursal::sincronizarDesdeMaeen();
+            } catch (\Throwable $e) {
+                \Log::warning('Sincronizar sucursales MAEEN (vendedor): ' . $e->getMessage());
+            }
+
             return [
                 'success' => true,
                 'nuevos' => $sincronizados,
                 'actualizados' => $actualizados,
-                'total' => count($clientesExternos)
+                'total' => count($clientesExternos),
+                'sucursales' => $sucursalesSync,
             ];
             
         } catch (\Exception $e) {
@@ -647,13 +655,21 @@ class SincronizarClientesSimple extends Command
             }
             
             \Log::info("Sincronización completada. Nuevos: {$sincronizados}, Actualizados: {$actualizados}");
+
+            $sucursalesSync = null;
+            try {
+                $sucursalesSync = \App\Models\ClienteSucursal::sincronizarDesdeMaeen();
+            } catch (\Throwable $e) {
+                \Log::warning('Sincronizar sucursales MAEEN (todos): ' . $e->getMessage());
+            }
             
             return [
                 'success' => true,
                 'nuevos' => $sincronizados,
                 'actualizados' => $actualizados,
                 'total' => count($clientesExternos),
-                'message' => "Sincronización completada exitosamente"
+                'message' => "Sincronización completada exitosamente",
+                'sucursales' => $sucursalesSync,
             ];
             
         } catch (\Exception $e) {

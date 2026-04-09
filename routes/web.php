@@ -47,6 +47,7 @@ Route::middleware(['auth'])->group(function () {
 // Rutas de Cotizaciones
 Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/cotizaciones', [App\Http\Controllers\CotizacionController::class, 'index'])->name('cotizaciones.index');
+    Route::get('/cotizaciones/exportar-excel', [App\Http\Controllers\CotizacionController::class, 'exportarExcel'])->name('cotizaciones.exportar-excel');
     Route::get('/cotizacion/nueva', [App\Http\Controllers\CotizacionSimpleController::class, 'nueva'])->name('cotizacion.nueva');
     Route::get('/cotizacion/editar/{id}', [App\Http\Controllers\CotizacionSimpleController::class, 'editar'])->name('cotizacion.editar');
     Route::get('/cotizacion/ver/{id}', [App\Http\Controllers\CotizacionSimpleController::class, 'ver'])->name('cotizacion.ver');
@@ -90,7 +91,6 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/productos/sincronizar-stock', [App\Http\Controllers\ProductoController::class, 'sincronizarStockProductos'])->name('productos.sincronizar-stock');
     Route::get('/api/productos/buscar', [App\Http\Controllers\ProductoController::class, 'buscar'])->name('productos.buscar');
     Route::get('/api/productos/buscar-nvv', [App\Http\Controllers\ProductoController::class, 'buscarConNvvPendientes'])->name('productos.buscar-nvv');
-    Route::get('/api/productos/detalle/{codigo}', [App\Http\Controllers\ProductoController::class, 'detalle'])->name('productos.detalle');
     Route::post('/api/productos/crear-nvv', [App\Http\Controllers\ProductoController::class, 'crearNVVDesdeProductos'])->name('productos.crear-nvv');
     Route::post('/api/productos/modificar-cantidades', [App\Http\Controllers\ProductoController::class, 'modificarCantidades'])->name('productos.modificar-cantidades');
 
@@ -224,6 +224,7 @@ Route::middleware(['auth', 'sincronizar.clientes'])->group(function () {
     Route::get('/clientes/buscar', [App\Http\Controllers\ClienteController::class, 'buscarAjax'])->name('clientes.buscar.ajax');
     Route::post('/clientes/sincronizar', [App\Http\Controllers\ClienteController::class, 'sincronizar'])->name('clientes.sincronizar');
     Route::get('/clientes/estadisticas', [App\Http\Controllers\ClienteController::class, 'estadisticas'])->name('clientes.estadisticas');
+    Route::get('/api/clientes/{codigo}/sucursales', [App\Http\Controllers\ClienteController::class, 'apiClienteSucursales'])->name('api.clientes.sucursales');
 });
 
 // Rutas de Compras

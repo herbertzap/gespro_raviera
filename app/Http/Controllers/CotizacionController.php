@@ -10,6 +10,7 @@ use App\Models\CotizacionDetalle;
 use App\Models\CotizacionProducto;
 use App\Models\StockComprometido;
 use App\Models\Cliente;
+use Carbon\Carbon;
 use App\Services\ClienteValidacionService;
 use App\Services\StockService;
 use App\Services\StockConsultaService;
@@ -21,7 +22,7 @@ class CotizacionController extends Controller
         // Restringir acceso solo a Super Admin, Supervisor, Compras y Picking
         $this->middleware(function ($request, $next) {
             $user = auth()->user();
-            if (!$user->hasRole('Super Admin') && !$user->hasRole('Supervisor') && !$user->hasRole('Compras') && !$user->hasRole('Picking') && !$user->hasRole('Vendedor')) {
+            if (!$user->hasRole('Super Admin') && !$user->hasRole('Supervisor') && !$user->hasRole('Compras') && !$user->hasRole('Picking') && !$user->hasRole('Picking Operativo') && !$user->hasRole('Vendedor')) {
                 abort(403, 'Acceso denegado. Solo Super Admin, Supervisor, Compras, Picking y Vendedor pueden acceder a esta vista.');
             }
             return $next($request);
@@ -1146,40 +1147,11 @@ class CotizacionController extends Controller
                 // Todos los productos tienen stock suficiente
                 \Log::info("✅ TODOS LOS PRODUCTOS TIENEN STOCK SUFICIENTE");
                 
-                // Verificar si el cliente puede vender (sin validaciones que requieran autorización)
+                // Sin NVV automática ficticia: la cotización pasa a enviada cuando todo el stock está OK y el cliente es válido.
                 if ($validacionCliente['puede_vender'] && !$requiereAutorizacion) {
-                    \Log::info("✅ CLIENTE VÁLIDO Y SIN RESTRICCIONES - GENERANDO NOTA DE VENTA AUTOMÁTICAMENTE EN SQL SERVER");
-                    
-                    // Generar nota de venta automáticamente en SQL Server
-                    $resultadoNotaVenta = $this->generarNotaVentaAutomatica($cotizacion, $request->productos);
-                    
-                    if ($resultadoNotaVenta['success']) {
-                        $estadoFinal = 'procesada';
-                        $cotizacion->update([
-                            'estado' => $estadoFinal,
-                            'requiere_aprobacion' => false,
-                            'nota_venta_id' => $resultadoNotaVenta['nota_venta_id'],
-                            'observaciones' => $cotizacion->observaciones . "\n\n✅ NOTA DE VENTA GENERADA AUTOMÁTICAMENTE EN SQL SERVER\nNúmero: {$resultadoNotaVenta['nota_venta_id']}"
-                        ]);
-                        
-                        // Marcar stock comprometido como procesado
-                        \App\Models\StockComprometido::porCotizacion($cotizacion->id)
-                            ->activo()
-                            ->get()
-                            ->each(function($stock) {
-                                $stock->procesar();
-                            });
-                        
-                        \Log::info("✅ Nota de venta generada automáticamente en SQL Server - ID: {$resultadoNotaVenta['nota_venta_id']}");
-                    } else {
-                        $estadoFinal = 'enviada';
-                        $cotizacion->update([
-                            'estado' => $estadoFinal,
-                            'requiere_aprobacion' => true,
-                            'observaciones' => $cotizacion->observaciones . "\n\n⚠️ ERROR AL GENERAR NOTA DE VENTA: {$resultadoNotaVenta['message']}"
-                        ]);
-                        \Log::warning("⚠️ Error generando nota de venta automática: {$resultadoNotaVenta['message']}");
-                    }
+                    $estadoFinal = 'enviada';
+                    $cotizacion->update(['estado' => $estadoFinal]);
+                    \Log::info('✅ Cotización con stock y cliente OK — estado enviada (sin procesada hasta conversión/NVV real)');
                 } else {
                     \Log::warning("⚠️ CLIENTE CON RESTRICCIONES - GUARDANDO LOCALMENTE PARA APROBACIÓN");                                                        
                     
@@ -1284,55 +1256,353 @@ class CotizacionController extends Controller
      */
     public function index(Request $request)
     {
-        $user = auth()->user();
-        
-        // Filtros
         $estado = $request->get('estado', '');
         $cliente = $request->get('cliente', '');
         $fechaInicio = $request->get('fecha_inicio', '');
         $fechaFin = $request->get('fecha_fin', '');
-        $buscar = $request->get('buscar', ''); // Nuevo filtro de búsqueda general
+        $buscar = $request->get('buscar', '');
         $montoMin = $request->get('monto_min', '');
         $montoMax = $request->get('monto_max', '');
-        $tipoDocumento = $request->get('tipo_documento', ''); // Nuevo filtro: cotizacion | nota_venta
-        
-        // Si es Supervisor, puede ver todas las cotizaciones
-        if ($user->hasRole('Supervisor') || $user->hasRole('Super Admin')) {
-            // Obtener cotizaciones desde SQL Server (todas)
-            $cotizacionesSQL = $this->obtenerCotizacionesDesdeSQLServer($estado, $cliente, $fechaInicio, $fechaFin, '', $buscar, $montoMin, $montoMax);
-            
-            // Obtener cotizaciones locales (todas)
-            $cotizacionesLocales = $this->obtenerCotizacionesLocales($estado, $cliente, $fechaInicio, $fechaFin, $buscar, $montoMin, $montoMax, true, $tipoDocumento);
-        } else {
-            // Si es Vendedor, solo sus cotizaciones
-            $codigoVendedor = $user->codigo_vendedor ?? '';
-            
-            // Obtener cotizaciones desde SQL Server filtradas por vendedor
-            $cotizacionesSQL = $this->obtenerCotizacionesDesdeSQLServer($estado, $cliente, $fechaInicio, $fechaFin, $codigoVendedor, $buscar, $montoMin, $montoMax);
-            
-            // Obtener cotizaciones locales del vendedor
-            $cotizacionesLocales = $this->obtenerCotizacionesLocales($estado, $cliente, $fechaInicio, $fechaFin, $buscar, $montoMin, $montoMax, false, $tipoDocumento);
-        }
-        
-        // Combinar ambas listas
-        $cotizaciones = array_merge($cotizacionesSQL, $cotizacionesLocales);
-        
-        // Ordenar por fecha (más recientes primero)
-        usort($cotizaciones, function($a, $b) {
-            // Convertir objetos a arrays si es necesario
-            $a = is_object($a) ? (array)$a : $a;
-            $b = is_object($b) ? (array)$b : $b;
-            
-            $fechaA = isset($a['fecha_emision']) ? $a['fecha_emision'] : (isset($a['fecha']) ? $a['fecha'] : '');
-            $fechaB = isset($b['fecha_emision']) ? $b['fecha_emision'] : (isset($b['fecha']) ? $b['fecha'] : '');
-            
-            return strtotime($fechaB) - strtotime($fechaA);
-        });
-        
-        // Obtener lista de clientes únicos para el select
+        $tipoDocumento = $request->get('tipo_documento', '');
+
+        $cotizaciones = $this->armarListadoCotizaciones($request);
         $clientes = $this->obtenerClientesUnicos($cotizaciones);
 
         return view('cotizaciones.index', compact('cotizaciones', 'estado', 'cliente', 'fechaInicio', 'fechaFin', 'buscar', 'montoMin', 'montoMax', 'clientes'))->with('pageSlug', 'cotizaciones');
+    }
+
+    /**
+     * Exportar a Excel el mismo listado que la grilla (respeta filtros actuales).
+     */
+    public function exportarExcel(Request $request)
+    {
+        $cotizaciones = $this->armarListadoCotizaciones($request);
+        $esNotasVenta = $request->get('tipo_documento') === 'nota_venta';
+        $filename = $esNotasVenta
+            ? ('notas_venta_' . date('Y-m-d_His') . '.xlsx')
+            : ('cotizaciones_' . date('Y-m-d_His') . '.xlsx');
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Listado');
+
+        $sheet->setCellValue('A1', $esNotasVenta ? 'Notas de venta' : 'Listado de cotizaciones / notas de venta');
+        $sheet->setCellValue('A2', 'Generado: ' . now()->format('d/m/Y H:i:s'));
+        if (!$esNotasVenta && $request->getQueryString()) {
+            $sheet->setCellValue('A3', 'Filtros: ' . $request->getQueryString());
+        }
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+
+        $row = 5;
+        if ($esNotasVenta) {
+            $headers = [
+                'ID app',
+                'Tipo',
+                'N° doc.',
+                'N° NVV SQL',
+                'Cliente código',
+                'Cliente',
+                'Comuna',
+                'Vendedor',
+                'Fecha',
+                'Neto',
+                'Total',
+                'Saldo',
+                'Días atraso',
+                'Estado',
+                'Estado aprobación',
+                'Fuente',
+            ];
+            $lastCol = 'P';
+        } else {
+            $headers = [
+                'ID app',
+                'Tipo',
+                'N° doc.',
+                'N° NVV SQL',
+                'Cliente código',
+                'Cliente',
+                'Vendedor',
+                'Fecha',
+                'Total',
+                'Saldo',
+                'Estado',
+                'Estado aprobación',
+                'Fuente',
+            ];
+            $lastCol = 'M';
+        }
+        $col = 'A';
+        foreach ($headers as $h) {
+            $sheet->setCellValue($col . $row, $h);
+            $col++;
+        }
+        $sheet->getStyle('A' . $row . ':' . $lastCol . $row)->getFont()->setBold(true);
+        $sheet->getStyle('A' . $row . ':' . $lastCol . $row)->getFill()
+            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('E0E0E0');
+
+        $row++;
+        $dataStartRow = $row;
+        foreach ($cotizaciones as $item) {
+            $c = is_object($item) ? (array) $item : $item;
+            $tipoDoc = $c['tipo_documento'] ?? (isset($c['tipo']) && $c['tipo'] === 'NVV' ? 'nota_venta' : '');
+            $tipoLabel = $tipoDoc === 'nota_venta' ? 'Nota de venta' : ($tipoDoc === 'cotizacion' ? 'Cotización' : ($tipoDoc ?: '—'));
+            $numDoc = $c['numero'] ?? $c['id'] ?? '';
+            $ea = $c['estado_aprobacion'] ?? null;
+            $estadoAprobTxt = $this->etiquetaEstadoAprobacionParaExport(is_string($ea) ? $ea : null);
+
+            $fechaEmisionRaw = $c['fecha_emision'] ?? $c['fecha'] ?? '';
+            $fechaVal = $fechaEmisionRaw;
+            if ($fechaVal && is_string($fechaVal)) {
+                $ts = strtotime($fechaVal);
+                $fechaVal = $ts ? date('d/m/Y', $ts) : $fechaVal;
+            }
+
+            $sheet->setCellValue('A' . $row, $c['id'] ?? '');
+            $sheet->setCellValue('B' . $row, $tipoLabel);
+            $sheet->setCellValue('C' . $row, $numDoc);
+            $sheet->setCellValue('D' . $row, $c['numero_nvv'] ?? '');
+            $sheet->setCellValue('E' . $row, $c['cliente_codigo'] ?? '');
+            $sheet->setCellValue('F' . $row, $c['cliente_nombre'] ?? '');
+            if ($esNotasVenta) {
+                $sheet->setCellValue('G' . $row, $c['comuna'] ?? '');
+                $sheet->setCellValue('H' . $row, $c['vendedor_nombre'] ?? '');
+                $sheet->setCellValue('I' . $row, $fechaVal);
+                $netoVal = $c['neto'] ?? $c['subtotal'] ?? null;
+                $sheet->setCellValue('J' . $row, $netoVal !== null && $netoVal !== '' ? (int) round((float) $netoVal) : '');
+                $sheet->setCellValue('K' . $row, isset($c['total']) ? (int) round((float) $c['total']) : '');
+                $sheet->setCellValue('L' . $row, isset($c['saldo']) ? (int) round((float) $c['saldo']) : '');
+                $diasAtraso = $this->diasAtrasoDesdeFechaEmision($fechaEmisionRaw);
+                $sheet->setCellValue('M' . $row, $diasAtraso);
+                $sheet->setCellValue('N' . $row, $c['estado'] ?? '');
+                $sheet->setCellValue('O' . $row, $estadoAprobTxt);
+                $fuente = $c['fuente'] ?? '';
+                $sheet->setCellValue('P' . $row, $fuente === 'local' ? 'Local' : (($fuente === 'sql_server' || $fuente) ? 'SQL / ERP' : ''));
+            } else {
+                $sheet->setCellValue('G' . $row, $c['vendedor_nombre'] ?? '');
+                $sheet->setCellValue('H' . $row, $fechaVal);
+                $sheet->setCellValue('I' . $row, isset($c['total']) ? (float) $c['total'] : '');
+                $sheet->setCellValue('J' . $row, isset($c['saldo']) ? (float) $c['saldo'] : '');
+                $sheet->setCellValue('K' . $row, $c['estado'] ?? '');
+                $sheet->setCellValue('L' . $row, $estadoAprobTxt);
+                $fuente = $c['fuente'] ?? '';
+                $sheet->setCellValue('M' . $row, $fuente === 'local' ? 'Local' : (($fuente === 'sql_server' || $fuente) ? 'SQL / ERP' : ''));
+            }
+            $row++;
+        }
+
+        foreach (range('A', $lastCol) as $column) {
+            $sheet->getColumnDimension($column)->setAutoSize(true);
+        }
+
+        if ($esNotasVenta && $row > $dataStartRow) {
+            $lastData = $row - 1;
+            $sheet->getStyle('J' . $dataStartRow . ':L' . $lastData)->getNumberFormat()->setFormatCode('#,##0');
+            $sheet->getStyle('M' . $dataStartRow . ':M' . $lastData)->getNumberFormat()->setFormatCode('#,##0');
+        }
+
+        if ($esNotasVenta) {
+            $idsNvvLocales = [];
+            foreach ($cotizaciones as $item) {
+                $c = is_object($item) ? (array) $item : $item;
+                if (($c['fuente'] ?? '') === 'local' && ($c['tipo_documento'] ?? '') === 'nota_venta' && isset($c['id'])) {
+                    $idsNvvLocales[] = (int) $c['id'];
+                }
+            }
+            $idsNvvLocales = array_values(array_unique($idsNvvLocales));
+            $this->agregarHojaDetalleProductosNvvAlExcel($spreadsheet, $idsNvvLocales);
+            $spreadsheet->setActiveSheetIndex(0);
+        }
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $tempFile = tempnam(sys_get_temp_dir(), 'cot_export_');
+        $writer->save($tempFile);
+
+        return response()->download($tempFile, $filename)->deleteFileAfterSend(true);
+    }
+
+    /**
+     * Segunda hoja del Excel de NVV: líneas de producto desde cotizacion_productos.
+     * Solo aplica a NVV guardadas en la app (fuente local); el ERP no trae detalle aquí.
+     */
+    private function agregarHojaDetalleProductosNvvAlExcel(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet, array $cotizacionIds): void
+    {
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('Detalle productos');
+
+        $sheet->setCellValue('A1', 'Detalle de productos por NVV');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(12);
+        $sheet->setCellValue('A2', 'Incluye solo notas de venta registradas en la aplicación. Las filas solo ERP no tienen detalle de líneas en este archivo.');
+        $sheet->mergeCells('A2:H2');
+
+        $row = 5;
+        $headers = [
+            'ID app',
+            'N° NVV',
+            'SKU',
+            'Nombre producto',
+            'Cantidad',
+            'Neto',
+            'IVA',
+            'Total',
+        ];
+        $lastCol = 'H';
+        $col = 'A';
+        foreach ($headers as $h) {
+            $sheet->setCellValue($col . $row, $h);
+            $col++;
+        }
+        $sheet->getStyle('A' . $row . ':' . $lastCol . $row)->getFont()->setBold(true);
+        $sheet->getStyle('A' . $row . ':' . $lastCol . $row)->getFill()
+            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('E0E0E0');
+
+        $row++;
+        $dataStart = $row;
+
+        if ($cotizacionIds === []) {
+            $sheet->setCellValue('A' . $row, 'No hay NVV locales en el resultado actual; no se listan líneas.');
+        } else {
+            $cotizaciones = Cotizacion::with(['productos' => function ($q) {
+                $q->orderBy('id');
+            }])
+                ->whereIn('id', $cotizacionIds)
+                ->where('tipo_documento', 'nota_venta')
+                ->orderBy('id')
+                ->get();
+
+            foreach ($cotizaciones as $cot) {
+                $numeroNvv = $cot->numero_nvv !== null && $cot->numero_nvv !== ''
+                    ? (string) $cot->numero_nvv
+                    : '';
+                foreach ($cot->productos as $p) {
+                    $neto = $p->subtotal_con_descuento !== null
+                        ? (float) $p->subtotal_con_descuento
+                        : (float) $p->subtotal;
+                    $iva = (float) ($p->iva_valor ?? 0);
+                    $total = (float) ($p->total_producto ?? 0);
+
+                    $sheet->setCellValue('A' . $row, $cot->id);
+                    $sheet->setCellValue('B' . $row, $numeroNvv);
+                    $sheet->setCellValue('C' . $row, $p->codigo_producto ?? '');
+                    $sheet->setCellValue('D' . $row, $p->nombre_producto ?? '');
+                    $sheet->setCellValue('E' . $row, (int) $p->cantidad);
+                    $sheet->setCellValue('F' . $row, (int) round($neto));
+                    $sheet->setCellValue('G' . $row, (int) round($iva));
+                    $sheet->setCellValue('H' . $row, (int) round($total));
+                    $row++;
+                }
+            }
+
+            if ($row === $dataStart) {
+                $sheet->setCellValue('A' . $dataStart, 'Las NVV locales filtradas no tienen líneas de producto cargadas.');
+            } else {
+                $lastData = $row - 1;
+                $sheet->getStyle('E' . $dataStart . ':E' . $lastData)->getNumberFormat()->setFormatCode('#,##0');
+                $sheet->getStyle('F' . $dataStart . ':H' . $lastData)->getNumberFormat()->setFormatCode('#,##0');
+            }
+        }
+
+        foreach (range('A', $lastCol) as $column) {
+            $sheet->getColumnDimension($column)->setAutoSize(true);
+        }
+    }
+
+    /**
+     * Misma lógica de datos que index(): SQL + locales, ordenado por fecha.
+     */
+    private function armarListadoCotizaciones(Request $request): array
+    {
+        $user = auth()->user();
+
+        $estado = $request->get('estado', '');
+        $cliente = $request->get('cliente', '');
+        $fechaInicio = $request->get('fecha_inicio', '');
+        $fechaFin = $request->get('fecha_fin', '');
+        $buscar = $request->get('buscar', '');
+        $montoMin = $request->get('monto_min', '');
+        $montoMax = $request->get('monto_max', '');
+        $tipoDocumento = $request->get('tipo_documento', '');
+
+        // Solo consultar líneas NVV del ERP cuando el filtro tiene equivalente en tsql (ingresada/pendiente/aprobada)
+        // o sin filtro de estado. Cualquier otro valor (enviada, borrador, cola_picking, procesada, etc.) = solo MySQL.
+        $cotizacionesSQL = [];
+        $consultarSqlErp = ($estado === '' || in_array($estado, ['ingresada', 'pendiente', 'aprobada'], true));
+        if ($consultarSqlErp) {
+            if ($this->usuarioVeListadoCompletoCotizaciones($user)) {
+                $cotizacionesSQL = $this->obtenerCotizacionesDesdeSQLServer($estado, $cliente, $fechaInicio, $fechaFin, '', $buscar, $montoMin, $montoMax);
+            } else {
+                $codigoVendedor = $user->codigo_vendedor ?? '';
+                $cotizacionesSQL = $this->obtenerCotizacionesDesdeSQLServer($estado, $cliente, $fechaInicio, $fechaFin, $codigoVendedor, $buscar, $montoMin, $montoMax);
+            }
+        }
+
+        if ($this->usuarioVeListadoCompletoCotizaciones($user)) {
+            $cotizacionesLocales = $this->obtenerCotizacionesLocales($estado, $cliente, $fechaInicio, $fechaFin, $buscar, $montoMin, $montoMax, true, $tipoDocumento);
+        } else {
+            $cotizacionesLocales = $this->obtenerCotizacionesLocales($estado, $cliente, $fechaInicio, $fechaFin, $buscar, $montoMin, $montoMax, false, $tipoDocumento);
+        }
+
+        $cotizaciones = array_merge($cotizacionesSQL, $cotizacionesLocales);
+
+        usort($cotizaciones, function ($a, $b) {
+            $a = is_object($a) ? (array) $a : $a;
+            $b = is_object($b) ? (array) $b : $b;
+
+            $fechaA = isset($a['fecha_emision']) ? $a['fecha_emision'] : (isset($a['fecha']) ? $a['fecha'] : '');
+            $fechaB = isset($b['fecha_emision']) ? $b['fecha_emision'] : (isset($b['fecha']) ? $b['fecha'] : '');
+
+            return strtotime((string) $fechaB) - strtotime((string) $fechaA);
+        });
+
+        return $cotizaciones;
+    }
+
+    private function etiquetaEstadoAprobacionParaExport(?string $ea): string
+    {
+        if ($ea === null || $ea === '') {
+            return '';
+        }
+
+        $map = [
+            'pendiente' => 'Pendiente supervisor',
+            'pendiente_picking' => 'Pendiente Picking',
+            'aprobada_supervisor' => 'Aprobada Supervisor',
+            'aprobada_compras' => 'Aprobada Compras',
+            'aprobada_picking' => 'Aprobada Picking',
+            'rechazada' => 'Rechazada',
+        ];
+
+        return $map[$ea] ?? $ea;
+    }
+
+    private function usuarioVeListadoCompletoCotizaciones($user): bool
+    {
+        return $user->hasRole('Supervisor') || $user->hasRole('Super Admin')
+            || $user->hasRole('Compras') || $user->hasRole('Picking')
+            || $user->hasRole('Picking Operativo');
+    }
+
+    /**
+     * Días calendario entre la fecha del documento y hoy (0 si la fecha es futura o inválida).
+     */
+    private function diasAtrasoDesdeFechaEmision($fechaRaw): int
+    {
+        if ($fechaRaw === null || $fechaRaw === '') {
+            return 0;
+        }
+        try {
+            $doc = Carbon::parse($fechaRaw)->startOfDay();
+        } catch (\Throwable $e) {
+            return 0;
+        }
+        $hoy = Carbon::today();
+        if ($doc->gt($hoy)) {
+            return 0;
+        }
+
+        return (int) $hoy->diffInDays($doc);
     }
     
     /**
@@ -1353,31 +1623,9 @@ class CotizacionController extends Controller
                 $query->where('tipo_documento', $tipoDocumento);
             }
             
-            // Filtro por estado
+            // Filtro por estado (todos los valores del select; ver Cotizacion::scopeFiltrarEstadoListado)
             if ($estado) {
-                switch ($estado) {
-                    case 'borrador':
-                        $query->where('estado', 'borrador');
-                        break;
-                    case 'enviada':
-                        $query->where('estado', 'enviada');
-                        break;
-                    case 'aprobada':
-                        $query->where('estado', 'aprobada');
-                        break;
-                    case 'rechazada':
-                        $query->where('estado', 'rechazada');
-                        break;
-                    case 'pendiente_stock':
-                        $query->where('estado', 'pendiente_stock');
-                        break;
-                    case 'procesada':
-                        $query->where('estado', 'procesada');
-                        break;
-                    case 'cancelada':
-                        $query->where('estado', 'cancelada');
-                        break;
-                }
+                $query->filtrarEstadoListado($estado);
             }
             
             // Filtro por cliente (código exacto del select)
@@ -1409,6 +1657,11 @@ class CotizacionController extends Controller
             }
             
             $cotizaciones = $query->orderBy('fecha', 'desc')->get();
+
+            $codigosCliente = $cotizaciones->pluck('cliente_codigo')->filter()->unique()->values()->all();
+            $comunasPorCodigo = $codigosCliente === []
+                ? collect()
+                : Cliente::whereIn('codigo_cliente', $codigosCliente)->pluck('comuna', 'codigo_cliente');
             
             $resultado = [];
             foreach ($cotizaciones as $cotizacion) {
@@ -1417,14 +1670,18 @@ class CotizacionController extends Controller
                     'tipo' => 'COTIZACION_LOCAL',
                     'tipo_documento' => $cotizacion->tipo_documento,
                     'numero' => $cotizacion->id,
+                    'numero_nvv' => $cotizacion->numero_nvv,
                     'fecha_emision' => $cotizacion->fecha->format('Y-m-d H:i:s'),
                     'cliente_codigo' => $cotizacion->cliente_codigo,
                     'cliente_nombre' => $cotizacion->cliente_nombre,
+                    'comuna' => $comunasPorCodigo[$cotizacion->cliente_codigo] ?? '',
                     'vendedor_nombre' => $cotizacion->user->name ?? 'N/A',
                     'vendedor_codigo' => $cotizacion->user->codigo_vendedor ?? 'N/A',
                     'total' => $cotizacion->total,
                     'subtotal' => $cotizacion->subtotal,
+                    'neto' => $cotizacion->subtotal,
                     'descuento_global' => $cotizacion->descuento_global,
+                    'saldo' => 0,
                     'estado' => ($cotizacion->estado_aprobacion === 'rechazada') ? 'rechazada' : $cotizacion->estado,
                     'estado_aprobacion' => $cotizacion->estado_aprobacion,
                     'requiere_aprobacion' => $cotizacion->requiere_aprobacion,
@@ -2461,36 +2718,6 @@ class CotizacionController extends Controller
     }
 
     /**
-     * Generar nota de venta automáticamente cuando todos los productos tienen stock
-     */
-    private function generarNotaVentaAutomatica($cotizacion, $productos)
-    {
-        try {
-            \Log::info("🚀 GENERANDO NOTA DE VENTA AUTOMÁTICA PARA COTIZACIÓN {$cotizacion->id}");
-            
-            // Generar un número único para la nota de venta
-            // Usamos un timestamp + ID de cotización para asegurar unicidad
-            $numeroNotaVenta = (int)(time() . str_pad($cotizacion->id, 3, '0', STR_PAD_LEFT));
-            
-            \Log::info("✅ Nota de venta generada: {$numeroNotaVenta}");
-            
-            return [
-                'success' => true,
-                'nota_venta_id' => $numeroNotaVenta,
-                'message' => 'Nota de venta generada exitosamente'
-            ];
-            
-        } catch (\Exception $e) {
-            \Log::error('Error generando nota de venta automática: ' . $e->getMessage());
-            
-            return [
-                'success' => false,
-                'message' => 'Error al generar nota de venta: ' . $e->getMessage()
-            ];
-        }
-    }
-
-    /**
      * Editar cotización existente
      */
     public function editar($id)
@@ -3121,22 +3348,40 @@ class CotizacionController extends Controller
     public function obtenerStockProducto($codigo)
     {
         try {
+            $codigoOriginal = trim((string)$codigo);
+            $codigoConsulta = $codigoOriginal;
+
+            // Normalizar código para consultas de stock:
+            // en algunos flujos llega recortado (ej: 11 dígitos) y en SQL/MySQL existe en 13.
+            $productoCodigo = \App\Models\Producto::where('KOPR', $codigoConsulta)->first();
+            if (!$productoCodigo) {
+                $candidatos = \App\Models\Producto::where('KOPR', 'LIKE', $codigoConsulta . '%')
+                    ->orWhere('KOPR', 'LIKE', '%' . $codigoConsulta)
+                    ->limit(3)
+                    ->pluck('KOPR');
+
+                if ($candidatos->count() === 1) {
+                    $codigoConsulta = $candidatos->first();
+                    \Log::info("🔎 Código normalizado para stock: {$codigoOriginal} -> {$codigoConsulta}");
+                }
+            }
+
             // PRIMERO: Verificar si el producto está oculto en SQL Server
             $stockService = new \App\Services\StockComprometidoService();
-            $productoOculto = $stockService->verificarProductoOculto($codigo);
+            $productoOculto = $stockService->verificarProductoOculto($codigoConsulta);
             
             // Si está oculto, retornar error inmediatamente sin consultar stock
             if ($productoOculto) {
-                $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
-                $nombreProducto = $producto ? $producto->NOKOPR : $codigo;
+                $producto = \App\Models\Producto::where('KOPR', $codigoConsulta)->first();
+                $nombreProducto = $producto ? $producto->NOKOPR : $codigoConsulta;
                 
-                \Log::warning("⚠️ Intento de agregar producto oculto: {$codigo} ({$nombreProducto})");
+                \Log::warning("⚠️ Intento de agregar producto oculto: {$codigoConsulta} ({$nombreProducto})");
                 
                 return response()->json([
                     'success' => false,
                     'es_oculto' => true,
-                    'message' => "El producto {$codigo} ({$nombreProducto}) se encuentra oculto en el sistema. Por favor, seleccione otro producto.",
-                    'codigo' => $codigo,
+                    'message' => "El producto {$codigoConsulta} ({$nombreProducto}) se encuentra oculto en el sistema. Por favor, seleccione otro producto.",
+                    'codigo' => $codigoConsulta,
                     'nombre' => $nombreProducto
                 ]);
             }
@@ -3148,7 +3393,7 @@ class CotizacionController extends Controller
             $username = env('SQLSRV_EXTERNAL_USERNAME');
             $password = env('SQLSRV_EXTERNAL_PASSWORD');
 
-            $codigoEscapado = "'" . addslashes(trim($codigo)) . "'";
+            $codigoEscapado = "'" . addslashes(trim($codigoConsulta)) . "'";
 
             $query = "
                 SELECT 
@@ -3169,9 +3414,9 @@ class CotizacionController extends Controller
 
             // Log para debugging - mostrar output completo si no se encuentra stock
             if (empty($output)) {
-                \Log::error("Output vacío de tsql para producto {$codigo}");
+                \Log::error("Output vacío de tsql para producto {$codigoConsulta}");
             } else {
-                \Log::info("Output tsql completo para producto {$codigo}: " . $output);
+                \Log::info("Output tsql completo para producto {$codigoConsulta}: " . $output);
             }
 
             // Parsear resultado de tsql
@@ -3201,9 +3446,9 @@ class CotizacionController extends Controller
 
                 // Si no hay header pero hay una línea con números, intentar parsear directamente
                 // Esto puede pasar cuando SUM devuelve solo números
-                if (preg_match('/^\s*([0-9.]+)\s+([0-9.]+)\s*$/', $line, $matches)) {
-                    $stockFisico = (float)$matches[1];
-                    $stockComprometido = (float)$matches[2];
+                if (preg_match('/^\s*(-?[0-9.]+)\s+(-?[0-9.]+)\s*$/', $line, $matches)) {
+                    $stockFisico = (float)str_replace(',', '.', $matches[1]);
+                    $stockComprometido = (float)str_replace(',', '.', $matches[2]);
                     \Log::info("Stock parseado sin header: Físico={$stockFisico}, Comprometido={$stockComprometido}");
                     break;
                 }
@@ -3227,43 +3472,46 @@ class CotizacionController extends Controller
                 foreach ($lines as $line) {
                     $line = trim($line);
                     // Buscar cualquier línea con dos números separados por espacios
-                    if (preg_match('/^\s*([0-9.]+)\s+([0-9.]+)\s*$/', $line, $matches)) {
-                        $stockFisico = (float)$matches[1];
-                        $stockComprometido = (float)$matches[2];
+                    if (preg_match('/^\s*(-?[0-9.]+)\s+(-?[0-9.]+)\s*$/', $line, $matches)) {
+                        $stockFisico = (float)str_replace(',', '.', $matches[1]);
+                        $stockComprometido = (float)str_replace(',', '.', $matches[2]);
                         \Log::info("Stock parseado en segunda pasada: Físico={$stockFisico}, Comprometido={$stockComprometido}");
                         break;
                     }
                 }
             }
+
+            // SQL Server puede retornar STOCNV1 como negativo; para el modelo local guardamos "comprometido" positivo.
+            $stockComprometido = abs((float)$stockComprometido);
             
             // SIEMPRE ACTUALIZAR MySQL con los valores obtenidos de SQL Server
             // Esto asegura que la tabla productos tenga los datos actualizados
             try {
                 $stockConsultaService = new \App\Services\StockConsultaService();
                 $stockConsultaService->actualizarStockSiEsDiferente(
-                    $codigo,
+                    $codigoConsulta,
                     $stockFisico,
                     $stockComprometido
                 );
-                \Log::info("✅ Stock ACTUALIZADO en MySQL para {$codigo}: Físico={$stockFisico}, Comprometido={$stockComprometido}");
+                \Log::info("✅ Stock ACTUALIZADO en MySQL para {$codigoConsulta}: Físico={$stockFisico}, Comprometido={$stockComprometido}");
             } catch (\Exception $e) {
-                \Log::error("❌ Error actualizando MySQL para {$codigo}: " . $e->getMessage());
+                \Log::error("❌ Error actualizando MySQL para {$codigoConsulta}: " . $e->getMessage());
                 // Continuar aunque falle la actualización, pero loguear el error
             }
 
             // 2. VALIDACIÓN DE PRECIOS: Consultar y actualizar precios desde SQL Server si son diferentes
             try {
-                $this->consultarYActualizarPreciosProducto($codigo);
+                $this->consultarYActualizarPreciosProducto($codigoConsulta);
             } catch (\Exception $e) {
-                \Log::warning("⚠️ Error consultando/actualizando precios para {$codigo}: " . $e->getMessage());
+                \Log::warning("⚠️ Error consultando/actualizando precios para {$codigoConsulta}: " . $e->getMessage());
                 // Continuar aunque falle la actualización de precios
             }
 
             // Obtener stock comprometido local adicional (por cotizaciones/NVV pendientes)
-            $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($codigo);
+            $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($codigoConsulta);
 
             // Obtener datos del producto ACTUALIZADO desde tabla local
-            $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
+            $producto = \App\Models\Producto::where('KOPR', $codigoConsulta)->first();
             
             // Usar los valores ACTUALIZADOS de MySQL (pueden haber cambiado si se actualizó)
             $stockFisicoMySQL = $producto ? ($producto->stock_fisico ?? $stockFisico) : $stockFisico;
@@ -3272,11 +3520,11 @@ class CotizacionController extends Controller
             // Stock disponible = Stock físico MySQL - Stock comprometido SQL - Stock comprometido local
             $stockDisponible = max(0, $stockFisicoMySQL - $stockComprometidoMySQL - $stockComprometidoLocal);
 
-            \Log::info("📦 Stock final para {$codigo}: Físico MySQL={$stockFisicoMySQL}, Comprometido SQL={$stockComprometidoMySQL}, Comprometido Local={$stockComprometidoLocal}, Disponible={$stockDisponible}");
+            \Log::info("📦 Stock final para {$codigoConsulta}: Físico MySQL={$stockFisicoMySQL}, Comprometido SQL={$stockComprometidoMySQL}, Comprometido Local={$stockComprometidoLocal}, Disponible={$stockDisponible}");
 
             // Si no se encontró stock, log adicional
             if ($stockFisico == 0 && $stockComprometido == 0 && (!$producto || ($producto->stock_fisico ?? 0) == 0)) {
-                \Log::warning("⚠️ No se encontró stock para producto {$codigo}. Output completo de tsql: " . substr($output, 0, 1000));
+                \Log::warning("⚠️ No se encontró stock para producto {$codigoConsulta}. Output completo de tsql: " . substr($output, 0, 1000));
             }
 
             return response()->json([
@@ -3287,7 +3535,7 @@ class CotizacionController extends Controller
                 'stock_comprometido' => $stockComprometidoMySQL, // Retornar el valor actualizado de MySQL
                 'stock_comprometido_local' => $stockComprometidoLocal,
                 'producto' => [
-                    'codigo' => $codigo,
+                    'codigo' => $codigoConsulta,
                     'nombre' => $producto->NOKOPR ?? 'Producto no encontrado',
                     'unidad' => $producto->UD01PR ?? 'UN'
                 ]

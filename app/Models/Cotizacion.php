@@ -16,6 +16,7 @@ class Cotizacion extends Model
         'tipo_documento',
         'user_id',
         'cliente_codigo',
+        'cliente_suen',
         'cliente_nombre',
         'cliente_direccion',
         'cliente_telefono',
@@ -24,6 +25,8 @@ class Cotizacion extends Model
         'estado',
         'subtotal',
         'descuento_global',
+        'subtotal_neto',
+        'iva',
         'total',
         'observaciones',
         'fecha_despacho',
@@ -73,6 +76,8 @@ class Cotizacion extends Model
         'fecha_facturacion' => 'datetime',
         'subtotal' => 'decimal:2',
         'descuento_global' => 'decimal:2',
+        'subtotal_neto' => 'decimal:2',
+        'iva' => 'decimal:2',
         'total' => 'decimal:2',
         'requiere_aprobacion' => 'boolean',
         'facturada' => 'boolean',
@@ -238,6 +243,75 @@ class Cotizacion extends Model
     public function scopeNotasVenta($query)
     {
         return $query->where('tipo_documento', 'nota_venta');
+    }
+
+    /**
+     * Filtro de estado para listados (index / exportar).
+     * Colas NVV (supervisor / compras / picking) alineadas con AprobacionController.
+     * Estados solo ERP (ingresada, pendiente SQL) y filtros antiguos sin datos locales no devuelven filas.
+     */
+    public function scopeFiltrarEstadoListado($query, string $estado)
+    {
+        switch ($estado) {
+            case 'borrador':
+                return $query->where('estado', 'borrador');
+            case 'enviada':
+                return $query->where('estado', 'enviada')
+                    ->where(function ($q) {
+                        $q->whereNull('estado_aprobacion')
+                            ->orWhereNotIn('estado_aprobacion', ['pendiente_picking', 'aprobada_compras']);
+                    });
+            case 'aprobada':
+                return $query->where('estado', 'aprobada');
+            case 'rechazada':
+                return $query->where(function ($q) {
+                    $q->where('estado', 'rechazada')
+                        ->orWhere('estado_aprobacion', 'rechazada');
+                });
+            case 'procesada':
+                return $query->where('estado', 'procesada');
+            case 'cancelada':
+                return $query->where('estado', 'cancelada');
+
+            case 'pendiente_supervisor':
+                return $query->where('tipo_documento', 'nota_venta')
+                    ->where('estado_aprobacion', 'pendiente')
+                    ->where('tiene_problemas_credito', true)
+                    ->whereNull('aprobado_por_supervisor');
+
+            case 'pendiente_compras':
+                return $query->where('tipo_documento', 'nota_venta')
+                    ->where(function ($q) {
+                        $q->where(function ($inner) {
+                            $inner->where('tiene_problemas_stock', true)
+                                ->where(function ($sub) {
+                                    $sub->where('estado_aprobacion', 'aprobada_supervisor')
+                                        ->orWhere('estado_aprobacion', 'pendiente');
+                                });
+                        })->orWhere(function ($sep) {
+                            $sep->whereNotNull('nota_original_id')
+                                ->where('tiene_problemas_stock', true);
+                        });
+                    });
+
+            case 'pendiente_picking':
+            case 'cola_picking':
+            case 'aprobada_compras':
+                return $query->pendientesPicking();
+
+            case 'separado_por_compras':
+                return $query->where('estado', 'separado_por_compras');
+
+            case 'separado_por_picking':
+                return $query->where('estado', 'separado_por_picking');
+
+            case 'pendiente_stock':
+            case 'ingresada':
+            case 'pendiente':
+                return $query->whereRaw('0 = 1');
+            default:
+                return $query->whereRaw('0 = 1');
+        }
     }
 
     // Métodos
@@ -551,6 +625,22 @@ class Cotizacion extends Model
         ]);
     }
 
+    /**
+     * NVV separada: copia observacion_vendedor desde la nota origen y compone observaciones
+     * (texto de sistema + bloque con la observación del vendedor).
+     */
+    public function consolidarObservacionesDesdeOrigen(self $original, string $textoSistema): void
+    {
+        $obsVendedor = trim((string) ($original->observacion_vendedor ?? ''));
+        if ($obsVendedor !== '') {
+            $this->observacion_vendedor = $obsVendedor;
+        }
+        $this->observaciones = $textoSistema;
+        if ($obsVendedor !== '') {
+            $this->observaciones .= "\n\n--- Observación del vendedor (NVV #{$original->id}) ---\n".$obsVendedor;
+        }
+    }
+
     public function separarPorProblemasStock($productosProblematicos)
     {
         // Crear una nueva nota de venta solo con los productos problemáticos
@@ -559,6 +649,10 @@ class Cotizacion extends Model
         $notaSeparada->estado_aprobacion = 'pendiente';
         $notaSeparada->tiene_problemas_stock = true;
         $notaSeparada->productos_separados = json_encode($productosProblematicos);
+        $notaSeparada->consolidarObservacionesDesdeOrigen(
+            $this,
+            'NVV separada por problemas de stock (productos seleccionados). NVV origen #'.$this->id.'.'
+        );
         $notaSeparada->save();
 
         // Copiar solo los productos problemáticos

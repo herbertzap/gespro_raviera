@@ -7,9 +7,6 @@ use App\Models\Cotizacion;
 use App\Models\CotizacionProducto;
 use App\Models\StockTemporal;
 use App\Models\NotaVentaPendienteProducto;
-use App\Models\Producto;
-use App\Models\StockLocal;
-use App\Models\StockComprometido;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Artisan;
@@ -80,14 +77,12 @@ class ProductoController extends Controller
                     $nombreLimpio = $this->limpiarNombreProducto($producto->NOKOPR);
                     
                     return [
-                        'id' => $producto->id,
                         'codigo' => $producto->KOPR,
                         'nombre' => $nombreLimpio,
                         'precio' => $precio,
                         'stock_actual' => $producto->stock_disponible ?? 0,
                         'stock_minimo' => 10, // Valor predeterminado
-                        'activo' => $producto->activo,
-                        'multiplo_venta' => $producto->multiplo_venta ?? 1,
+                        'activo' => $producto->activo
                     ];
                 });
             
@@ -584,7 +579,6 @@ class ProductoController extends Controller
             $limit = (int) $request->get('limit', 1000);
             $offset = (int) $request->get('offset', 0);
 
-            // 1) Sincronizar catálogo de productos (precios, datos básicos)
             Artisan::call('productos:sincronizar', [
                 '--limit' => $limit,
                 '--offset' => $offset
@@ -621,23 +615,12 @@ class ProductoController extends Controller
                 }
             }
 
-            // 2) Sincronizar también el stock real desde SQL Server (bodega LIB),
-            //    para que la tabla productos refleje STFI1 / STOCNV1 y stock disponible real.
-            $stockActualizado = 0;
-            try {
-                $stockService = new \App\Services\StockService();
-                $stockActualizado = $stockService->sincronizarStockDesdeSQLServer();
-            } catch (\Exception $e) {
-                Log::error('Error sincronizando stock después de sincronizar productos: ' . $e->getMessage());
-            }
-
             return response()->json([
                 'success' => true,
                 'message' => 'Sincronización de productos completada',
                 'nuevos' => $nCreados,
                 'actualizados' => $nActualizados,
                 'total' => $nProcesados,
-                'stock_actualizado' => $stockActualizado,
                 'raw' => $output
             ]);
 
@@ -646,127 +629,6 @@ class ProductoController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error al sincronizar productos: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Detalle completo de un producto (stock SQL + app, NVV, historial) para el dashboard de compras.
-     */
-    public function detalle(Request $request, $codigoProducto)
-    {
-        try {
-            $codigo = $codigoProducto;
-
-            $producto = Producto::where('KOPR', $codigo)->first();
-            if (!$producto) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Producto no encontrado en tabla local'
-                ], 404);
-            }
-
-            // Stock local sincronizado desde SQL (bodega LIB)
-            $stockLocal = StockLocal::where('codigo_producto', $codigo)
-                ->where('codigo_bodega', 'LIB')
-                ->first();
-
-            $stockComprometidoLocal = StockComprometido::calcularStockComprometido($codigo);
-
-            // Detalle de compromisos locales (reservas en la app)
-            $compromisosLocales = StockComprometido::porProducto($codigo)
-                ->with('cotizacion')
-                ->get()
-                ->map(function ($r) {
-                    $numeroNvvLocal = $r->cotizacion->numero_nvv ?? null;
-                    $contabiliza = $r->cotizacion_id === null || $numeroNvvLocal === null;
-                    return [
-                        'id' => $r->id,
-                        'cotizacion_id' => $r->cotizacion_id,
-                        'numero_nvv_local' => $numeroNvvLocal,
-                        'cliente' => $r->cliente_nombre ?? ($r->cotizacion->cliente_nombre ?? ''),
-                        'cantidad' => (float) $r->cantidad_comprometida,
-                        'estado' => $r->estado,
-                        'cuenta_como_comprometido' => $contabiliza,
-                    ];
-                })
-                ->toArray();
-
-            $stock = [
-                'mysql' => [
-                    'stock_fisico' => (float) ($producto->stock_fisico ?? 0),
-                    'stock_comprometido_sql' => (float) ($producto->stock_comprometido ?? 0),
-                    'stock_comprometido_local' => (float) $stockComprometidoLocal,
-                    'stock_disponible' => (float) ($producto->stock_disponible ?? 0),
-                ],
-                'sql' => [
-                    'stock_fisico' => $stockLocal ? (float) $stockLocal->stock_fisico : null,
-                    'stock_disponible' => $stockLocal ? (float) $stockLocal->stock_disponible : null,
-                    'bodega' => $stockLocal ? $stockLocal->codigo_bodega : 'LIB',
-                ],
-            ];
-
-            // NVV pendientes en SQL Server para este producto
-            $detalleNvv = $this->obtenerDetalleNvvPorProducto($codigo);
-
-            // Estadísticas de ventas (últimos 6 meses, NVV aprobadas)
-            $estadisticasVentas = CotizacionProducto::where('codigo_producto', $codigo)
-                ->whereHas('cotizacion', function ($query) {
-                    $query->where('estado_aprobacion', 'aprobada_picking')
-                          ->where('created_at', '>=', now()->subMonths(6));
-                })
-                ->selectRaw('COUNT(DISTINCT cotizacion_id) as total_nvv')
-                ->selectRaw('SUM(cantidad) as total_unidades')
-                ->selectRaw('AVG(precio_unitario) as precio_promedio')
-                ->first();
-
-            // Últimas 10 NVV donde se vendió este producto
-            $nvvConProducto = CotizacionProducto::where('codigo_producto', $codigo)
-                ->with('cotizacion.user')
-                ->whereHas('cotizacion', function ($query) {
-                    $query->where('estado_aprobacion', 'aprobada_picking');
-                })
-                ->orderBy('created_at', 'desc')
-                ->limit(10)
-                ->get()
-                ->map(function ($item) {
-                    return [
-                        'cotizacion_id' => $item->cotizacion_id,
-                        'cantidad' => (float) $item->cantidad,
-                        'precio_unitario' => (float) $item->precio_unitario,
-                        'total' => (float) $item->total_producto,
-                        'cliente' => $item->cotizacion->cliente_nombre ?? '',
-                        'vendedor' => $item->cotizacion->user->name ?? '',
-                        'fecha' => $item->created_at ? $item->created_at->format('d/m/Y') : null,
-                    ];
-                })
-                ->toArray();
-
-            $nombreLimpio = $this->limpiarNombreProducto($producto->NOKOPR);
-
-            return response()->json([
-                'success' => true,
-                'producto' => [
-                    'codigo' => $producto->KOPR,
-                    'nombre' => $nombreLimpio,
-                    'unidad' => $producto->UD01PR ?? 'UN',
-                    'precio_01p' => (float) ($producto->precio_01p ?? 0),
-                ],
-                'stock' => $stock,
-                'nvv_pendientes' => $detalleNvv,
-                'compromisos_locales' => $compromisosLocales,
-                'estadisticas_ventas' => [
-                    'total_nvv' => (int) ($estadisticasVentas->total_nvv ?? 0),
-                    'total_unidades' => (float) ($estadisticasVentas->total_unidades ?? 0),
-                    'precio_promedio' => (float) ($estadisticasVentas->precio_promedio ?? 0),
-                ],
-                'ultimas_nvv' => $nvvConProducto,
-            ]);
-        } catch (\Exception $e) {
-            Log::error("Error en ProductoController@detalle para {$codigoProducto}: " . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al obtener detalle del producto',
             ], 500);
         }
     }

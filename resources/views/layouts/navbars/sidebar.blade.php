@@ -210,7 +210,7 @@
             @endif
 
             <!-- Informes -->
-            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Super Admin'))
+            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Picking') || auth()->user()->hasRole('Picking Operativo'))
             <li>
                 <a data-toggle="collapse" href="#Informes" aria-expanded="false">
                     <i class="tim-icons icon-chart-bar-32"></i>
@@ -219,6 +219,13 @@
                 </a>
                 <div class="collapse" id="Informes">
                     <ul class="nav pl-4">
+                        <li @if (($pageSlug ?? '') == 'cotizaciones' && request('tipo_documento') == 'nota_venta') class="active " @endif>
+                            <a href="{{ route('cotizaciones.index', ['tipo_documento' => 'nota_venta']) }}#Informes">
+                                <i class="tim-icons icon-bullet-list-67"></i>
+                                <p>{{ __('Estados NVV') }}</p>
+                            </a>
+                        </li>
+                        <hr>
                         <li @if (($pageSlug ?? '') == 'nvv-pendientes') class="active " @endif>
                             <a href="{{ route('nvv-pendientes.index') }}">
                                 <i class="tim-icons icon-notes"></i>

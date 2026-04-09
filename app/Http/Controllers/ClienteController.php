@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Cliente;
+use App\Models\ClienteSucursal;
 use App\Services\CobranzaService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -209,7 +210,8 @@ class ClienteController extends Controller
                     'message' => 'Sincronización completada exitosamente',
                     'nuevos' => $resultado['nuevos'],
                     'actualizados' => $resultado['actualizados'],
-                    'total' => $resultado['total']
+                    'total' => $resultado['total'],
+                    'sucursales' => $resultado['sucursales'] ?? null,
                 ]);
             } else {
                 return response()->json([
@@ -224,6 +226,66 @@ class ClienteController extends Controller
                 'message' => 'Error en la sincronización: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Sucursales del cliente (MAEEN sincronizado). Si no hay filas, una entrada por defecto desde el maestro local.
+     */
+    public function apiClienteSucursales(string $codigo)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'No autenticado'], 401);
+        }
+
+        $codigo = trim($codigo);
+        if ($codigo === '') {
+            return response()->json(['success' => false, 'message' => 'Código inválido'], 422);
+        }
+
+        $cliente = Cliente::where('codigo_cliente', $codigo)->first();
+        if (!$cliente) {
+            return response()->json(['success' => false, 'message' => 'Cliente no encontrado'], 404);
+        }
+
+        $rows = ClienteSucursal::where('codigo_cliente', $codigo)->orderBy('suen')->get();
+
+        if ($rows->isEmpty()) {
+            return response()->json([
+                'success' => true,
+                'multiple' => false,
+                'sucursales' => [
+                    [
+                        'suen' => '',
+                        'etiqueta' => 'Principal',
+                        'direccion' => $cliente->direccion,
+                        'telefono' => $cliente->telefono,
+                        'region' => $cliente->region,
+                        'comuna' => $cliente->comuna,
+                    ],
+                ],
+            ]);
+        }
+
+        $sucursales = $rows->map(function (ClienteSucursal $s) {
+            $suen = (string) $s->suen;
+            $etiqueta = $suen === '' ? 'Principal / matriz' : ('Sucursal ' . $suen);
+
+            return [
+                'suen' => $suen,
+                'etiqueta' => $etiqueta,
+                'direccion' => $s->direccion,
+                'telefono' => $s->telefono,
+                'region' => $s->region,
+                'comuna' => $s->comuna,
+            ];
+        })->values()->all();
+
+        return response()->json([
+            'success' => true,
+            'multiple' => count($sucursales) > 1,
+            'sucursales' => $sucursales,
+        ]);
     }
 
     public function buscarAjax(Request $request)

@@ -1,6 +1,23 @@
 @extends('layouts.app', ['pageSlug' => 'cotizaciones'])
 
 @section('content')
+<style>
+    .cotizaciones-filtros-wrap .form-control,
+    .cotizaciones-filtros-wrap select.form-control {
+        min-height: calc(1.5em + 0.75rem + 2px);
+    }
+    .cotizaciones-filtros-actions .btn .material-icons {
+        line-height: 1;
+    }
+    @media (max-width: 575.98px) {
+        .cotizaciones-filtros-actions {
+            width: 100%;
+        }
+        .cotizaciones-filtros-actions .btn {
+            width: 100%;
+        }
+    }
+</style>
 <div class="container-fluid">
     <div class="row">
         <div class="col-md-12">
@@ -26,12 +43,12 @@
                 </div>
                 
                 <!-- Filtros -->
-                <div class="card-body">
-                    <form method="GET" action="{{ route('cotizaciones.index') }}" class="mb-4">
+                <div class="card-body border-bottom py-3 cotizaciones-filtros-wrap">
+                    <form method="GET" action="{{ route('cotizaciones.index') }}" class="cotizaciones-filtros-form mb-0">
                         <div class="row">
-                            <div class="col-md-2">
-                                <div class="form-group">
-                                    <label for="tipo_documento">Tipo:</label>
+                            <div class="col-12 col-md-6 col-xl-3">
+                                <div class="form-group mb-3 mb-xl-2">
+                                    <label for="tipo_documento" class="mb-1">Tipo</label>
                                     <select name="tipo_documento" id="tipo_documento" class="form-control">
                                         <option value="">Todos</option>
                                         <option value="cotizacion" {{ request('tipo_documento') == 'cotizacion' ? 'selected' : '' }}>Cotizaciones</option>
@@ -39,26 +56,27 @@
                                     </select>
                                 </div>
                             </div>
-                            <div class="col-md-3">
-                                <div class="form-group">
-                                    <label for="estado">Estado:</label>
+                            <div class="col-12 col-md-6 col-xl-3">
+                                <div class="form-group mb-3 mb-xl-2">
+                                    <label for="estado" class="mb-1">Estado</label>
                                     <select name="estado" id="estado" class="form-control">
                                         <option value="">Todos los estados</option>
+                                        <option value="pendiente_supervisor" {{ $estado == 'pendiente_supervisor' ? 'selected' : '' }}>Pendiente supervisor</option>
+                                        <option value="pendiente_compras" {{ $estado == 'pendiente_compras' ? 'selected' : '' }}>Pendiente compras</option>
+                                        <option value="pendiente_picking" {{ in_array($estado, ['pendiente_picking', 'cola_picking', 'aprobada_compras'], true) ? 'selected' : '' }}>Pendiente picking</option>
+                                        <option value="separado_por_compras" {{ $estado == 'separado_por_compras' ? 'selected' : '' }}>Separado por compras</option>
+                                        <option value="separado_por_picking" {{ $estado == 'separado_por_picking' ? 'selected' : '' }}>Separado por picking</option>
                                         <option value="borrador" {{ $estado == 'borrador' ? 'selected' : '' }}>Borrador</option>
                                         <option value="enviada" {{ $estado == 'enviada' ? 'selected' : '' }}>Enviada</option>
-                                        <option value="aprobada" {{ $estado == 'aprobada' ? 'selected' : '' }}>Aprobada</option>
                                         <option value="rechazada" {{ $estado == 'rechazada' ? 'selected' : '' }}>Rechazada</option>
-                                        <option value="pendiente_stock" {{ $estado == 'pendiente_stock' ? 'selected' : '' }}>Pendiente por Stock</option>
                                         <option value="procesada" {{ $estado == 'procesada' ? 'selected' : '' }}>Procesada</option>
                                         <option value="cancelada" {{ $estado == 'cancelada' ? 'selected' : '' }}>Cancelada</option>
-                                        <option value="ingresada" {{ $estado == 'ingresada' ? 'selected' : '' }}>Ingresada (SQL)</option>
-                                        <option value="pendiente" {{ $estado == 'pendiente' ? 'selected' : '' }}>Pendiente (SQL)</option>
                                     </select>
                                 </div>
                             </div>
-                            <div class="col-md-2">
-                                <div class="form-group">
-                                    <label for="cliente">Cliente:</label>
+                            <div class="col-12 col-md-6 col-xl-3">
+                                <div class="form-group mb-3 mb-xl-2">
+                                    <label for="cliente" class="mb-1">Cliente</label>
                                     <select name="cliente" id="cliente" class="form-control">
                                         <option value="">Todos</option>
                                         @if(isset($clientes) && is_array($clientes))
@@ -71,59 +89,67 @@
                                     </select>
                                 </div>
                             </div>
-                            <div class="col-md-2">
-                                <div class="form-group">
-                                    <label for="buscar">Buscar:</label>
-                                    <input type="text" name="buscar" id="buscar" class="form-control" 
-                                           value="{{ $buscar }}" placeholder="N° NV, cliente, etc.">
-                                </div>
-                            </div>
-                            <div class="col-md-2">
-                                <div class="form-group">
-                                    <label for="fecha_inicio">Desde:</label>
-                                    <input type="date" name="fecha_inicio" id="fecha_inicio" class="form-control" 
-                                           value="{{ $fechaInicio }}">
-                                </div>
-                            </div>
-                            <div class="col-md-2">
-                                <div class="form-group">
-                                    <label for="fecha_fin">Hasta:</label>
-                                    <input type="date" name="fecha_fin" id="fecha_fin" class="form-control" 
-                                           value="{{ $fechaFin }}">
+                            <div class="col-12 col-md-6 col-xl-3">
+                                <div class="form-group mb-3 mb-xl-2">
+                                    <label for="buscar" class="mb-1">Buscar</label>
+                                    <input type="text" name="buscar" id="buscar" class="form-control"
+                                           value="{{ $buscar }}" placeholder="N° NVV, cliente, código…" autocomplete="off">
                                 </div>
                             </div>
                         </div>
-                        <div class="row mt-2">
-                            <div class="col-md-2">
-                                <div class="form-group">
-                                    <label for="monto_min">Monto Mín:</label>
-                                    <input type="number" name="monto_min" id="monto_min" class="form-control" 
-                                           value="{{ $montoMin }}" placeholder="0">
+
+                        <div class="row align-items-end">
+                            <div class="col-12 col-sm-6 col-lg-3">
+                                <div class="form-group mb-3 mb-lg-2">
+                                    <label for="fecha_inicio" class="mb-1"><span class="d-none d-sm-inline">Fecha </span>desde</label>
+                                    <input type="date" name="fecha_inicio" id="fecha_inicio" class="form-control"
+                                           value="{{ $fechaInicio }}">
                                 </div>
                             </div>
-                            <div class="col-md-2">
-                                <div class="form-group">
-                                    <label for="monto_max">Monto Máx:</label>
-                                    <input type="number" name="monto_max" id="monto_max" class="form-control" 
-                                           value="{{ $montoMax }}" placeholder="999999999">
+                            <div class="col-12 col-sm-6 col-lg-3">
+                                <div class="form-group mb-3 mb-lg-2">
+                                    <label for="fecha_fin" class="mb-1"><span class="d-none d-sm-inline">Fecha </span>hasta</label>
+                                    <input type="date" name="fecha_fin" id="fecha_fin" class="form-control"
+                                           value="{{ $fechaFin }}">
                                 </div>
                             </div>
-                            <div class="col-md-2">
-                                <div class="form-group">
-                                    <label>&nbsp;</label>
-                                    <div>
-                                        <button type="submit" class="btn btn-primary">
-                                            <i class="material-icons">search</i> Filtrar
-                                        </button>
-                                        <a href="{{ route('cotizaciones.index') }}" class="btn btn-secondary">
-                                            <i class="material-icons">clear</i> Limpiar
-                                        </a>
-                                    </div>
+                            <div class="col-12 col-sm-6 col-lg-3">
+                                <div class="form-group mb-3 mb-lg-2">
+                                    <label for="monto_min" class="mb-1">Monto mín.</label>
+                                    <input type="number" name="monto_min" id="monto_min" class="form-control"
+                                           value="{{ $montoMin }}" placeholder="0" step="any" min="0">
+                                </div>
+                            </div>
+                            <div class="col-12 col-sm-6 col-lg-3">
+                                <div class="form-group mb-3 mb-lg-2">
+                                    <label for="monto_max" class="mb-1">Monto máx.</label>
+                                    <input type="number" name="monto_max" id="monto_max" class="form-control"
+                                           value="{{ $montoMax }}" placeholder="Sin tope" step="any" min="0">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row mt-1 mt-md-2">
+                            <div class="col-12">
+                                <div class="d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center justify-content-sm-end cotizaciones-filtros-actions">
+                                    <button type="submit" class="btn btn-primary btn-sm px-3 mb-2 mb-sm-0 mr-sm-2 d-inline-flex align-items-center justify-content-center">
+                                        <i class="material-icons" style="font-size: 18px;">search</i>
+                                        <span class="ml-1">Filtrar</span>
+                                    </button>
+                                    <a href="{{ route('cotizaciones.index') }}" class="btn btn-secondary btn-sm px-3 mb-2 mb-sm-0 mr-sm-2 d-inline-flex align-items-center justify-content-center">
+                                        <i class="material-icons" style="font-size: 18px;">clear</i>
+                                        <span class="ml-1">Limpiar</span>
+                                    </a>
+                                    <a href="{{ route('cotizaciones.exportar-excel') }}{{ request()->getQueryString() ? '?' . request()->getQueryString() : '' }}" class="btn btn-success btn-sm px-3 mb-2 mb-sm-0 d-inline-flex align-items-center justify-content-center" title="Descargar Excel con los mismos filtros">
+                                        <i class="material-icons" style="font-size: 18px;">table_chart</i>
+                                        <span class="ml-1">Excel</span>
+                                    </a>
                                 </div>
                             </div>
                         </div>
                     </form>
-                <div class="card-body">
+                </div>
+                <div class="card-body pt-3">
                     
                     @if(count($cotizaciones) > 0)
                         <div class="table-responsive">
@@ -192,6 +218,8 @@
                                                     // Mantener el estado separado
                                                 } elseif (isset($cotizacion['estado_aprobacion']) && $cotizacion['estado_aprobacion'] === 'rechazada') {
                                                     $estadoMostrar = 'rechazada';
+                                                } elseif (($cotizacion['fuente'] ?? '') === 'local' && in_array(($cotizacion['estado_aprobacion'] ?? ''), ['pendiente_picking', 'aprobada_compras'], true)) {
+                                                    $estadoMostrar = 'pendiente_en_cola_picking';
                                                 }
                                             @endphp
                                             @switch($estadoMostrar)
@@ -227,6 +255,9 @@
                                                     @break
                                                 @case('pendiente')
                                                     <span class="badge badge-warning">Pendiente</span>
+                                                    @break
+                                                @case('pendiente_en_cola_picking')
+                                                    <span class="badge badge-warning">Pendiente Picking</span>
                                                     @break
                                                 @default
                                                     <span class="badge badge-secondary">{{ $cotizacion['estado'] }}</span>

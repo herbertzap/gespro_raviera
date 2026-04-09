@@ -603,7 +603,9 @@ class AprobacionController extends Controller
                     $request->guia_picking_numero_bultos,
                     $request->guia_picking_firma
                 );
-                Log::info("✅ Cotización aprobada en MySQL");
+                // procesada = enviada al ERP; no usar antes del insert real (evita mezcla con cola Picking)
+                $cotizacion->update(['estado' => 'procesada']);
+                Log::info("✅ Cotización aprobada en MySQL y marcada como procesada (NVV en SQL)");
             } else {
                 // Si falló el insert, lanzar excepción para que se capture en el catch
                 throw new \Exception($resultado['message'] ?? 'Error desconocido en SQL Server');
@@ -729,6 +731,9 @@ class AprobacionController extends Controller
         if (!$resultado['success']) {
             throw new \Exception($resultado['message'] ?? 'Error al insertar en SQL Server');
         }
+        $cotizacion->refresh();
+        $cotizacion->update(['estado' => 'procesada']);
+
         return $resultado;
     }
 
@@ -871,6 +876,8 @@ class AprobacionController extends Controller
                     }
                 }
             }
+
+            $sucursalCliente = $this->resolverSuendoCotizacion($cotizacion, $sucursalCliente);
             
             // CAPRCO = suma de cantidades de productos
             $sumaCantidades = $cotizacion->productos->sum('cantidad');
@@ -1356,6 +1363,8 @@ class AprobacionController extends Controller
                     }
                 }
             }
+
+            $sucursalCliente = $this->resolverSuendoCotizacion($cotizacion, $sucursalCliente);
             
             // Obtener lista de precios desde MySQL (rápido, no necesita optimización)
             $listaPrecios = $this->obtenerListaPreciosCliente($cotizacion->cliente_codigo);
@@ -2301,6 +2310,8 @@ class AprobacionController extends Controller
                     }
                 }
             }
+
+            $sucursalCliente = $this->resolverSuendoCotizacion($cotizacion, $sucursalCliente);
             
             // Si sucursal está vacía, usar valor por defecto
             if (empty($sucursalCliente)) {
@@ -2956,8 +2967,11 @@ class AprobacionController extends Controller
         
         $nuevaCotizacion->fecha_creacion = now();
         $nuevaCotizacion->fecha_modificacion = now();
-        $nuevaCotizacion->comentarios = "NVV separada por problemas de stock del producto: {$producto->producto_nombre}. Motivo: {$motivo}";
         $nuevaCotizacion->nota_original_id = $cotizacionOriginal->id; // Referencia a la NVV original/padre
+        $nuevaCotizacion->consolidarObservacionesDesdeOrigen(
+            $cotizacionOriginal,
+            "NVV separada por problemas de stock del producto: {$producto->nombre_producto}. Motivo: {$motivo}"
+        );
         $nuevaCotizacion->save();
 
         // Duplicar el producto problemático
@@ -3456,9 +3470,12 @@ class AprobacionController extends Controller
         
         $nuevaCotizacion->created_at = now();
         $nuevaCotizacion->updated_at = now();
-        $nuevaCotizacion->observaciones = "NVV creada con productos separados. Motivo: {$motivo}";
         $nuevaCotizacion->nota_original_id = $cotizacionOriginal->id; // Referencia a la NVV original/padre
-        
+        $nuevaCotizacion->consolidarObservacionesDesdeOrigen(
+            $cotizacionOriginal,
+            "NVV creada con productos separados. Motivo: {$motivo}"
+        );
+
         $nuevaCotizacion->save();
 
         // Duplicar los productos problemáticos usando cantidad_separar de cada uno
@@ -3782,9 +3799,12 @@ class AprobacionController extends Controller
         $nuevaCotizacion->tiene_problemas_stock = true;
         $nuevaCotizacion->created_at = now();
         $nuevaCotizacion->updated_at = now();
-        $nuevaCotizacion->observaciones = "NVV creada con producto separado: {$producto->nombre_producto} (Cantidad: {$cantidadSeparar}). Motivo: {$motivo}";
         $nuevaCotizacion->nota_original_id = $cotizacionOriginal->id;
-        
+        $nuevaCotizacion->consolidarObservacionesDesdeOrigen(
+            $cotizacionOriginal,
+            "NVV creada con producto separado: {$producto->nombre_producto} (Cantidad: {$cantidadSeparar}). Motivo: {$motivo}"
+        );
+
         // Las NVVs separadas siempre empiezan desde cero, sin aprobaciones previas
         // ya que deben ser revisadas nuevamente
         $nuevaCotizacion->aprobado_por_supervisor = null;
@@ -4235,6 +4255,18 @@ class AprobacionController extends Controller
             $codigo = $esValidacionPrecio ? 400 : 500;
             return response()->json(['error' => $e->getMessage()], $codigo);
         }
+    }
+
+    /**
+     * SUENDO en ERP: si la cotización tiene cliente_suen guardado, usarlo; si no, el valor leído de MAEEN.
+     */
+    protected function resolverSuendoCotizacion(Cotizacion $cotizacion, string $suenDesdeMaeen): string
+    {
+        if ($cotizacion->getAttribute('cliente_suen') !== null) {
+            return trim((string) $cotizacion->cliente_suen);
+        }
+
+        return trim($suenDesdeMaeen);
     }
 
 }

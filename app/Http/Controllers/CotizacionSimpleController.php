@@ -78,6 +78,14 @@ class CotizacionSimpleController extends Controller
             
             // 1. Obtener información del cliente
             $cliente = Cliente::where('codigo_cliente', $request->cliente_codigo)->first();
+
+            $cliente_direccion = $request->exists('cliente_direccion_entrega')
+                ? $request->input('cliente_direccion_entrega')
+                : ($cliente->direccion ?? null);
+            $cliente_telefono = $request->exists('cliente_telefono_entrega')
+                ? $request->input('cliente_telefono_entrega')
+                : ($cliente->telefono ?? null);
+            $cliente_suen = $request->exists('cliente_suen') ? $request->input('cliente_suen') : null;
             
             // 2. Calcular totales por producto y generales
             \Log::info('💰 CALCULANDO TOTALES');
@@ -117,8 +125,9 @@ class CotizacionSimpleController extends Controller
                 'user_id' => auth()->id(),
                 'cliente_codigo' => $request->cliente_codigo,
                 'cliente_nombre' => $request->cliente_nombre,
-                'cliente_direccion' => $cliente->direccion ?? null,
-                'cliente_telefono' => $cliente->telefono ?? null,
+                'cliente_suen' => $cliente_suen,
+                'cliente_direccion' => $cliente_direccion,
+                'cliente_telefono' => $cliente_telefono,
                 'cliente_lista_precios' => $cliente->lista_precios_codigo ?? null,
                 'fecha' => now(),
                 'subtotal' => $subtotalSinDescuentos,
@@ -463,7 +472,7 @@ class CotizacionSimpleController extends Controller
     public function generarPDF($id)
     {
         try {
-            $cotizacion = Cotizacion::with('productos')->findOrFail($id);
+            $cotizacion = Cotizacion::with(['productos', 'user'])->findOrFail($id);
             
             // Verificar que sea una cotización, no una NVV
             if ($cotizacion->tipo_documento !== 'cotizacion') {

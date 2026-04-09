@@ -11,6 +11,11 @@ class Cliente extends Model
     use HasFactory;
 
     protected $table = 'clientes';
+
+    public function sucursales()
+    {
+        return $this->hasMany(ClienteSucursal::class, 'codigo_cliente', 'codigo_cliente');
+    }
     
     protected $fillable = [
         'codigo_cliente',
@@ -110,6 +115,12 @@ class Cliente extends Model
             }
             
             \Log::info("Sincronización completada: {$sincronizados} nuevos, {$actualizados} actualizados");
+
+            try {
+                ClienteSucursal::sincronizarDesdeMaeen();
+            } catch (\Throwable $e) {
+                \Log::warning('Sincronizar sucursales tras Cliente::sincronizarDesdeSQLServer: ' . $e->getMessage());
+            }
             
             return [
                 'success' => true,

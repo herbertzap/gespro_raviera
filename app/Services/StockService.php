@@ -8,6 +8,34 @@ use Illuminate\Support\Facades\Log;
 class StockService
 {
     /**
+     * Asegurar que el texto venga en UTF-8 para evitar errores de caracteres en MySQL.
+     * tsql suele devolver ISO-8859-1 / Windows-1252 en estos sistemas heredados.
+     */
+    private function asegurarUtf8($texto)
+    {
+        if ($texto === null) {
+            return '';
+        }
+        if (!is_string($texto)) {
+            $texto = (string)$texto;
+        }
+        if ($texto === '') {
+            return $texto;
+        }
+        if (mb_check_encoding($texto, 'UTF-8')) {
+            return $texto;
+        }
+
+        $convertido = @mb_convert_encoding($texto, 'UTF-8', 'ISO-8859-1');
+        if ($convertido !== false) {
+            return $convertido;
+        }
+
+        $convertido = @mb_convert_encoding($texto, 'UTF-8', 'Windows-1252');
+        return $convertido !== false ? $convertido : $texto;
+    }
+
+    /**
      * Sincronizar stock desde SQL Server
      */
     public function sincronizarStockDesdeSQLServer()
@@ -107,6 +135,10 @@ class StockService
                 if (count($fields) >= 8) {
                     $stockFisico = (float)$fields[4];
                     $stockComprometidoSQL = (float)$fields[5];
+                    // Si SQL trae STOCNV1 negativo, tomamos la magnitud
+                    if ($stockComprometidoSQL < 0) {
+                        $stockComprometidoSQL = abs($stockComprometidoSQL);
+                    }
                     
                     // Obtener stock NVV comprometido local (MySQL) para este producto
                     $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido(trim($fields[0]));
@@ -115,7 +147,7 @@ class StockService
                     $stockDisponible = $stockFisico - ($stockComprometidoSQL + $stockComprometidoLocal);
                     
                     // Limpiar nombre del producto removiendo información adicional como "Múltiplo: X" y unidades
-                    $nombreProducto = $this->limpiarNombreProducto(trim($fields[1]));
+                    $nombreProducto = $this->limpiarNombreProducto($this->asegurarUtf8(trim($fields[1])));
                     
                     $producto = [
                         'codigo_producto' => trim($fields[0]),
@@ -124,7 +156,7 @@ class StockService
                         'codigo_bodega' => (trim($fields[3]) ?: 'LIB'),
                         'stock_fisico' => $stockFisico,
                         'stock_comprometido' => $stockComprometidoSQL,
-                        'stock_disponible' => $stockDisponible,
+                        'stock_disponible' => max(0, $stockDisponible),
                         'unidad_medida' => trim($fields[6]) ?: 'UN',
                         'precio_venta' => $convertToFloat($fields[7])
                     ];
@@ -186,22 +218,28 @@ class StockService
      */
     private function actualizarStockLocal($producto)
     {
-        $stockLocal = StockLocal::updateOrCreate(
-            [
-                'codigo_producto' => $producto['codigo_producto'],
-                'codigo_bodega' => $producto['codigo_bodega']
-            ],
-            [
-                'nombre_producto' => $producto['nombre_producto'],
-                'nombre_bodega' => $producto['nombre_bodega'],
-                'stock_fisico' => $producto['stock_fisico'],
-                'stock_disponible' => $producto['stock_disponible'],
-                'unidad_medida' => $producto['unidad_medida'],
-                'precio_venta' => $producto['precio_venta'],
-                'activo' => true,
-                'ultima_actualizacion' => now()
-            ]
-        );
+        try {
+            $stockLocal = StockLocal::updateOrCreate(
+                [
+                    'codigo_producto' => $producto['codigo_producto'],
+                    'codigo_bodega' => $producto['codigo_bodega']
+                ],
+                [
+                    'nombre_producto' => $this->asegurarUtf8($producto['nombre_producto']),
+                    'nombre_bodega' => $this->asegurarUtf8($producto['nombre_bodega']),
+                    'stock_fisico' => $producto['stock_fisico'],
+                    'stock_disponible' => $producto['stock_disponible'],
+                    'unidad_medida' => $producto['unidad_medida'],
+                    'precio_venta' => $producto['precio_venta'],
+                    'activo' => true,
+                    'ultima_actualizacion' => now()
+                ]
+            );
+        } catch (\Exception $e) {
+            // No abortar todo el sync por un producto problemático
+            Log::warning("⚠️ No se pudo actualizar stock_local para {$producto['codigo_producto']}: " . $e->getMessage());
+            return null;
+        }
         
         // Actualizar o crear en la tabla productos (usada por el cotizador)
         try {
@@ -262,7 +300,7 @@ class StockService
             Log::warning('No se pudo actualizar/crear tabla productos para ' . $producto['codigo_producto'] . ': ' . $e->getMessage());
         }
         
-        return $stockLocal;
+        return $stockLocal ?? null;
     }
     
     /**

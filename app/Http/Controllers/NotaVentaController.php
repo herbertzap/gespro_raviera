@@ -907,6 +907,14 @@ class NotaVentaController extends Controller
             
             // 1. Obtener información del cliente
             $cliente = Cliente::where('codigo_cliente', $request->cliente_codigo)->first();
+
+            $cliente_direccion = $request->exists('cliente_direccion_entrega')
+                ? $request->input('cliente_direccion_entrega')
+                : ($cliente->direccion ?? null);
+            $cliente_telefono = $request->exists('cliente_telefono_entrega')
+                ? $request->input('cliente_telefono_entrega')
+                : ($cliente->telefono ?? null);
+            $cliente_suen = $request->exists('cliente_suen') ? $request->input('cliente_suen') : null;
             
             // 2. Calcular totales por producto y generales
             \Log::info('💰 CALCULANDO TOTALES');
@@ -950,8 +958,9 @@ class NotaVentaController extends Controller
                 'user_id' => auth()->id(),
                 'cliente_codigo' => $request->cliente_codigo,
                 'cliente_nombre' => $request->cliente_nombre,
-                'cliente_direccion' => $cliente->direccion ?? null,
-                'cliente_telefono' => $cliente->telefono ?? null,
+                'cliente_suen' => $cliente_suen,
+                'cliente_direccion' => $cliente_direccion,
+                'cliente_telefono' => $cliente_telefono,
                 'cliente_lista_precios' => $cliente->lista_precios_codigo ?? null,
                 'fecha' => now(),
                 'subtotal' => $subtotalSinDescuentos,
@@ -1307,40 +1316,10 @@ class NotaVentaController extends Controller
                 // Todos los productos tienen stock suficiente
                 \Log::info("✅ TODOS LOS PRODUCTOS TIENEN STOCK SUFICIENTE");
                 
-                // Verificar si el cliente puede vender (sin validaciones que requieran autorización)
+                // Cliente sin restricciones: el estado operativo ya quedó en la actualización anterior (enviada + estado_aprobacion).
+                // El insert al ERP lo hace Picking (insertarEnSQLServer); no se usa "NVV automática" ficticia (antes marcaba procesada sin SQL).
                 if ($validacionCliente['puede_vender'] && !$requiereAutorizacion) {
-                    \Log::info("✅ CLIENTE VÁLIDO Y SIN RESTRICCIONES - GENERANDO NOTA DE VENTA AUTOMÁTICAMENTE EN SQL SERVER");
-                    
-                    // Generar nota de venta automáticamente en SQL Server
-                    $resultadoNotaVenta = $this->generarNotaVentaAutomatica($cotizacion, $request->productos);
-                    
-                    if ($resultadoNotaVenta['success']) {
-                        $estadoFinal = 'procesada';
-                        $cotizacion->update([
-                            'estado' => $estadoFinal,
-                            'requiere_aprobacion' => false,
-                            'nota_venta_id' => $resultadoNotaVenta['nota_venta_id'],
-                            'observaciones' => $cotizacion->observaciones . "\n\n✅ NOTA DE VENTA GENERADA AUTOMÁTICAMENTE EN SQL SERVER\nNúmero: {$resultadoNotaVenta['nota_venta_id']}"
-                        ]);
-                        
-                        // Marcar stock comprometido como procesado
-                        \App\Models\StockComprometido::porCotizacion($cotizacion->id)
-                            ->activo()
-                            ->get()
-                            ->each(function($stock) {
-                                $stock->procesar();
-                            });
-                        
-                        \Log::info("✅ Nota de venta generada automáticamente en SQL Server - ID: {$resultadoNotaVenta['nota_venta_id']}");
-                    } else {
-                        $estadoFinal = 'enviada';
-                        $cotizacion->update([
-                            'estado' => $estadoFinal,
-                            'requiere_aprobacion' => true,
-                            'observaciones' => $cotizacion->observaciones . "\n\n⚠️ ERROR AL GENERAR NOTA DE VENTA: {$resultadoNotaVenta['message']}"
-                        ]);
-                        \Log::warning("⚠️ Error generando nota de venta automática: {$resultadoNotaVenta['message']}");
-                    }
+                    \Log::info('✅ NVV lista para flujo de aprobación / Picking — sin marcar procesada hasta insert real en SQL');
                 } else {
                     \Log::warning("⚠️ CLIENTE CON RESTRICCIONES - GUARDANDO LOCALMENTE PARA APROBACIÓN");                                                        
                     
@@ -1461,21 +1440,20 @@ class NotaVentaController extends Controller
         $montoMax = $request->get('monto_max', '');
         $tipoDocumento = $request->get('tipo_documento', ''); // Nuevo filtro: cotizacion | nota_venta
         
-        // Si es Supervisor, puede ver todas las cotizaciones
+        $cotizacionesSQL = [];
+        $consultarSqlErp = ($estado === '' || in_array($estado, ['ingresada', 'pendiente', 'aprobada'], true));
+        if ($consultarSqlErp) {
+            if ($user->hasRole('Supervisor') || $user->hasRole('Super Admin')) {
+                $cotizacionesSQL = $this->obtenerCotizacionesDesdeSQLServer($estado, $cliente, $fechaInicio, $fechaFin, '', $buscar, $montoMin, $montoMax);
+            } else {
+                $codigoVendedor = $user->codigo_vendedor ?? '';
+                $cotizacionesSQL = $this->obtenerCotizacionesDesdeSQLServer($estado, $cliente, $fechaInicio, $fechaFin, $codigoVendedor, $buscar, $montoMin, $montoMax);
+            }
+        }
+
         if ($user->hasRole('Supervisor') || $user->hasRole('Super Admin')) {
-            // Obtener cotizaciones desde SQL Server (todas)
-            $cotizacionesSQL = $this->obtenerCotizacionesDesdeSQLServer($estado, $cliente, $fechaInicio, $fechaFin, '', $buscar, $montoMin, $montoMax);
-            
-            // Obtener cotizaciones locales (todas)
             $cotizacionesLocales = $this->obtenerCotizacionesLocales($estado, $cliente, $fechaInicio, $fechaFin, $buscar, $montoMin, $montoMax, true, $tipoDocumento);
         } else {
-            // Si es Vendedor, solo sus cotizaciones
-            $codigoVendedor = $user->codigo_vendedor ?? '';
-            
-            // Obtener cotizaciones desde SQL Server filtradas por vendedor
-            $cotizacionesSQL = $this->obtenerCotizacionesDesdeSQLServer($estado, $cliente, $fechaInicio, $fechaFin, $codigoVendedor, $buscar, $montoMin, $montoMax);
-            
-            // Obtener cotizaciones locales del vendedor
             $cotizacionesLocales = $this->obtenerCotizacionesLocales($estado, $cliente, $fechaInicio, $fechaFin, $buscar, $montoMin, $montoMax, false, $tipoDocumento);
         }
         
@@ -1515,31 +1493,9 @@ class NotaVentaController extends Controller
                 $query->where('tipo_documento', $tipoDocumento);
             }
             
-            // Filtro por estado
+            // Filtro por estado (misma lógica que CotizacionController::obtenerCotizacionesLocales)
             if ($estado) {
-                switch ($estado) {
-                    case 'borrador':
-                        $query->where('estado', 'borrador');
-                        break;
-                    case 'enviada':
-                        $query->where('estado', 'enviada');
-                        break;
-                    case 'aprobada':
-                        $query->where('estado', 'aprobada');
-                        break;
-                    case 'rechazada':
-                        $query->where('estado', 'rechazada');
-                        break;
-                    case 'pendiente_stock':
-                        $query->where('estado', 'pendiente_stock');
-                        break;
-                    case 'procesada':
-                        $query->where('estado', 'procesada');
-                        break;
-                    case 'cancelada':
-                        $query->where('estado', 'cancelada');
-                        break;
-                }
+                $query->filtrarEstadoListado($estado);
             }
             
             // Filtro por cliente
@@ -2671,36 +2627,6 @@ class NotaVentaController extends Controller
     }
 
     /**
-     * Generar nota de venta automáticamente cuando todos los productos tienen stock
-     */
-    private function generarNotaVentaAutomatica($cotizacion, $productos)
-    {
-        try {
-            \Log::info("🚀 GENERANDO NOTA DE VENTA AUTOMÁTICA PARA COTIZACIÓN {$cotizacion->id}");
-            
-            // Generar un número único para la nota de venta
-            // Usamos un timestamp + ID de cotización para asegurar unicidad
-            $numeroNotaVenta = (int)(time() . str_pad($cotizacion->id, 3, '0', STR_PAD_LEFT));
-            
-            \Log::info("✅ Nota de venta generada: {$numeroNotaVenta}");
-            
-            return [
-                'success' => true,
-                'nota_venta_id' => $numeroNotaVenta,
-                'message' => 'Nota de venta generada exitosamente'
-            ];
-            
-        } catch (\Exception $e) {
-            \Log::error('Error generando nota de venta automática: ' . $e->getMessage());
-            
-            return [
-                'success' => false,
-                'message' => 'Error al generar nota de venta: ' . $e->getMessage()
-            ];
-        }
-    }
-
-    /**
      * Editar cotización existente
      */
     public function editar($id)
@@ -3478,7 +3404,7 @@ class NotaVentaController extends Controller
     public function generarPDF($id)
     {
         try {
-            $cotizacion = Cotizacion::with('productos')->findOrFail($id);
+            $cotizacion = Cotizacion::with(['productos', 'user'])->findOrFail($id);
             
             // Verificar que sea una nota de venta, no una cotización
             if ($cotizacion->tipo_documento !== 'nota_venta') {

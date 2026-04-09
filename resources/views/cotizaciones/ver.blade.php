@@ -68,6 +68,25 @@
                                             </div>
                                         </div>
                                     </div>
+                                    @if($cotizacion->cliente_direccion || $cotizacion->cliente_suen !== null || $cotizacion->cliente_telefono)
+                                    <div class="row mt-2">
+                                        <div class="col-md-12">
+                                            <div class="alert alert-info mb-0">
+                                                <strong>Entrega en este documento:</strong>
+                                                @if($cotizacion->cliente_suen !== null)
+                                                    <span class="badge badge-primary">
+                                                        {{ trim((string) $cotizacion->cliente_suen) === '' ? 'Casa matriz' : 'Sucursal ' . $cotizacion->cliente_suen }}
+                                                    </span>
+                                                @endif
+                                                <br>
+                                                <strong>Dirección:</strong> {{ $cotizacion->cliente_direccion ?: ($cliente->direccion ?? '—') }}
+                                                @if($cotizacion->cliente_telefono)
+                                                    <br><strong>Tel. documento:</strong> {{ $cotizacion->cliente_telefono }}
+                                                @endif
+                                            </div>
+                                        </div>
+                                    </div>
+                                    @endif
                                     <!-- Campos ocultos para mantener la funcionalidad -->
                                     <input type="hidden" name="cliente_telefono" value="{{ $cliente->telefono ?? '' }}">
                                     <input type="hidden" name="cliente_email" value="{{ $cliente->email ?? '' }}">

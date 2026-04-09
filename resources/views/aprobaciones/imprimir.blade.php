@@ -3,111 +3,160 @@
 <head>
     <title>Guía de Picking - Nota de Venta #{{ $cotizacion->id }}</title>
     <style>
+        /* Compactación para imprimir la guía en 1 página A4 (timbres arriba) */
+        html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         body {
-            font-family: Arial, sans-serif;
-            margin: 10px;
-            font-size: 10px;
-            line-height: 1.2;
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 0;
+            padding: 4px 6px;
+            font-size: 8.5pt;
+            line-height: 1.15;
         }
+        body p { margin: 0 0 2px 0; }
         .header-section {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 15px;
-            border-bottom: 2px solid #000;
-            padding-bottom: 10px;
+            align-items: flex-start;
+            margin-bottom: 4px;
+            border-bottom: 1px solid #000;
+            padding-bottom: 4px;
         }
-        .company-left {
-            width: 50%;
-            text-align: left;
+        .header-brand-table { width: 100%; border-collapse: collapse; margin: 0; }
+        .header-brand-table td { vertical-align: top; padding: 0 6px 0 0; border: none; }
+        .header-brand-table .logo-cell { width: 100px; }
+        .header-section h1 {
+            font-size: 8.5pt;
+            font-weight: bold;
+            margin: 0 0 3px 0;
+            line-height: 1.15;
         }
-        .company-right {
-            width: 50%;
-            text-align: right;
+        .header-section h2 {
+            font-size: 11pt;
+            margin: 0 0 3px 0;
+            line-height: 1.1;
         }
-        .client-info {
-            margin-bottom: 15px;
+        .company-left { width: 52%; text-align: left; }
+        .company-right { width: 48%; text-align: right; }
+        .client-info { margin-bottom: 4px; }
+        .client-info h3 {
+            font-size: 9pt;
+            margin: 0 0 2px 0;
+            font-weight: bold;
         }
         .client-table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 15px;
+            margin-bottom: 4px;
         }
         .client-table td {
             border: 1px solid #000;
-            padding: 3px;
+            padding: 1px 3px;
             text-align: left;
             width: 33.33%;
+            font-size: 8pt;
+            line-height: 1.15;
         }
         .products-table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 15px;
-            font-size: 9px;
+            margin-bottom: 4px;
+            font-size: 7.5pt;
         }
         .products-table th,
         .products-table td {
             border: 1px solid #000;
-            padding: 2px;
+            padding: 1px 2px;
             text-align: left;
+            line-height: 1.1;
         }
         .products-table th {
             background-color: #f0f0f0;
             font-weight: bold;
-            font-size: 9px;
+            font-size: 7.5pt;
         }
+        /* Muchas líneas: aún más compacto para una sola hoja */
+        .products-table--many { font-size: 6.5pt; }
+        .products-table--many th,
+        .products-table--many td { padding: 0 1px; font-size: 6.5pt; }
         .warehouse-section {
-            margin-top: 15px;
-            padding: 8px;
+            margin-top: 4px;
+            padding: 3px 5px;
             border: 1px solid #000;
             background-color: #f9f9f9;
         }
+        .warehouse-section p { margin: 0 0 1px 0; font-size: 8pt; }
         .warehouse-content {
             display: flex;
             justify-content: space-between;
         }
-        .warehouse-left, .warehouse-right {
-            width: 48%;
-        }
+        .warehouse-left, .warehouse-right { width: 49%; }
         .warehouse-title {
             text-align: center;
             font-weight: bold;
-            margin-bottom: 8px;
+            margin-bottom: 2px;
+            font-size: 8.5pt;
         }
         .totals {
             text-align: right;
-            margin-top: 15px;
-            font-size: 10px;
+            margin-top: 3px;
+            font-size: 8pt;
         }
+        .totals p { margin: 0; line-height: 1.2; }
         .observations {
-            margin-top: 15px;
-            padding: 8px;
+            margin-top: 3px;
+            padding: 3px 5px;
             border: 1px solid #000;
             background-color: #fffacd;
-            font-size: 9px;
+            font-size: 7.5pt;
         }
+        .observations h4 {
+            margin: 0 0 2px 0;
+            font-size: 8pt;
+        }
+        .observations .obs-block { margin-bottom: 3px !important; padding: 2px 4px !important; }
+        .observations .obs-block p { margin: 0; }
         .signatures {
-            margin-top: 15px;
+            margin-top: 4px;
             display: flex;
             justify-content: space-between;
+            align-items: flex-end;
+            page-break-inside: avoid;
         }
         .signature-box {
             text-align: center;
-            width: 30%;
+            width: 31%;
+            font-size: 7.5pt;
         }
+        .signature-box p { margin: 0 0 1px 0; }
         @media print {
-            body { margin: 0; }
+            @page { size: A4 portrait; margin: 6mm; }
+            body { margin: 0; padding: 0; font-size: 8.2pt; }
             .no-print { display: none; }
+            .signatures { page-break-inside: avoid; break-inside: avoid; }
+            .warehouse-section { page-break-inside: avoid; }
         }
     </style>
 </head>
 <body>
     <div class="header-section">
         <div class="company-left">
-            <h1>HIGUERA COMERCIALIZADORA CLAUDIO ANDRES HIGUERA PAVEZ E.I.R.L.</h1>
-            <p><strong>Giro:</strong> Comercialización y Distribución de Art. De Ferretería y Construcción.</p>
-            <p><strong>Casa Matriz:</strong> Bernardo O'higgins n° 157 - Colina - Santiago</p>
-            <p><strong>Fono:</strong> 26 4656436</p>
-            <p><strong>Dirección de Entrega:</strong> Bernardo O'higgins 157 - Colina</p>
+            <table class="header-brand-table">
+                <tr>
+                    <td class="logo-cell">@include('pdf.partials.logo-empresa')</td>
+                    <td>
+                        <h1>HIGUERA COMERCIALIZADORA CLAUDIO ANDRES HIGUERA PAVEZ E.I.R.L.</h1>
+                        <p><strong>Giro:</strong> Comercialización y Distribución de Art. De Ferretería y Construcción.</p>
+                        <p><strong>Casa Matriz:</strong> Bernardo O'higgins n° 157 - Colina - Santiago</p>
+                        <p><strong>Fono:</strong> 26 4656436</p>
+                        <p><strong>Dirección de Entrega (doc.):</strong>
+                            @php
+                                $__dirEnt = trim((string) ($cotizacion->cliente_direccion ?? ''));
+                            @endphp
+                            {{ $__dirEnt !== '' ? $__dirEnt : 'Bernardo O\'higgins 157 - Colina' }}
+                        </p>
+                    </td>
+                </tr>
+            </table>
         </div>
         <div class="company-right">
             <p><strong>R.U.T.:</strong> 76.426.104-6</p>
@@ -130,7 +179,7 @@
         <table class="client-table">
             <tr>
                 <td><strong>Señor(es):</strong> {{ $cliente->nombre_cliente ?? $cotizacion->cliente_nombre }}</td>
-                <td><strong>Dirección:</strong> {{ $cliente->direccion ?? 'No especificada' }}</td>
+                <td><strong>Dirección entrega:</strong> {{ !empty(trim((string) ($cotizacion->cliente_direccion ?? ''))) ? $cotizacion->cliente_direccion : ($cliente->direccion ?? 'No especificada') }}</td>
                 <td><strong>RUT:</strong> {{ !empty($cliente->rut_cliente) ? $cliente->rut_cliente : ($cotizacion->cliente_codigo ?? 'No especificado') }}</td>
             </tr>
             <tr>
@@ -151,7 +200,7 @@
         </table>
     </div>
     
-    <table class="products-table">
+    <table class="products-table{{ $cotizacion->productos->count() > 10 ? ' products-table--many' : '' }}">
         <thead>
             <tr>
                 <th>Código</th>
@@ -235,30 +284,30 @@
         <h4>Observaciones:</h4>
         
         @if($cotizacion->observacion_vendedor)
-        <div style="margin-bottom: 10px; padding: 5px; background-color: #e3f2fd; border-left: 3px solid #2196F3;">
-            <p style="margin: 0; font-weight: bold; color: #1976D2;">Observaciones del Vendedor:</p>
-            <p style="margin: 5px 0 0 0;">{{ $cotizacion->observacion_vendedor }}</p>
+        <div class="obs-block" style="background-color: #e3f2fd; border-left: 3px solid #2196F3;">
+            <p style="font-weight: bold; color: #1976D2;">Observaciones del Vendedor:</p>
+            <p>{{ $cotizacion->observacion_vendedor }}</p>
         </div>
         @endif
         
         @if($cotizacion->observaciones)
-        <div style="margin-bottom: 10px; padding: 5px;">
-            <p style="margin: 0; font-weight: bold;">Observaciones Generales:</p>
-            <p style="margin: 5px 0 0 0;">{{ $cotizacion->observaciones }}</p>
+        <div class="obs-block">
+            <p style="font-weight: bold;">Observaciones Generales:</p>
+            <p>{{ $cotizacion->observaciones }}</p>
         </div>
         @endif
         
         @if(isset($observacionesExtra) && $observacionesExtra)
-        <div style="margin-bottom: 10px; padding: 5px;">
-            <p style="margin: 0; font-weight: bold;">Observaciones Extra:</p>
-            <p style="margin: 5px 0 0 0;">{{ $observacionesExtra }}</p>
+        <div class="obs-block">
+            <p style="font-weight: bold;">Observaciones Extra:</p>
+            <p>{{ $observacionesExtra }}</p>
         </div>
         @endif
         
         @if($cotizacion->observaciones_picking)
-        <div style="margin-bottom: 10px; padding: 5px; background-color: #fff3cd; border-left: 3px solid #ffc107;">
-            <p style="margin: 0; font-weight: bold; color: #856404;">Observaciones de Picking:</p>
-            <p style="margin: 5px 0 0 0;">{{ $cotizacion->observaciones_picking }}</p>
+        <div class="obs-block" style="background-color: #fff3cd; border-left: 3px solid #ffc107;">
+            <p style="font-weight: bold; color: #856404;">Observaciones de Picking:</p>
+            <p>{{ $cotizacion->observaciones_picking }}</p>
         </div>
         @endif
         
