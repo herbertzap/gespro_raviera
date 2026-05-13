@@ -113,4 +113,30 @@ class Producto extends Model
                 return $this->descuento_maximo_01p;
         }
     }
+
+    /**
+     * Buscar por código ERP (KOPR puede venir con espacios de relleno en MySQL).
+     */
+    public static function findPorKopr(?string $codigoProducto): ?self
+    {
+        $c = trim((string) ($codigoProducto ?? ''));
+        if ($c === '') {
+            return null;
+        }
+
+        return static::query()->whereRaw('TRIM(KOPR) = ?', [$c])->first();
+    }
+
+    /**
+     * Stock disponible para ventas/aprobaciones: misma lógica que CotizacionController (ERP + MySQL + compromiso local).
+     */
+    public static function stockDisponibleReal(?string $codigoProducto): float
+    {
+        $c = trim((string) ($codigoProducto ?? ''));
+        if ($c === '') {
+            return 0.0;
+        }
+
+        return (float) app(\App\Services\StockComprometidoService::class)->obtenerStockDisponibleReal($c);
+    }
 }

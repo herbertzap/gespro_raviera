@@ -444,9 +444,10 @@ class NotaVentaController extends Controller
             
             foreach ($productos as $producto) {
                 try {
-                    $codigo = $producto['CODIGO_PRODUCTO'];
+                    $codigo = trim((string) ($producto['CODIGO_PRODUCTO'] ?? ''));
+                    $producto['CODIGO_PRODUCTO'] = $codigo;
                     $stockReal = $stockService->obtenerStockDisponibleReal($codigo);
-                    
+
                     // Verificar si el producto está oculto consultando SQL Server
                     $productoOculto = $stockService->verificarProductoOculto($codigo);
                     
@@ -692,7 +693,7 @@ class NotaVentaController extends Controller
             \Log::info('Lista de precios del cliente ' . $codigoCliente . ': ' . $listaPreciosCliente);
             
             // Consultar precios desde tabla productos local (MySQL)
-            $producto = DB::table('productos')->where('KOPR', $codigoProducto)->first();
+            $producto = DB::table('productos')->whereRaw('TRIM(KOPR) = ?', [trim((string) $codigoProducto)])->first();
             
             if (!$producto) {
                 return response()->json([
@@ -1085,7 +1086,7 @@ class NotaVentaController extends Controller
                 $stockComprometido = \App\Models\StockComprometido::calcularStockComprometido($producto['codigo']);
                 
                 // Obtener stock FÍSICO del producto ACTUALIZADO (importante para validación de compras)
-                $productoDB = \App\Models\Producto::where('KOPR', $producto['codigo'])->first();
+                $productoDB = \App\Models\Producto::findPorKopr($producto['codigo']);
                 $stockFisico = $productoDB ? ($productoDB->stock_fisico ?? 0) : 0;
                 
                 \Log::info("📦 Stock para producto {$producto['codigo']}: Físico={$stockFisico}, Disponible={$stockDisponibleReal}, Comprometido={$stockComprometido}, Cantidad solicitada={$producto['cantidad']}");
@@ -1124,7 +1125,7 @@ class NotaVentaController extends Controller
                 
                 // ACTUALIZAR stock_disponible en cotizacion_productos con el valor ACTUALIZADO de productos
                 // Esto asegura que la vista de aprobaciones muestre el stock correcto
-                $productoActualizado = \App\Models\Producto::where('KOPR', $producto['codigo'])->first();
+                $productoActualizado = \App\Models\Producto::findPorKopr($producto['codigo']);
                 if ($productoActualizado) {
                     $stockDisponibleActualizado = $stockComprometidoService->obtenerStockDisponibleReal($producto['codigo']);
                     $cotizacionProducto->stock_disponible = $stockDisponibleActualizado;
@@ -1536,7 +1537,7 @@ class NotaVentaController extends Controller
                 $resultado[] = [
                     'id' => $cotizacion->id,
                     'tipo' => 'COTIZACION_LOCAL',
-                    'numero' => $cotizacion->id,
+                    'numero' => $cotizacion->numero_nvv ?: $cotizacion->id,
                     'fecha_emision' => $cotizacion->fecha->format('Y-m-d H:i:s'),
                     'cliente_codigo' => $cotizacion->cliente_codigo,
                     'cliente_nombre' => $cotizacion->cliente_nombre,
@@ -2699,7 +2700,7 @@ class NotaVentaController extends Controller
             foreach ($cotizacion->productos as $producto) {
                 // Obtener información adicional del producto desde la tabla productos
                 $productoDB = DB::table('productos')
-                    ->where('KOPR', $producto->codigo_producto)
+                    ->whereRaw('TRIM(KOPR) = ?', [trim((string) $producto->codigo_producto)])
                     ->first();
                 
                 // Determinar lista de precios para obtener descuento máximo
@@ -3261,7 +3262,7 @@ class NotaVentaController extends Controller
             $stockDisponibleReal = $stockService->obtenerStockDisponibleReal($codigo);
             
             // 3. Obtener datos del producto actualizados
-            $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
+            $producto = \App\Models\Producto::findPorKopr($codigo);
             
             if (!$producto) {
                 return response()->json([
@@ -3359,7 +3360,7 @@ class NotaVentaController extends Controller
             }
 
             // Obtener producto actual de MySQL
-            $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
+            $producto = \App\Models\Producto::findPorKopr($codigo);
             if (!$producto) {
                 \Log::warning("⚠️ Producto {$codigo} no encontrado en MySQL para actualizar precios");
                 return;

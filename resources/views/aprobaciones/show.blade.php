@@ -1,6 +1,9 @@
 @extends('layouts.app', ['pageSlug' => 'aprobaciones'])
 
 @section('content')
+@php
+    $stocksRealesPorCodigo = $stocksRealesPorCodigo ?? [];
+@endphp
 <div class="content">
     <div class="container-fluid">
         <!-- Header -->
@@ -543,12 +546,7 @@
                                                 </td>
                                                 <td>
                                                     @php
-                                                        // Obtener stock REAL desde tabla productos (actualizado)
-                                                        $productoStockTemp = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
-                                                        $stockFisicoRealTemp = $productoStockTemp ? ($productoStockTemp->stock_fisico ?? 0) : 0;
-                                                        $stockComprometidoSQLTemp = $productoStockTemp ? ($productoStockTemp->stock_comprometido ?? 0) : 0;
-                                                        $stockComprometidoLocalTemp = \App\Models\StockComprometido::calcularStockComprometido($producto->codigo_producto);
-                                                        $stockDisponibleRealTemp = max(0, $stockFisicoRealTemp - $stockComprometidoSQLTemp - $stockComprometidoLocalTemp);
+                                                        $stockDisponibleRealTemp = (float) ($stocksRealesPorCodigo[trim((string) $producto->codigo_producto)] ?? 0);
                                                     @endphp
                                                     @if(Auth::user()->hasRole('Compras') && $cotizacion->tiene_problemas_stock && $stockDisponibleRealTemp < $producto->cantidad && !$cotizacion->aprobado_por_compras)
                                                         <div class="input-group input-group-sm">
@@ -584,14 +582,8 @@
                                                     @endphp
                                                     @if($puedeSeparar)
                                                         @php
-                                                            // Obtener stock disponible
-                                                            $productoStockSep = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
-                                                            $stockFisicoRealSep = $productoStockSep ? ($productoStockSep->stock_fisico ?? 0) : 0;
-                                                            $stockComprometidoSQLSep = $productoStockSep ? ($productoStockSep->stock_comprometido ?? 0) : 0;
-                                                            $stockComprometidoLocalSep = \App\Models\StockComprometido::calcularStockComprometido($producto->codigo_producto);
-                                                            $stockDisponibleRealSep = max(0, $stockFisicoRealSep - $stockComprometidoSQLSep - $stockComprometidoLocalSep);
-                                                            
-                                                            // Obtener múltiplo de venta
+                                                            $productoStockSep = \App\Models\Producto::findPorKopr($producto->codigo_producto);
+                                                            $stockDisponibleRealSep = (float) ($stocksRealesPorCodigo[trim((string) $producto->codigo_producto)] ?? 0);
                                                             $multiploVenta = optional($productoStockSep)->multiplo_venta ?? 1;
                                                             if ($multiploVenta <= 0) { $multiploVenta = 1; }
                                                             
@@ -706,12 +698,7 @@
                                                 </td>
                                                 <td>
                                                     @php
-                                                        // Obtener stock REAL desde tabla productos (actualizado)
-                                                        $productoStock = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
-                                                        $stockFisicoReal = $productoStock ? ($productoStock->stock_fisico ?? 0) : 0;
-                                                        $stockComprometidoSQL = $productoStock ? ($productoStock->stock_comprometido ?? 0) : 0;
-                                                        $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($producto->codigo_producto);
-                                                        $stockDisponibleReal = max(0, $stockFisicoReal - $stockComprometidoSQL - $stockComprometidoLocal);
+                                                        $stockDisponibleReal = (float) ($stocksRealesPorCodigo[trim((string) $producto->codigo_producto)] ?? 0);
                                                     @endphp
                                                     @if($stockDisponibleReal >= $producto->cantidad)
                                                         <span class="badge badge-success">{{ $stockDisponibleReal }}</span>
@@ -1287,12 +1274,7 @@ document.head.appendChild(style);
                                         <input type="checkbox" name="productos_pendientes[]" value="{{ $producto->id }}" @if($producto->pendiente_entrega ?? false) checked @endif>
                                     </td>
                                     @php
-                                        // Obtener stock REAL desde tabla productos (actualizado)
-                                        $productoStockHist = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
-                                        $stockFisicoRealHist = $productoStockHist ? ($productoStockHist->stock_fisico ?? 0) : 0;
-                                        $stockComprometidoSQLHist = $productoStockHist ? ($productoStockHist->stock_comprometido ?? 0) : 0;
-                                        $stockComprometidoLocalHist = \App\Models\StockComprometido::calcularStockComprometido($producto->codigo_producto);
-                                        $stockDisponibleRealHist = max(0, $stockFisicoRealHist - $stockComprometidoSQLHist - $stockComprometidoLocalHist);
+                                        $stockDisponibleRealHist = (float) ($stocksRealesPorCodigo[trim((string) $producto->codigo_producto)] ?? 0);
                                     @endphp
                                     <td>{{ $producto->codigo_producto }} - {{ $producto->nombre_producto }}</td>
                                     <td class="text-right">{{ number_format($producto->cantidad, 0) }}</td>

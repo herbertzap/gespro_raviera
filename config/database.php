@@ -93,6 +93,7 @@ return [
             // 'yes' para servidores modernos con TLS, 'no' para servidores antiguos sin TLS (SQL Server 2016 o anterior)
             'encrypt' => env('SQLSRV_ENCRYPT', 'yes'),
             'trust_server_certificate' => env('SQLSRV_TRUST_SERVER_CERTIFICATE', 'true'),
+            'login_timeout' => env('SQLSRV_LOGIN_TIMEOUT', 5),
         ], (function() {
             $encrypt = env('SQLSRV_ENCRYPT', 'yes');
             $options = [];
@@ -126,6 +127,7 @@ return [
             // 'yes' para servidores modernos con TLS, 'no' para servidores antiguos sin TLS (SQL Server 2016 o anterior)
             'encrypt' => env('SQLSRV_EXTERNAL_ENCRYPT', 'yes'),
             'trust_server_certificate' => env('SQLSRV_EXTERNAL_TRUST_SERVER_CERTIFICATE', 'true'),
+            'login_timeout' => env('SQLSRV_EXTERNAL_LOGIN_TIMEOUT', 5),
         ], (function() {
             $encrypt = env('SQLSRV_EXTERNAL_ENCRYPT', 'yes');
             $options = [];

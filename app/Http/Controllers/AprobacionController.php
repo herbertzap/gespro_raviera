@@ -153,20 +153,24 @@ class AprobacionController extends Controller
             // Picking y Picking Operativo ven tanto notas con problemas de stock como sin problemas
             $queryConProblemas = Cotizacion::pendientesPicking();
             $aplicarFiltros($queryConProblemas);
+            // Evitar cargar miles de filas en memoria (provoca 504 en el gateway)
             $cotizacionesConProblemas = $queryConProblemas->with(['user', 'productos', 'cliente'])
                 ->latest()
+                ->limit(300)
                 ->get();
             
             $querySinProblemas = Cotizacion::pendientesPickingSinProblemas();
             $aplicarFiltros($querySinProblemas);
             $cotizacionesSinProblemas = $querySinProblemas->with(['user', 'productos', 'cliente'])
                 ->latest()
+                ->limit(300)
                 ->get();
             
             $queryPendientesEntrega = Cotizacion::pendientesEntrega();
             $aplicarFiltros($queryPendientesEntrega);
             $cotizacionesPendientesEntrega = $queryPendientesEntrega->with(['user', 'productos', 'cliente'])
                 ->latest()
+                ->limit(300)
                 ->get();
             
             $cotizaciones = $cotizacionesConProblemas->merge($cotizacionesSinProblemas)->merge($cotizacionesPendientesEntrega);
@@ -957,7 +961,7 @@ class AprobacionController extends Controller
             foreach ($cotizacion->productos as $index => $producto) {
                 $lineaId = $index + 1;
                 
-                $productoDB = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
+                $productoDB = \App\Models\Producto::findPorKopr($producto->codigo_producto);
                 
                 $udtrpr = 1;
                 $rludpr = 1;
@@ -1129,8 +1133,9 @@ class AprobacionController extends Controller
             // ==================== PREVISUALIZACIÓN TABLA MAEDTLI ====================
             $productosConDescuento = 0;
             foreach ($cotizacion->productos as $producto) {
-                $porcentajeDescuento = $producto->descuento_porcentaje ?? 0;
-                if ($porcentajeDescuento > 0) {
+                $pPct = (float) ($producto->descuento_porcentaje ?? 0);
+                $pVal = (float) ($producto->descuento_valor ?? 0);
+                if ($pPct > 0 || $pVal > 0) {
                     $productosConDescuento++;
                 }
             }
@@ -1140,25 +1145,33 @@ class AprobacionController extends Controller
                 $previewMAEDTLI .= "╔══════════════════════════════════════════════════════════════════════════╗\n";
                 $previewMAEDTLI .= "║                  📊 PREVISUALIZACIÓN TABLA MAEDTLI                       ║\n";
                 $previewMAEDTLI .= "╠══════════════════════════════════════════════════════════════════════════╣\n";
-                $previewMAEDTLI .= sprintf("║ %-30s = %-39s ║\n", "Productos con descuento", $productosConDescuento);
+                $previewMAEDTLI .= sprintf("║ %-30s = %-39s ║\n", "Líneas con descuento (% o valor)", $productosConDescuento);
                 $previewMAEDTLI .= sprintf("║ %-30s = %-39s ║\n", "KODT (fijo)", "D_SIN_TIPO");
                 $previewMAEDTLI .= "║                                                                          ║\n";
                 
                 foreach ($cotizacion->productos as $index => $producto) {
-                    $porcentajeDescuento = $producto->descuento_porcentaje ?? 0;
-                    if ($porcentajeDescuento > 0) {
-                        $lineaId = $index + 1;
-                        $nulidoFormateado = str_pad($lineaId, 5, '0', STR_PAD_LEFT);
-                        $valorDescuento = $producto->descuento_valor ?? 0;
-                        
-                        $previewMAEDTLI .= sprintf("║ Línea %-25s = %-39s ║\n", $lineaId, substr($producto->codigo_producto, 0, 39));
-                        $previewMAEDTLI .= sprintf("║   IDMAEEDO = %-26s = %-39s ║\n", "", $siguienteId);
-                        $previewMAEDTLI .= sprintf("║   NULIDO = %-27s = %-39s ║\n", "", $nulidoFormateado);
-                        $previewMAEDTLI .= sprintf("║   KODT = %-28s = %-39s ║\n", "", "D_SIN_TIPO");
-                        $previewMAEDTLI .= sprintf("║   PODT = %-28s = %-39s ║\n", "", number_format($porcentajeDescuento, 2));
-                        $previewMAEDTLI .= sprintf("║   VADT = %-28s = %-39s ║\n", "", number_format($valorDescuento, 2));
-                        $previewMAEDTLI .= "║                                                                          ║\n";
+                    $porcentajeDescuento = (float) ($producto->descuento_porcentaje ?? 0);
+                    $valorDescuento = (float) ($producto->descuento_valor ?? 0);
+                    if ($porcentajeDescuento <= 0 && $valorDescuento <= 0) {
+                        continue;
                     }
+                    $lineaId = $index + 1;
+                    $nulidoFormateado = str_pad((string) $lineaId, 5, '0', STR_PAD_LEFT);
+                    $precioN = (float) ($producto->precio_unitario ?? 0);
+                    $cantN = (float) ($producto->cantidad ?? 0);
+                    $subBruto = $precioN * $cantN;
+                    $podtPreview = $porcentajeDescuento;
+                    if ($podtPreview <= 0 && $valorDescuento > 0 && $subBruto > 0) {
+                        $podtPreview = round(100 * $valorDescuento / $subBruto, 4);
+                    }
+                    
+                    $previewMAEDTLI .= sprintf("║ Línea %-25s = %-39s ║\n", $lineaId, substr($producto->codigo_producto, 0, 39));
+                    $previewMAEDTLI .= sprintf("║   IDMAEEDO = %-26s = %-39s ║\n", "", $siguienteId);
+                    $previewMAEDTLI .= sprintf("║   NULIDO = %-27s = %-39s ║\n", "", $nulidoFormateado);
+                    $previewMAEDTLI .= sprintf("║   KODT = %-28s = %-39s ║\n", "", "D_SIN_TIPO");
+                    $previewMAEDTLI .= sprintf("║   PODT = %-28s = %-39s ║\n", "", number_format($podtPreview, 4));
+                    $previewMAEDTLI .= sprintf("║   VADT = %-28s = %-39s ║\n", "", number_format($valorDescuento, 2));
+                    $previewMAEDTLI .= "║                                                                          ║\n";
                 }
                 
                 $previewMAEDTLI .= "╚══════════════════════════════════════════════════════════════════════════╝\n\n";
@@ -1189,13 +1202,38 @@ class AprobacionController extends Controller
     }
 
     /**
+     * Salida de `tsql` puede incluir "Msg" en mensajes informativos (Level < 11).
+     * Devuelve true solo si hay error real de SQL Server o texto de fallo conocido.
+     */
+    private function tsqlSalidaIndicaErrorSqlServer(?string $result): bool
+    {
+        if ($result === null || $result === '') {
+            return false;
+        }
+        if (preg_match('/Msg (\d+), Level (\d+), State \d+/', $result, $matches)) {
+            $level = (int) ($matches[2] ?? 0);
+
+            return $level >= 11;
+        }
+        if (str_contains($result, 'Cannot insert')
+            || str_contains($result, 'violation')
+            || str_contains($result, 'constraint')
+            || str_contains($result, 'Permission denied')
+            || str_contains($result, 'Invalid object name')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Insertar cotización (NVV) en SQL Server.
      *
      * Verificación de pasos y tablas:
      * 1. MAEEDO   - Encabezado del documento (IDMAEEDO, NUDO, ENDO, totales, ESDO, fechas, etc.)
      * 2. MAEDDO   - Detalle por producto (KOPRCT, cantidad, precios, PODTGLLI/VADTNELI descuentos, VANELI, IVA, total)
      * 3. MAEEDOOB - Observaciones y picking (IDMAEEDO, OBDO, CPDO, OCDO, TEXTO1/2/3: separador, revisor, bultos)
-     * 4. MAEDTLI  - Descuentos por línea (solo líneas con descuento: IDMAEEDO, NULIDO, KODT, PODT, VADT)
+     * 4. MAEDTLI  - Descuentos por línea (líneas con descuento % o valor: IDMAEEDO, NULIDO, KODT, PODT, VADT)
      * 5. MAEPR    - Stock NVV pendiente: STOCNV1, STOCNV2 += cantidad por producto
      * 6. MAEST    - STOCKSALIDA += cantidad; STOCNV1, STOCNV2 += cantidad (por KOSU/KOBO LIB)
      * 7. MAEPREM  - STOCNV1, STOCNV2 += cantidad por producto
@@ -1607,7 +1645,7 @@ class AprobacionController extends Controller
             foreach ($cotizacion->productos as $index => $producto) {
                 $lineaId = $index + 1;
                 
-                $productoDB = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
+                $productoDB = \App\Models\Producto::findPorKopr($producto->codigo_producto);
                 
                 $udtrpr = 1;
                 $rludpr = 1;
@@ -1699,7 +1737,7 @@ class AprobacionController extends Controller
                 unlink($tempFile);
                 Log::info("⏱️ Paso 5 completado en " . round(microtime(true) - $tiempoPaso, 2) . " segundos");
                 
-                if (str_contains($result, 'Msg') || str_contains($result, 'Error') || str_contains($result, 'Violation')) {
+                if ($this->tsqlSalidaIndicaErrorSqlServer($result) || str_contains($result, 'Violation')) {
                     Log::error("Error en INSERT masivo MAEDDO: " . substr($result, 0, 500));
                     Log::warning("Intentando INSERTs individuales como fallback...");
                     
@@ -1725,7 +1763,7 @@ class AprobacionController extends Controller
                         $resultIndividual = shell_exec($command);
                         unlink($tempFile);
                         
-                        if (str_contains($resultIndividual, 'Msg') || str_contains($resultIndividual, 'Error')) {
+                        if ($this->tsqlSalidaIndicaErrorSqlServer($resultIndividual)) {
                             throw new \Exception('Error insertando detalle línea ' . ($idx + 1) . ': ' . substr($resultIndividual, 0, 500));
                         }
                     }
@@ -2124,47 +2162,56 @@ class AprobacionController extends Controller
                 // No lanzar excepción para no detener el proceso completo, pero loguear el error claramente
             }
             
-            // INSERT MAEDTLI - Solo para productos CON descuento
+            // INSERT MAEDTLI - Líneas con descuento en % o en valor (el ERP/FCV suele leer esta tabla además de MAEDDO)
             $productosConDescuento = 0;
             foreach ($cotizacion->productos as $index => $producto) {
-                $porcentajeDescuento = $producto->descuento_porcentaje ?? 0;
-                if ($porcentajeDescuento > 0) {
-                    $productosConDescuento++;
-                    $lineaId = $index + 1;
-                    $nulidoFormateado = str_pad($lineaId, 5, '0', STR_PAD_LEFT);
-                    $valorDescuento = $producto->descuento_valor ?? 0;
-                    
-                    $insertMAEDTLI = "
+                $porcentajeDescuento = (float) ($producto->descuento_porcentaje ?? 0);
+                $valorDescuento = (float) ($producto->descuento_valor ?? 0);
+                $precioNeto = (float) ($producto->precio_unitario ?? 0);
+                $cantidad = (float) ($producto->cantidad ?? 0);
+                $subtotalBruto = $precioNeto * $cantidad;
+                $tieneDescuentoLinea = $porcentajeDescuento > 0 || $valorDescuento > 0;
+                if (! $tieneDescuentoLinea) {
+                    continue;
+                }
+                $productosConDescuento++;
+                $lineaId = $index + 1;
+                $nulidoFormateado = str_pad((string) $lineaId, 5, '0', STR_PAD_LEFT);
+                $podtMaedtli = $porcentajeDescuento;
+                if ($podtMaedtli <= 0 && $valorDescuento > 0 && $subtotalBruto > 0) {
+                    $podtMaedtli = round(100 * $valorDescuento / $subtotalBruto, 4);
+                }
+
+                $insertMAEDTLI = "
                         INSERT INTO MAEDTLI (
                             IDMAEEDO, NULIDO, KODT, PODT, VADT
                 ) VALUES (
-                            {$siguienteId}, '{$nulidoFormateado}', 'D_SIN_TIPO', {$porcentajeDescuento}, {$valorDescuento}
+                            {$siguienteId}, '{$nulidoFormateado}', 'D_SIN_TIPO', {$podtMaedtli}, {$valorDescuento}
                 )
             ";
-                    
-                    Log::info("SQL INSERT MAEDTLI línea {$lineaId} (producto con descuento):");
-                    Log::info($insertMAEDTLI);
-            
-            $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-                    file_put_contents($tempFile, $insertMAEDTLI . "\ngo\nquit");
-            
-            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-            $result = shell_exec($command);
-            
-            unlink($tempFile);
-            
-                    if (str_contains($result, 'Msg') || str_contains($result, 'Error')) {
-                        Log::warning('Error insertando MAEDTLI línea ' . $lineaId . ': ' . $result);
-            } else {
-                        Log::info("✅ MAEDTLI insertado correctamente para producto con descuento {$lineaId}");
-                    }
+
+                Log::info("SQL INSERT MAEDTLI línea {$lineaId} (descuento %={$porcentajeDescuento}, valor={$valorDescuento}, PODT enviado={$podtMaedtli}):");
+                Log::info($insertMAEDTLI);
+
+                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+                file_put_contents($tempFile, $insertMAEDTLI . "\ngo\nquit");
+
+                $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
+                $result = shell_exec($command);
+
+                unlink($tempFile);
+
+                if ($this->tsqlSalidaIndicaErrorSqlServer($result)) {
+                    Log::error('Error insertando MAEDTLI línea ' . $lineaId . ' (cotización ' . $cotizacion->id . ', IDMAEEDO ' . $siguienteId . '): ' . substr($result ?? '', 0, 1200));
+                } else {
+                    Log::info("✅ MAEDTLI insertado correctamente línea {$lineaId}");
                 }
             }
-            
+
             if ($productosConDescuento > 0) {
-                Log::info("✅ {$productosConDescuento} productos con descuento insertados en MAEDTLI");
+                Log::info("✅ {$productosConDescuento} líneas con descuento procesadas para MAEDTLI");
             } else {
-                Log::info("⏭️ No hay productos con descuento - NO se inserta en MAEDTLI");
+                Log::info("⏭️ No hay líneas con descuento (% o valor) — no se inserta en MAEDTLI");
             }
             
             // Verificar que la NVV realmente se insertó en SQL Server
@@ -2391,7 +2438,7 @@ class AprobacionController extends Controller
             // INSERT SIMPLIFICADO DE MAEDDO (solo primer producto para prueba)
             $producto = $cotizacion->productos->first();
             if ($producto) {
-                $productoDB = \App\Models\Producto::where('KOPR', $producto->codigo_producto)->first();
+                $productoDB = \App\Models\Producto::findPorKopr($producto->codigo_producto);
                 
                 $udtrpr = 1;
                 $rludpr = 1;
@@ -2788,13 +2835,21 @@ class AprobacionController extends Controller
             $tipoAprobacion = 'picking';
         }
 
-        // Obtener historial completo
-        $historial = \App\Models\CotizacionHistorial::obtenerHistorialCompleto($id);
-        
-        // Obtener resumen de tiempos
-        $resumenTiempos = \App\Services\HistorialCotizacionService::obtenerResumenTiempos($cotizacion);
+        // Stock real por SKU en batch (la vista antes llamaba stockDisponibleReal hasta 4× por línea → timeout 504)
+        $codigosStockNv = $cotizacion->productos->map(fn ($p) => trim((string) ($p->codigo_producto ?? '')))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $stocksRealesPorCodigo = app(\App\Services\StockComprometidoService::class)->mapaStockDisponibleReal($codigosStockNv);
 
-        return view('aprobaciones.show', compact('cotizacion', 'puedeAprobar', 'tipoAprobacion', 'historial', 'resumenTiempos'));
+        // Obtener historial completo (reutiliza cotización ya cargada)
+        $historial = \App\Models\CotizacionHistorial::obtenerHistorialCompleto($id, $cotizacion);
+        
+        // Obtener resumen de tiempos sin volver a armar el historial
+        $resumenTiempos = \App\Services\HistorialCotizacionService::obtenerResumenTiempos($cotizacion, $historial);
+
+        return view('aprobaciones.show', compact('cotizacion', 'puedeAprobar', 'tipoAprobacion', 'historial', 'resumenTiempos', 'stocksRealesPorCodigo'));
     }
 
     /**
@@ -2824,11 +2879,11 @@ class AprobacionController extends Controller
         }
         
         // Obtener historial completo
-        $historial = \App\Models\CotizacionHistorial::obtenerHistorialCompleto($id);
+        $historial = \App\Models\CotizacionHistorial::obtenerHistorialCompleto($id, $cotizacion);
         
         // Obtener resumen de tiempos (crear uno básico si el servicio no existe)
         try {
-            $resumenTiempos = \App\Services\HistorialCotizacionService::obtenerResumenTiempos($cotizacion);
+            $resumenTiempos = \App\Services\HistorialCotizacionService::obtenerResumenTiempos($cotizacion, $historial);
         } catch (\Exception $e) {
             // Crear resumen básico si el servicio no existe
             $resumenTiempos = $this->crearResumenTiemposBasico($cotizacion);
@@ -3663,7 +3718,7 @@ class AprobacionController extends Controller
             $producto = $cotizacion->productos()->findOrFail($productoId);
 
             // Validar múltiplos de venta
-            $multiplo = intval($producto->multiplo ?? (\DB::table('productos')->where('KOPR', $producto->codigo_producto)->value('multiplo_venta') ?? 1));
+            $multiplo = intval($producto->multiplo ?? (\DB::table('productos')->whereRaw('TRIM(KOPR) = ?', [trim((string) $producto->codigo_producto)])->value('multiplo_venta') ?? 1));
             if ($multiplo > 1 && ($cantidadSeparar % $multiplo) !== 0) {
                 return response()->json(['error' => "La cantidad a separar debe ser múltiplo de {$multiplo}"], 400);
             }
@@ -3716,7 +3771,7 @@ class AprobacionController extends Controller
             }
 
             // Validar múltiplos también aquí
-            $multiplo = intval($producto->multiplo ?? (\DB::table('productos')->where('KOPR', $producto->codigo_producto)->value('multiplo_venta') ?? 1));
+            $multiplo = intval($producto->multiplo ?? (\DB::table('productos')->whereRaw('TRIM(KOPR) = ?', [trim((string) $producto->codigo_producto)])->value('multiplo_venta') ?? 1));
             if ($multiplo > 1 && ($cantidadSeparar % $multiplo) !== 0) {
                 return response()->json(['error' => "La cantidad a separar debe ser múltiplo de {$multiplo}"], 400);
             }

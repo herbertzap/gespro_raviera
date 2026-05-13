@@ -17,6 +17,19 @@
             width: 100%;
         }
     }
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        white-space: nowrap;
+    }
+    .sortable-header .sort-indicator {
+        font-size: 12px;
+        opacity: 0.5;
+        margin-left: 4px;
+    }
+    .sortable-header.active .sort-indicator {
+        opacity: 1;
+    }
 </style>
 <div class="container-fluid">
     <div class="row">
@@ -153,20 +166,20 @@
                     
                     @if(count($cotizaciones) > 0)
                         <div class="table-responsive">
-                            <table class="table">
+                            <table class="table" id="tablaCotizaciones">
                                 <thead>
                                     <tr>
-                                        <th>{{ request('tipo_documento') === 'nota_venta' ? 'N° NVV' : 'N° COT' }}</th>
-                                        <th>Cliente</th>
-                                        <th>Fecha</th>
+                                        <th class="sortable-header" data-sort-key="numero">{{ request('tipo_documento') === 'nota_venta' ? 'N° NVV' : 'N° COT' }}<span class="sort-indicator">↕</span></th>
+                                        <th class="sortable-header" data-sort-key="cliente">Cliente<span class="sort-indicator">↕</span></th>
+                                        <th class="sortable-header" data-sort-key="fecha">Fecha<span class="sort-indicator">↕</span></th>
                                         <th>Total (c/IVA)</th>
                                         <th>Saldo</th>
-                                        <th>Estado</th>
+                                        <th class="sortable-header" data-sort-key="estado">Estado<span class="sort-indicator">↕</span></th>
                                         <th>Fuente</th>
                                         <th>Acciones</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="tbodyCotizaciones">
                                     @foreach($cotizaciones as $cotizacion)
                                     @php
                                         // Convertir objeto a array si es necesario
@@ -453,6 +466,68 @@
 let cotizacionIdActualCotizaciones = null;
 let cotizacionIdEliminar = null;
 let tipoDocumentoEliminar = 'cotizacion'; // Variable para almacenar el tipo de documento
+
+// Ordenamiento de tabla por cabeceras
+(function () {
+    const tbody = document.getElementById('tbodyCotizaciones');
+    const headers = document.querySelectorAll('#tablaCotizaciones .sortable-header');
+    if (!tbody || !headers.length) return;
+
+    const parseFecha = (text) => {
+        // dd/mm/yyyy
+        const m = String(text || '').trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (!m) return 0;
+        return new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00`).getTime() || 0;
+    };
+    const parseNumero = (text) => {
+        const m = String(text || '').match(/(\d+)/g);
+        if (!m || !m.length) return 0;
+        return parseInt(m[m.length - 1], 10) || 0;
+    };
+
+    const getValue = (row, key) => {
+        const tds = row.querySelectorAll('td');
+        if (!tds.length) return '';
+        switch (key) {
+            case 'numero':
+                return parseNumero(tds[0].innerText);
+            case 'cliente':
+                return (tds[1].innerText || '').trim().toUpperCase();
+            case 'fecha':
+                return parseFecha((tds[2].innerText || '').trim());
+            case 'estado':
+                return (tds[5].innerText || '').trim().toUpperCase();
+            default:
+                return '';
+        }
+    };
+
+    const sortState = { key: null, dir: 'asc' };
+    headers.forEach((header) => {
+        header.addEventListener('click', function () {
+            const key = this.dataset.sortKey;
+            sortState.dir = (sortState.key === key && sortState.dir === 'asc') ? 'desc' : 'asc';
+            sortState.key = key;
+
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            rows.sort((a, b) => {
+                const va = getValue(a, key);
+                const vb = getValue(b, key);
+                if (va < vb) return sortState.dir === 'asc' ? -1 : 1;
+                if (va > vb) return sortState.dir === 'asc' ? 1 : -1;
+                return 0;
+            });
+            rows.forEach(r => tbody.appendChild(r));
+
+            headers.forEach(h => {
+                h.classList.remove('active');
+                h.querySelector('.sort-indicator').textContent = '↕';
+            });
+            this.classList.add('active');
+            this.querySelector('.sort-indicator').textContent = sortState.dir === 'asc' ? '↑' : '↓';
+        });
+    });
+})();
 
 function generarNotaVenta(cotizacionId) {
     cotizacionIdActualCotizaciones = cotizacionId;

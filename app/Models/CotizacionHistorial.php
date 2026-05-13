@@ -93,10 +93,15 @@ class CotizacionHistorial extends Model
 
     /**
      * Obtener el historial completo de una cotización
+     *
+     * @param  Cotizacion|null  $cotizacionPrecargada  Si ya está cargada (p. ej. con user/productos), evita un SELECT duplicado.
      */
-    public static function obtenerHistorialCompleto(int $cotizacionId): \Illuminate\Database\Eloquent\Collection
+    public static function obtenerHistorialCompleto(int $cotizacionId, ?Cotizacion $cotizacionPrecargada = null): \Illuminate\Database\Eloquent\Collection
     {
-        $cotizacion = Cotizacion::find($cotizacionId);
+        $cotizacion = $cotizacionPrecargada;
+        if ($cotizacion === null || (int) $cotizacion->id !== $cotizacionId) {
+            $cotizacion = Cotizacion::with(['user', 'productos'])->find($cotizacionId);
+        }
         $historial = self::where('cotizacion_id', $cotizacionId)
             ->with('usuario')
             ->orderBy('fecha_accion', 'asc')

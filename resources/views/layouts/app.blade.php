@@ -12,7 +12,8 @@
 
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
-        <title>@yield('title', config('app.name', 'GESPRO RIVERA'))</title>
+        <title>@yield('title', config('app.name'))</title>
+        <meta name="description" content="@yield('meta_description', config('app.description'))">
         <!-- Favicon -->
         <link rel="apple-touch-icon" sizes="76x76" href="{{ asset('black') }}/img/apple-icon.png">
         <link rel="icon" type="image/png" href="{{ asset('black') }}/img/favicon.png">

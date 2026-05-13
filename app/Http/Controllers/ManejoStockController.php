@@ -532,7 +532,7 @@ class ManejoStockController extends Controller
      */
     private function obtenerDetalleProductoDesdeMySQL(string $sku): ?array
     {
-        $p = Producto::where('KOPR', trim($sku))->first();
+        $p = Producto::findPorKopr($sku);
         if (!$p) {
             return null;
         }
@@ -747,12 +747,14 @@ class ManejoStockController extends Controller
             foreach ($lines as $line) {
                 $line = trim($line);
                 
-                // Saltar líneas vacías o de configuración
-                if (empty($line) || 
-                    strpos($line, 'locale') !== false || 
-                    strpos($line, 'Setting') !== false || 
-                    strpos($line, 'Msg ') !== false || 
+                // Saltar líneas vacías o de configuración (stderr de FreeTDS: "using default charset...")
+                if (empty($line) ||
+                    strpos($line, 'locale') !== false ||
+                    strpos($line, 'Setting') !== false ||
+                    strpos($line, 'Msg ') !== false ||
                     strpos($line, 'Warning:') !== false ||
+                    strpos($line, 'using default') !== false ||
+                    stripos($line, 'charset') !== false ||
                     preg_match('/^\d+>$/', $line) ||
                     preg_match('/^\d+>\s+\d+>\s+\d+>/', $line) ||
                     strpos($line, 'rows affected') !== false ||

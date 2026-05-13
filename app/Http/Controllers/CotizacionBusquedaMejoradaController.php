@@ -101,7 +101,7 @@ class CotizacionBusquedaMejoradaController extends Controller
             $productos = [];
             
             foreach ($productosMySQL as $producto) {
-                $codigo = $producto->KOPR;
+                $codigo = trim((string) $producto->KOPR);
                 
                 // Obtener stock desde SQL Server (si está disponible)
                 $stockSQL = $stocksSQL[$codigo] ?? null;
@@ -115,7 +115,7 @@ class CotizacionBusquedaMejoradaController extends Controller
                     );
                     
                     // Usar valores actualizados desde MySQL (ya fueron actualizados)
-                    $productoActualizado = DB::table('productos')->where('KOPR', $codigo)->first();
+                    $productoActualizado = DB::table('productos')->whereRaw('TRIM(KOPR) = ?', [$codigo])->first();
                     $stockFisico = (float)($productoActualizado->stock_fisico ?? 0);
                     $stockComprometido = (float)($productoActualizado->stock_comprometido ?? 0);
                 } else {

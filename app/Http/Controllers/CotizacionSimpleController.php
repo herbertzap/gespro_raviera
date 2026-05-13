@@ -249,7 +249,7 @@ class CotizacionSimpleController extends Controller
             foreach ($cotizacion->productos as $producto) {
                 // Obtener información adicional del producto desde la tabla productos
                 $productoDB = DB::table('productos')
-                    ->where('KOPR', $producto->codigo_producto)
+                    ->whereRaw('TRIM(KOPR) = ?', [trim((string) $producto->codigo_producto)])
                     ->first();
                 
                 // Determinar lista de precios para obtener descuento máximo

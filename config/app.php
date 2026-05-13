@@ -16,7 +16,15 @@ return [
     |
     */
 
-    'name' => env('APP_NAME', 'Laravel'),
+    'name' => env('APP_NAME', 'APP-Higera'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Application description (meta tag por defecto)
+    |--------------------------------------------------------------------------
+    */
+
+    'description' => env('APP_DESCRIPTION', 'APP-Higera – Sistema de gestión comercial y logística.'),
 
     /*
     |--------------------------------------------------------------------------

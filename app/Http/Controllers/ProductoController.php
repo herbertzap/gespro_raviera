@@ -5,8 +5,11 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Cotizacion;
 use App\Models\CotizacionProducto;
+use App\Models\Producto;
+use App\Models\StockComprometido;
 use App\Models\StockTemporal;
 use App\Models\NotaVentaPendienteProducto;
+use App\Services\StockComprometidoService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Artisan;
@@ -77,6 +80,7 @@ class ProductoController extends Controller
                     $nombreLimpio = $this->limpiarNombreProducto($producto->NOKOPR);
                     
                     return [
+                        'id' => $producto->id,
                         'codigo' => $producto->KOPR,
                         'nombre' => $nombreLimpio,
                         'precio' => $precio,
@@ -159,6 +163,7 @@ class ProductoController extends Controller
                 $nombreLimpio = $this->limpiarNombreProducto($producto->NOKOPR);
                 
                 return [
+                    'id' => $producto->id,
                     'codigo' => $codigo,
                     'nombre' => $nombreLimpio,
                     'precio' => $producto->precio_01p ?? 0,
@@ -565,6 +570,131 @@ class ProductoController extends Controller
         }
     }
 
+    /**
+     * Detalle JSON para el modal "Más información" en /productos (misma forma que espera productos/index.blade.php).
+     */
+    public function detalleApi(Request $request, string $codigo)
+    {
+        $codigoBusqueda = trim(urldecode($codigo));
+
+        $productoMySql = Producto::query()
+            ->whereRaw('TRIM(KOPR) = ?', [$codigoBusqueda])
+            ->first();
+
+        if (! $productoMySql) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Producto no encontrado en el catálogo local. Sincronice productos o verifique el código.',
+            ], 404);
+        }
+
+        $codigoReal = trim($productoMySql->KOPR);
+
+        $stockService = new StockComprometidoService;
+        $stockCompLocal = (float) StockComprometido::calcularStockComprometido($codigoReal);
+        $disponibleApp = (float) $stockService->obtenerStockDisponibleReal($codigoReal);
+
+        $mysql = [
+            'stock_fisico' => (float) ($productoMySql->stock_fisico ?? 0),
+            'stock_comprometido_sql' => (float) ($productoMySql->stock_comprometido ?? 0),
+            'stock_comprometido_local' => $stockCompLocal,
+            'stock_disponible' => $disponibleApp,
+        ];
+
+        $sqlBlock = [
+            'bodega' => 'LIB',
+            'stock_fisico' => null,
+            'stock_disponible' => null,
+        ];
+        try {
+            $row = DB::connection('sqlsrv_external')->table('MAEST')
+                ->selectRaw('SUM(CAST(ISNULL(STFI1, 0) AS FLOAT)) AS sf, SUM(CAST(ISNULL(STOCNV1, 0) AS FLOAT)) AS sc')
+                ->whereRaw('RTRIM(KOPR) = ?', [$codigoReal])
+                ->whereRaw("RTRIM(KOBO) = ?", ['LIB'])
+                ->first();
+            if ($row !== null) {
+                $sf = (float) ($row->sf ?? 0);
+                $sc = abs((float) ($row->sc ?? 0));
+                $sqlBlock['stock_fisico'] = $sf;
+                $sqlBlock['stock_disponible'] = max(0, $sf - $sc - $stockCompLocal);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('detalleApi: consulta stock MAEST LIB no disponible: '.$e->getMessage());
+        }
+
+        $nvvPendientes = $this->obtenerDetalleNvvPorProducto($codigoReal);
+
+        $compromisosLocales = StockComprometido::porProducto($codigoReal)
+            ->with('cotizacion')
+            ->get()
+            ->map(function ($c) {
+                return [
+                    'cotizacion_id' => $c->cotizacion_id,
+                    'numero_nvv_local' => $c->cotizacion->numero_nvv ?? null,
+                    'cliente' => $c->cliente_nombre,
+                    'cantidad' => $c->cantidad_comprometida,
+                    'estado' => $c->cotizacion_estado,
+                ];
+            })
+            ->values()
+            ->all();
+
+        $estadisticasVentas = CotizacionProducto::query()
+            ->whereRaw('TRIM(codigo_producto) = ?', [$codigoReal])
+            ->whereHas('cotizacion', function ($query) {
+                $query->where('estado_aprobacion', 'aprobada_picking')
+                    ->where('created_at', '>=', now()->subMonths(6));
+            })
+            ->selectRaw('COUNT(DISTINCT cotizacion_id) as total_nvv')
+            ->selectRaw('SUM(cantidad) as total_unidades')
+            ->selectRaw('AVG(precio_unitario) as precio_promedio')
+            ->first();
+
+        $ultimasNvv = CotizacionProducto::query()
+            ->whereRaw('TRIM(codigo_producto) = ?', [$codigoReal])
+            ->with(['cotizacion.user'])
+            ->whereHas('cotizacion', function ($query) {
+                $query->where('estado_aprobacion', 'aprobada_picking');
+            })
+            ->orderByDesc('created_at')
+            ->limit(20)
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'cotizacion_id' => $item->cotizacion->id ?? null,
+                    'fecha' => $item->created_at ? $item->created_at->format('d/m/Y') : '',
+                    'cliente' => $item->cotizacion->cliente_nombre ?? '',
+                    'vendedor' => $item->cotizacion->user->name ?? 'N/A',
+                    'cantidad' => $item->cantidad,
+                    'total' => $item->subtotal_con_descuento ?? $item->subtotal ?? 0,
+                ];
+            })
+            ->values()
+            ->all();
+
+        return response()->json([
+            'success' => true,
+            'producto' => [
+                'codigo' => $codigoReal,
+                'nombre' => $this->limpiarNombreProducto($productoMySql->NOKOPR ?? ''),
+                'unidad' => trim((string) ($productoMySql->UD01PR ?? 'UN')) ?: 'UN',
+                'precio_01p' => (float) ($productoMySql->precio_01p ?? 0),
+            ],
+            'stock' => [
+                'mysql' => $mysql,
+                'sql' => $sqlBlock,
+            ],
+            'nvv_pendientes' => $nvvPendientes,
+            'compromisos_locales' => $compromisosLocales,
+            'estadisticas_ventas' => [
+                'total_nvv' => (int) ($estadisticasVentas->total_nvv ?? 0),
+                'total_unidades' => (float) ($estadisticasVentas->total_unidades ?? 0),
+                'precio_promedio' => (float) ($estadisticasVentas->precio_promedio ?? 0),
+            ],
+            'ultimas_nvv' => $ultimasNvv,
+        ]);
+    }
+
     public function sincronizar(Request $request)
     {
         try {
@@ -851,7 +981,7 @@ class ProductoController extends Controller
     {
         try {
             // Obtener información del producto desde MySQL
-            $producto = \App\Models\Producto::where('KOPR', $codigoProducto)->first();
+            $producto = \App\Models\Producto::findPorKopr($codigoProducto);
             
             if (!$producto) {
                 abort(404, 'Producto no encontrado');

@@ -423,9 +423,8 @@ class Cotizacion extends Model
         
         foreach ($this->productos as $productoCotizacion) {
             // Consultar stock REAL desde MySQL (ya actualizado)
-            $stockDisponibleReal = $stockService->obtenerStockDisponibleReal($productoCotizacion->codigo_producto);
-            $stockFisico = \App\Models\Producto::where('KOPR', $productoCotizacion->codigo_producto)
-                ->value('stock_fisico') ?? 0;
+            $stockDisponibleReal = $stockService->obtenerStockDisponibleReal(trim($productoCotizacion->codigo_producto));
+            $stockFisico = (float) (\App\Models\Producto::findPorKopr($productoCotizacion->codigo_producto)?->stock_fisico ?? 0);
             
             \Log::info("📦 Producto {$productoCotizacion->codigo_producto}: Stock físico={$stockFisico}, Disponible={$stockDisponibleReal}, Cantidad pedida={$productoCotizacion->cantidad}");
             
@@ -480,11 +479,23 @@ class Cotizacion extends Model
         \Log::info("📋 Estado determinado: {$estadoAprobacion} | Stock suficiente: " . ($tieneStockSuficiente ? 'SÍ' : 'NO') . " | Problemas crédito: " . ($tieneProblemasCredito ? 'SÍ' : 'NO'));
         
         // 4. Actualizar cotización a nota de venta con el estado correcto
+        $numeroNvvAsignado = $this->numero_nvv ?: $this->obtenerSiguienteNumeroNvvLocal();
+        $marcaOrigen = 'Viene de cotización ' . $this->id;
+        $observacionesActuales = trim((string) ($this->observaciones ?? ''));
+        if ($observacionesActuales === '') {
+            $observacionesActuales = $marcaOrigen;
+        } elseif (!str_contains($observacionesActuales, $marcaOrigen)) {
+            $observacionesActuales .= "\n" . $marcaOrigen;
+        }
+
         $this->tipo_documento = 'nota_venta';
         $this->estado = 'enviada';
         $this->estado_aprobacion = $estadoAprobacion;
         $this->requiere_aprobacion = true;
         $this->tiene_problemas_stock = $tieneProblemasStock;
+        $this->fecha = now();
+        $this->numero_nvv = (string) $numeroNvvAsignado;
+        $this->observaciones = $observacionesActuales;
         
         // Resetear aprobaciones previas si existían
         $this->aprobado_por_supervisor = null;
@@ -520,6 +531,27 @@ class Cotizacion extends Model
         );
         
         return $this;
+    }
+
+    /**
+     * Obtiene el siguiente número correlativo local para NVV.
+     * Se usa al convertir cotización->NVV para no mostrar el ID de cotización como número de NVV.
+     */
+    protected function obtenerSiguienteNumeroNvvLocal(): string
+    {
+        $maxNumero = self::where('tipo_documento', 'nota_venta')
+            ->whereNotNull('numero_nvv')
+            ->whereRaw("TRIM(numero_nvv) <> ''")
+            ->whereRaw('numero_nvv REGEXP "^[0-9]+$"')
+            ->selectRaw('MAX(CAST(numero_nvv AS UNSIGNED)) AS max_numero')
+            ->value('max_numero');
+
+        $siguiente = ((int) $maxNumero) + 1;
+        if ($siguiente <= 0) {
+            $siguiente = 1;
+        }
+
+        return (string) $siguiente;
     }
 
     public function puedeCancelar()

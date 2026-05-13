@@ -30,10 +30,18 @@
             </div>
 
             <!-- Mensajes de Error -->
-            @if(session('error') || session('auto_logout'))
+            @if(session('error'))
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="material-icons">error</i>
+                    <strong>{{ session('error') }}</strong>
+                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+            @elseif(session('auto_logout'))
                 <div class="alert alert-warning alert-dismissible fade show" role="alert">
                     <i class="material-icons">warning</i>
-                    <strong>{{ session('error') ?? 'Error en el inicio de sesión' }}</strong>
+                    <strong>Error en el inicio de sesión</strong>
                     <button type="button" class="close" data-dismiss="alert" aria-label="Close">
                         <span aria-hidden="true">&times;</span>
                     </button>

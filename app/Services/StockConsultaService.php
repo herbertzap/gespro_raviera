@@ -203,21 +203,22 @@ class StockConsultaService
     {
         try {
             // Obtener stock actual desde MySQL
-            $producto = DB::table('productos')->where('KOPR', $codigo)->first();
-            
+            $c = trim($codigo);
+            $producto = DB::table('productos')->whereRaw('TRIM(KOPR) = ?', [$c])->first();
+
             if (!$producto) {
                 return false;
             }
-            
+
             // SIEMPRE actualizar (no verificar si es diferente)
                 // Calcular stock comprometido local (NVV)
-                $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($codigo);
-                
+                $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($c);
+
                 // Stock disponible = stock físico - (stock comprometido SQL + stock comprometido local)
                 $stockDisponible = $stockFisico - ($stockComprometido + $stockComprometidoLocal);
-                
+
                 DB::table('productos')
-                    ->where('KOPR', $codigo)
+                    ->whereRaw('TRIM(KOPR) = ?', [$c])
                     ->update([
                         'stock_fisico' => $stockFisico,
                         'stock_comprometido' => $stockComprometido,
@@ -225,7 +226,7 @@ class StockConsultaService
                         'updated_at' => now()
                     ]);
                 
-            Log::info("✅ Stock ACTUALIZADO en MySQL para {$codigo}: Físico={$stockFisico}, Comprometido={$stockComprometido}, Disponible={$stockDisponible}");
+            Log::info("✅ Stock ACTUALIZADO en MySQL para {$c}: Físico={$stockFisico}, Comprometido={$stockComprometido}, Disponible={$stockDisponible}");
                 return true;
             
         } catch (\Exception $e) {

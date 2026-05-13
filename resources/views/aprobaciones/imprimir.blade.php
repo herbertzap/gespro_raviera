@@ -9,7 +9,7 @@
             font-family: Arial, Helvetica, sans-serif;
             margin: 0;
             padding: 4px 6px;
-            font-size: 8.5pt;
+            font-size: 10pt;
             line-height: 1.15;
         }
         body p { margin: 0 0 2px 0; }
@@ -25,13 +25,13 @@
         .header-brand-table td { vertical-align: top; padding: 0 6px 0 0; border: none; }
         .header-brand-table .logo-cell { width: 100px; }
         .header-section h1 {
-            font-size: 8.5pt;
+            font-size: 10pt;
             font-weight: bold;
             margin: 0 0 3px 0;
             line-height: 1.15;
         }
         .header-section h2 {
-            font-size: 11pt;
+            font-size: 12.5pt;
             margin: 0 0 3px 0;
             line-height: 1.1;
         }
@@ -39,7 +39,7 @@
         .company-right { width: 48%; text-align: right; }
         .client-info { margin-bottom: 4px; }
         .client-info h3 {
-            font-size: 9pt;
+            font-size: 10.5pt;
             margin: 0 0 2px 0;
             font-weight: bold;
         }
@@ -53,14 +53,14 @@
             padding: 1px 3px;
             text-align: left;
             width: 33.33%;
-            font-size: 8pt;
+            font-size: 9.5pt;
             line-height: 1.15;
         }
         .products-table {
             width: 100%;
             border-collapse: collapse;
             margin-bottom: 4px;
-            font-size: 7.5pt;
+            font-size: 9pt;
         }
         .products-table th,
         .products-table td {
@@ -72,19 +72,19 @@
         .products-table th {
             background-color: #f0f0f0;
             font-weight: bold;
-            font-size: 7.5pt;
+            font-size: 9pt;
         }
         /* Muchas líneas: aún más compacto para una sola hoja */
-        .products-table--many { font-size: 6.5pt; }
+        .products-table--many { font-size: 8pt; }
         .products-table--many th,
-        .products-table--many td { padding: 0 1px; font-size: 6.5pt; }
+        .products-table--many td { padding: 0 1px; font-size: 8pt; }
         .warehouse-section {
             margin-top: 4px;
             padding: 3px 5px;
             border: 1px solid #000;
             background-color: #f9f9f9;
         }
-        .warehouse-section p { margin: 0 0 1px 0; font-size: 8pt; }
+        .warehouse-section p { margin: 0 0 1px 0; font-size: 9.5pt; }
         .warehouse-content {
             display: flex;
             justify-content: space-between;
@@ -94,12 +94,12 @@
             text-align: center;
             font-weight: bold;
             margin-bottom: 2px;
-            font-size: 8.5pt;
+            font-size: 10pt;
         }
         .totals {
             text-align: right;
             margin-top: 3px;
-            font-size: 8pt;
+            font-size: 9.5pt;
         }
         .totals p { margin: 0; line-height: 1.2; }
         .observations {
@@ -107,11 +107,11 @@
             padding: 3px 5px;
             border: 1px solid #000;
             background-color: #fffacd;
-            font-size: 7.5pt;
+            font-size: 9pt;
         }
         .observations h4 {
             margin: 0 0 2px 0;
-            font-size: 8pt;
+            font-size: 9.5pt;
         }
         .observations .obs-block { margin-bottom: 3px !important; padding: 2px 4px !important; }
         .observations .obs-block p { margin: 0; }
@@ -125,12 +125,12 @@
         .signature-box {
             text-align: center;
             width: 31%;
-            font-size: 7.5pt;
+            font-size: 9pt;
         }
         .signature-box p { margin: 0 0 1px 0; }
         @media print {
             @page { size: A4 portrait; margin: 6mm; }
-            body { margin: 0; padding: 0; font-size: 8.2pt; }
+            body { margin: 0; padding: 0; font-size: 10pt; }
             .no-print { display: none; }
             .signatures { page-break-inside: avoid; break-inside: avoid; }
             .warehouse-section { page-break-inside: avoid; }

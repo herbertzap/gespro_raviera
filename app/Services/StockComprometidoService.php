@@ -73,19 +73,157 @@ class StockComprometidoService
     }
     
     /**
+     * Stock físico y comprometido ERP sumando todas las filas MAEST del SKU (misma lógica que detalle manejo-stock sin bodega).
+     * La tabla MySQL productos suele sincronizarse solo con KOBO = '01', lo que puede marcar 0 disponible si el stock está en otra bodega.
+     */
+    private function obtenerStockMaestAgregadoSqlsrv(string $productoCodigo): ?array
+    {
+        try {
+            $trim = trim($productoCodigo);
+            $row = DB::connection('sqlsrv_external')
+                ->table('MAEST')
+                ->selectRaw('SUM(CAST(ISNULL(STFI1, 0) AS FLOAT)) AS sf, SUM(CAST(ISNULL(STOCNV1, 0) AS FLOAT)) AS sc')
+                ->whereRaw('RTRIM(KOPR) = ?', [$trim])
+                ->first();
+
+            if ($row === null) {
+                return null;
+            }
+
+            return [
+                'stock_fisico' => (float) ($row->sf ?? 0),
+                'stock_comprometido' => abs((float) ($row->sc ?? 0)),
+            ];
+        } catch (\Throwable $e) {
+            Log::debug('Stock MAEST agregado (sqlsrv) no disponible para '.$productoCodigo.': '.$e->getMessage());
+
+            return null;
+        }
+    }
+
+    /**
+     * Mismo agregado MAEST vía tsql (servidores sin PDO sqlsrv / Encrypt=no).
+     */
+    private function obtenerStockMaestAgregadoTsql(string $productoCodigo): ?array
+    {
+        $host = env('SQLSRV_EXTERNAL_HOST');
+        if (empty($host)) {
+            return null;
+        }
+
+        $port = env('SQLSRV_EXTERNAL_PORT', '1433');
+        $database = env('SQLSRV_EXTERNAL_DATABASE');
+        $username = env('SQLSRV_EXTERNAL_USERNAME');
+        $password = env('SQLSRV_EXTERNAL_PASSWORD');
+
+        $skuEscapado = str_replace("'", "''", trim($productoCodigo));
+        $query = "
+            SELECT CAST(ISNULL(SUM(STFI1), 0) AS VARCHAR(40)) + '|' + CAST(ISNULL(SUM(STOCNV1), 0) AS VARCHAR(40)) AS DATOS_STOCK_MAEST
+            FROM MAEST
+            WHERE RTRIM(KOPR) = '{$skuEscapado}'
+        ";
+
+        try {
+            $tempFile = tempnam(sys_get_temp_dir(), 'sql_maest_sum_');
+            file_put_contents($tempFile, $query."\ngo\nquit");
+            $command = "tsql -H {$host} -p {$port} -U {$username} -P {$password} -D {$database} < {$tempFile} 2>&1";
+            $output = shell_exec($command);
+            unlink($tempFile);
+
+            if (! $output || str_contains(strtolower((string) $output), 'error')) {
+                return null;
+            }
+
+            $lines = explode("\n", $output);
+            $headerOk = false;
+
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if ($line === '' ||
+                    strpos($line, 'locale') !== false ||
+                    strpos($line, 'Setting') !== false ||
+                    strpos($line, 'using default') !== false ||
+                    stripos($line, 'charset') !== false ||
+                    strpos($line, 'Msg ') !== false ||
+                    strpos($line, 'Warning:') !== false ||
+                    strpos($line, 'rows affected') !== false ||
+                    preg_match('/^\d+>$/', $line)) {
+                    continue;
+                }
+
+                if (stripos($line, 'DATOS_STOCK_MAEST') !== false) {
+                    $headerOk = true;
+                    continue;
+                }
+
+                if ($headerOk && str_contains($line, '|')) {
+                    $lineData = preg_replace('/^\d+>\s*/', '', $line);
+                    $lineData = trim($lineData);
+                    $parts = explode('|', $lineData, 2);
+                    if (count($parts) >= 2) {
+                        $sf = (float) str_replace(',', '.', trim($parts[0]));
+                        $sc = abs((float) str_replace(',', '.', trim($parts[1])));
+
+                        return [
+                            'stock_fisico' => $sf,
+                            'stock_comprometido' => $sc,
+                        ];
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::debug('Stock MAEST agregado (tsql) falló para '.$productoCodigo.': '.$e->getMessage());
+        }
+
+        return null;
+    }
+
+    /**
+     * Stock físico/comprometido ERP: PDO sqlsrv si existe; si no, tsql.
+     */
+    private function obtenerStockMaestAgregado(string $productoCodigo): ?array
+    {
+        $via = $this->obtenerStockMaestAgregadoSqlsrv($productoCodigo);
+        if ($via !== null) {
+            return $via;
+        }
+
+        return $this->obtenerStockMaestAgregadoTsql($productoCodigo);
+    }
+
+    /**
      * Verificar si un producto está oculto (ATPR = 'OCU') consultando SQL Server
      */
     public function verificarProductoOculto($codigoProducto)
     {
         try {
+            $trim = trim((string) $codigoProducto);
+
+            try {
+                $atpr = DB::connection('sqlsrv_external')
+                    ->table('MAEPR')
+                    ->whereRaw('RTRIM(KOPR) = ?', [$trim])
+                    ->value('ATPR');
+                if ($atpr !== null && $atpr !== '') {
+                    $oculto = strtoupper(trim((string) $atpr)) === 'OCU';
+                    if ($oculto) {
+                        Log::warning("⚠️ Producto {$trim} está OCULTO (ATPR = 'OCU') vía sqlsrv");
+                    }
+
+                    return $oculto;
+                }
+            } catch (\Throwable $e) {
+                Log::debug('ATPR vía sqlsrv no disponible, fallback tsql: '.$e->getMessage());
+            }
+
             $host = env('SQLSRV_EXTERNAL_HOST');
             $port = env('SQLSRV_EXTERNAL_PORT', '1433');
             $database = env('SQLSRV_EXTERNAL_DATABASE');
             $username = env('SQLSRV_EXTERNAL_USERNAME');
             $password = env('SQLSRV_EXTERNAL_PASSWORD');
-            
-            $codigoEscapado = str_replace("'", "''", $codigoProducto);
-            
+
+            $codigoEscapado = str_replace("'", "''", $trim);
+
             // Consultar ATPR desde SQL Server
             $query = "
                 SELECT TOP 1 ATPR
@@ -117,35 +255,38 @@ class StockComprometidoService
                     continue;
                 }
                 
-                // Saltar mensajes de configuración y warnings
-                if (strpos($line, 'locale') !== false || 
-                    strpos($line, 'Setting') !== false || 
+                // Saltar mensajes de configuración y warnings (incl. freeTDS "using default charset")
+                if (strpos($line, 'locale') !== false ||
+                    strpos($line, 'Setting') !== false ||
                     strpos($line, 'rows affected') !== false ||
-                    strpos($line, 'Msg ') !== false || 
+                    strpos($line, 'Msg ') !== false ||
                     strpos($line, 'Warning:') !== false ||
+                    strpos($line, 'using default') !== false ||
+                    stripos($line, 'charset') !== false ||
                     preg_match('/^\d+>$/', $line)) {
                     continue;
                 }
-                
+
                 // Buscar header de columna ATPR
                 if (stripos($line, 'ATPR') !== false && (stripos($line, 'ATPR') === 0 || strpos($line, 'ATPR') < 10)) {
                     $headerFound = true;
                     Log::info("Header ATPR encontrado en línea: {$line}");
                     continue;
                 }
-                
-                // Si encontramos el header, la siguiente línea con datos debe ser el valor
-                // O buscar directamente 'OCU' en cualquier línea
-                $lineUpper = strtoupper(trim($line));
-                if ($lineUpper === 'OCU') {
-                    Log::warning("⚠️ Producto {$codigoProducto} está OCULTO (ATPR = 'OCU')");
-                    return true;
-                }
-                
-                // También buscar 'OCU' dentro de la línea (por si hay espacios o otros caracteres)
-                if ($headerFound && stripos($line, 'OCU') !== false) {
-                    Log::warning("⚠️ Producto {$codigoProducto} está OCULTO (encontrado 'OCU' en línea: {$line})");
-                    return true;
+
+                // Tras el header ATPR: primera línea no vacía es el valor de la columna
+                if ($headerFound) {
+                    $lineData = preg_replace('/^\d+>\s*/', '', $line);
+                    $lineData = trim($lineData);
+                    if ($lineData === '') {
+                        continue;
+                    }
+                    $isOculto = strtoupper($lineData) === 'OCU';
+                    if ($isOculto) {
+                        Log::warning("⚠️ Producto {$codigoProducto} está OCULTO (ATPR = 'OCU', tsql)");
+                    }
+
+                    return $isOculto;
                 }
             }
             
@@ -222,26 +363,185 @@ class StockComprometidoService
      */
     public function obtenerStockDisponibleReal($productoCodigo, $bodegaCodigo = '01')
     {
-        // Obtener stock físico desde tabla productos local (ya sincronizada)
-        $producto = DB::table('productos')->where('KOPR', $productoCodigo)->first();
-        
-        if (!$producto) {
-            Log::warning("Producto {$productoCodigo} no encontrado en tabla local");
-            return 0;
+        $codigoNorm = trim((string) $productoCodigo);
+
+        $sqlAgg = $this->obtenerStockMaestAgregado($codigoNorm);
+
+        if ($sqlAgg !== null) {
+            $stockFisicoLocal = $sqlAgg['stock_fisico'];
+            $stockComprometidoSQL = $sqlAgg['stock_comprometido'];
+        } else {
+            // Fallback: tabla MySQL (KOPR a menudo viene con espacios de relleno desde el ERP)
+            $producto = DB::table('productos')->whereRaw('TRIM(KOPR) = ?', [$codigoNorm])->first();
+
+            if (! $producto) {
+                Log::warning("Producto {$codigoNorm} no encontrado en tabla local ni MAEST agregado (sqlsrv/tsql)");
+
+                return 0;
+            }
+
+            $stockFisicoLocal = (float) $producto->stock_fisico;
+            $stockComprometidoSQL = (float) $producto->stock_comprometido;
         }
-        
-        $stockFisicoLocal = (float)$producto->stock_fisico;
-        $stockComprometidoSQL = (float)$producto->stock_comprometido;
-        
+
         // Obtener stock comprometido local adicional (por cotizaciones)
-        $stockComprometidoLocal = StockComprometido::calcularStockComprometido($productoCodigo, $bodegaCodigo);
-        
+        $stockComprometidoLocal = (float) StockComprometido::calcularStockComprometido($codigoNorm, $bodegaCodigo);
+
         // Stock disponible real = Stock físico local - Stock comprometido SQL - Stock comprometido local
         $stockDisponibleReal = $stockFisicoLocal - $stockComprometidoSQL - $stockComprometidoLocal;
-        
-        Log::info("Stock real para producto {$productoCodigo}: Físico Local={$stockFisicoLocal}, Comprometido SQL={$stockComprometidoSQL}, Comprometido Local={$stockComprometidoLocal}, Disponible Real={$stockDisponibleReal}");
+
+        Log::debug("Stock real para producto {$codigoNorm}: Físico ERP={$stockFisicoLocal}, Comprometido SQL={$stockComprometidoSQL}, Comprometido Local={$stockComprometidoLocal}, Disponible Real={$stockDisponibleReal}");
         
         return max(0, $stockDisponibleReal); // No puede ser negativo
+    }
+
+    /**
+     * Stock disponible real para muchos SKU en pocas consultas (evita N×tsql en vistas como aprobaciones/show).
+     *
+     * @param  array<int, string>  $codigosProducto
+     * @return array<string, float> clave = TRIM(código), valor = stock disponible
+     */
+    public function mapaStockDisponibleReal(array $codigosProducto, string $bodegaCodigo = '01'): array
+    {
+        $lista = [];
+        foreach ($codigosProducto as $c) {
+            $t = trim((string) $c);
+            if ($t !== '') {
+                $lista[$t] = true;
+            }
+        }
+        $codigos = array_keys($lista);
+        if ($codigos === []) {
+            return [];
+        }
+
+        $maestMap = $this->obtenerStockMaestAgregadoBatch($codigos);
+        $compMap = $this->obtenerComprometidoLocalBatch($codigos, $bodegaCodigo);
+
+        $placeholders = implode(',', array_fill(0, count($codigos), '?'));
+        $mysqlRows = DB::table('productos')
+            ->selectRaw('TRIM(KOPR) as k, stock_fisico, stock_comprometido')
+            ->whereRaw('TRIM(KOPR) IN ('.$placeholders.')', $codigos)
+            ->get();
+        $mysqlMap = [];
+        foreach ($mysqlRows as $r) {
+            $k = trim((string) ($r->k ?? ''));
+            if ($k !== '') {
+                $mysqlMap[$k] = $r;
+            }
+        }
+
+        $out = [];
+        foreach ($codigos as $k) {
+            if (isset($maestMap[$k])) {
+                $stockFisicoLocal = (float) $maestMap[$k]['stock_fisico'];
+                $stockComprometidoSQL = (float) $maestMap[$k]['stock_comprometido'];
+            } elseif (isset($mysqlMap[$k])) {
+                $stockFisicoLocal = (float) $mysqlMap[$k]->stock_fisico;
+                $stockComprometidoSQL = (float) $mysqlMap[$k]->stock_comprometido;
+            } else {
+                $out[$k] = 0.0;
+                continue;
+            }
+            $stockComprometidoLocal = (float) ($compMap[$k] ?? 0);
+            $stockDisponibleReal = $stockFisicoLocal - $stockComprometidoSQL - $stockComprometidoLocal;
+            $out[$k] = max(0.0, $stockDisponibleReal);
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<int, string>  $codigos  códigos ya normalizados (trim)
+     * @return array<string, array{stock_fisico: float, stock_comprometido: float}>
+     */
+    private function obtenerStockMaestAgregadoBatch(array $codigos): array
+    {
+        if ($codigos === []) {
+            return [];
+        }
+        $map = $this->obtenerStockMaestAgregadoBatchSqlsrv($codigos);
+        $missing = array_values(array_diff($codigos, array_keys($map)));
+        foreach ($missing as $c) {
+            $one = $this->obtenerStockMaestAgregado($c);
+            if ($one !== null) {
+                $map[$c] = $one;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * @param  array<int, string>  $codigos
+     * @return array<string, array{stock_fisico: float, stock_comprometido: float}>
+     */
+    private function obtenerStockMaestAgregadoBatchSqlsrv(array $codigos): array
+    {
+        $out = [];
+        if ($codigos === []) {
+            return $out;
+        }
+        try {
+            foreach (array_chunk($codigos, 150) as $chunk) {
+                $placeholders = implode(',', array_fill(0, count($chunk), '?'));
+                $sql = "
+                    SELECT RTRIM(KOPR) AS kopr,
+                           SUM(CAST(ISNULL(STFI1, 0) AS FLOAT)) AS sf,
+                           SUM(CAST(ISNULL(STOCNV1, 0) AS FLOAT)) AS sc
+                    FROM MAEST
+                    WHERE RTRIM(KOPR) IN ({$placeholders})
+                    GROUP BY RTRIM(KOPR)
+                ";
+                $rows = DB::connection('sqlsrv_external')->select($sql, $chunk);
+                foreach ($rows as $row) {
+                    $k = trim((string) ($row->kopr ?? ''));
+                    if ($k === '') {
+                        continue;
+                    }
+                    $out[$k] = [
+                        'stock_fisico' => (float) ($row->sf ?? 0),
+                        'stock_comprometido' => abs((float) ($row->sc ?? 0)),
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::debug('Stock MAEST batch (sqlsrv) no disponible: '.$e->getMessage());
+
+            return [];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<int, string>  $codigos
+     * @return array<string, float>
+     */
+    private function obtenerComprometidoLocalBatch(array $codigos, string $bodegaCodigo): array
+    {
+        if ($codigos === []) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($codigos), '?'));
+        $bindings = array_merge([$bodegaCodigo], $codigos);
+        $sql = "
+            SELECT TRIM(producto_codigo) AS c, SUM(cantidad_comprometida) AS t
+            FROM stock_comprometidos
+            WHERE estado = 'activo' AND bodega_codigo = ?
+              AND TRIM(producto_codigo) IN ({$placeholders})
+            GROUP BY TRIM(producto_codigo)
+        ";
+        $rows = DB::select($sql, $bindings);
+        $map = [];
+        foreach ($rows as $row) {
+            $k = trim((string) ($row->c ?? ''));
+            if ($k !== '') {
+                $map[$k] = (float) ($row->t ?? 0);
+            }
+        }
+
+        return $map;
     }
 
     /**
@@ -251,7 +551,7 @@ class StockComprometidoService
     {
         try {
             // Obtener stock desde tabla productos local (ya sincronizada)
-            $producto = DB::table('productos')->where('KOPR', $productoCodigo)->first();
+            $producto = DB::table('productos')->whereRaw('TRIM(KOPR) = ?', [trim((string) $productoCodigo)])->first();
             
             if (!$producto) {
                 Log::warning("Producto {$productoCodigo} no encontrado en tabla local");

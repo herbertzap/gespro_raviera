@@ -446,9 +446,10 @@ class CotizacionController extends Controller
             
             foreach ($productos as $producto) {
                 try {
-                    $codigo = $producto['CODIGO_PRODUCTO'];
+                    $codigo = trim((string) ($producto['CODIGO_PRODUCTO'] ?? ''));
+                    $producto['CODIGO_PRODUCTO'] = $codigo;
                     $stockReal = $stockService->obtenerStockDisponibleReal($codigo);
-                    
+
                     // Verificar si el producto está oculto consultando SQL Server
                     $productoOculto = $stockService->verificarProductoOculto($codigo);
                     
@@ -694,7 +695,7 @@ class CotizacionController extends Controller
             \Log::info('Lista de precios del cliente ' . $codigoCliente . ': ' . $listaPreciosCliente);
             
             // Consultar precios desde tabla productos local (MySQL)
-            $producto = DB::table('productos')->where('KOPR', $codigoProducto)->first();
+            $producto = DB::table('productos')->whereRaw('TRIM(KOPR) = ?', [trim((string) $codigoProducto)])->first();
             
             if (!$producto) {
                 return response()->json([
@@ -1669,7 +1670,9 @@ class CotizacionController extends Controller
                     'id' => $cotizacion->id,
                     'tipo' => 'COTIZACION_LOCAL',
                     'tipo_documento' => $cotizacion->tipo_documento,
-                    'numero' => $cotizacion->id,
+                    'numero' => $cotizacion->tipo_documento === 'nota_venta'
+                        ? ($cotizacion->numero_nvv ?: $cotizacion->id)
+                        : $cotizacion->id,
                     'numero_nvv' => $cotizacion->numero_nvv,
                     'fecha_emision' => $cotizacion->fecha->format('Y-m-d H:i:s'),
                     'cliente_codigo' => $cotizacion->cliente_codigo,
@@ -2788,7 +2791,7 @@ class CotizacionController extends Controller
             foreach ($cotizacion->productos as $producto) {
                 // Obtener información adicional del producto desde la tabla productos
                 $productoDB = DB::table('productos')
-                    ->where('KOPR', $producto->codigo_producto)
+                    ->whereRaw('TRIM(KOPR) = ?', [trim((string) $producto->codigo_producto)])
                     ->first();
                 
                 // Determinar lista de precios para obtener descuento máximo
@@ -3353,7 +3356,7 @@ class CotizacionController extends Controller
 
             // Normalizar código para consultas de stock:
             // en algunos flujos llega recortado (ej: 11 dígitos) y en SQL/MySQL existe en 13.
-            $productoCodigo = \App\Models\Producto::where('KOPR', $codigoConsulta)->first();
+            $productoCodigo = \App\Models\Producto::findPorKopr($codigoConsulta);
             if (!$productoCodigo) {
                 $candidatos = \App\Models\Producto::where('KOPR', 'LIKE', $codigoConsulta . '%')
                     ->orWhere('KOPR', 'LIKE', '%' . $codigoConsulta)
@@ -3372,7 +3375,7 @@ class CotizacionController extends Controller
             
             // Si está oculto, retornar error inmediatamente sin consultar stock
             if ($productoOculto) {
-                $producto = \App\Models\Producto::where('KOPR', $codigoConsulta)->first();
+                $producto = \App\Models\Producto::findPorKopr($codigoConsulta);
                 $nombreProducto = $producto ? $producto->NOKOPR : $codigoConsulta;
                 
                 \Log::warning("⚠️ Intento de agregar producto oculto: {$codigoConsulta} ({$nombreProducto})");
@@ -3511,7 +3514,7 @@ class CotizacionController extends Controller
             $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($codigoConsulta);
 
             // Obtener datos del producto ACTUALIZADO desde tabla local
-            $producto = \App\Models\Producto::where('KOPR', $codigoConsulta)->first();
+            $producto = \App\Models\Producto::findPorKopr($codigoConsulta);
             
             // Usar los valores ACTUALIZADOS de MySQL (pueden haber cambiado si se actualizó)
             $stockFisicoMySQL = $producto ? ($producto->stock_fisico ?? $stockFisico) : $stockFisico;
@@ -3652,7 +3655,7 @@ class CotizacionController extends Controller
             }
 
             // Obtener producto actual de MySQL
-            $producto = \App\Models\Producto::where('KOPR', $codigo)->first();
+            $producto = \App\Models\Producto::findPorKopr($codigo);
             if (!$producto) {
                 \Log::warning("⚠️ Producto {$codigo} no encontrado en MySQL para actualizar precios");
                 return;

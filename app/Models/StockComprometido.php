@@ -78,7 +78,9 @@ class StockComprometido extends Model
      */
     public function scopePorProducto($query, $productoCodigo, $bodegaCodigo = '01')
     {
-        return $query->where('producto_codigo', $productoCodigo)
+        $c = trim((string) $productoCodigo);
+
+        return $query->whereRaw('TRIM(producto_codigo) = ?', [$c])
                     ->where('bodega_codigo', $bodegaCodigo)
                     ->activo();
     }

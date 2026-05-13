@@ -289,10 +289,12 @@ class HistorialCotizacionService
 
     /**
      * Obtener resumen de tiempos de una cotización
+     *
+     * @param  \Illuminate\Support\Collection|\Illuminate\Database\Eloquent\Collection|null  $historialYaCargado
      */
-    public static function obtenerResumenTiempos(Cotizacion $cotizacion): array
+    public static function obtenerResumenTiempos(Cotizacion $cotizacion, $historialYaCargado = null): array
     {
-        $historial = CotizacionHistorial::obtenerHistorialCompleto($cotizacion->id);
+        $historial = $historialYaCargado ?? CotizacionHistorial::obtenerHistorialCompleto($cotizacion->id, $cotizacion);
         
         $resumen = [
             'tiempo_total' => null,
