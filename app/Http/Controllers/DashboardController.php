@@ -60,6 +60,8 @@ class DashboardController extends Controller
         } elseif ($user->hasRole('Barrido') && !$user->hasRole('Super Admin')) {
             // Para rol Barrido, redirigir directamente a barrido simplificado
             return redirect()->route('manejo-stock.barrido-simplificado');
+        } elseif ($user->tieneSoloConsultaInformes()) {
+            return redirect()->route('cotizaciones.index', ['tipo_documento' => 'nota_venta']);
         } else {
             // Rol por defecto
             $data = $this->getVendedorDashboard($user);

@@ -90,6 +90,42 @@ class User extends Authenticatable
     }
 
     /**
+     * Roles que pueden crear/editar cotizaciones y NVV en flujo de ventas.
+     */
+    public function puedeGestionarCotizacionesVentas(): bool
+    {
+        return $this->hasAnyRole([
+            'Super Admin',
+            'Supervisor',
+            'Compras',
+            'Picking',
+            'Picking Operativo',
+            'Vendedor',
+        ]);
+    }
+
+    /**
+     * Acceso al menú Informes (NVV emitidas, pendientes de facturar, facturas) y listados en solo lectura.
+     */
+    public function puedeAccederInformes(): bool
+    {
+        if ($this->puedeGestionarCotizacionesVentas()) {
+            return true;
+        }
+
+        return $this->hasRole('Consulta Informes') || $this->can('ver_informes');
+    }
+
+    /**
+     * Solo consulta informes, sin aprobaciones ni ventas.
+     */
+    public function tieneSoloConsultaInformes(): bool
+    {
+        return ($this->hasRole('Consulta Informes') || $this->can('ver_informes'))
+            && ! $this->puedeGestionarCotizacionesVentas();
+    }
+
+    /**
      * Obtener opciones de login (email, email alternativo, RUT)
      */
     public function getOpcionesLoginAttribute()

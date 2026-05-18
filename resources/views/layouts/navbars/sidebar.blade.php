@@ -210,7 +210,7 @@
             @endif
 
             <!-- Informes -->
-            @if(auth()->user()->hasRole('Vendedor') || auth()->user()->hasRole('Supervisor') || auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Compras') || auth()->user()->hasRole('Picking') || auth()->user()->hasRole('Picking Operativo'))
+            @if(auth()->user()->puedeAccederInformes())
             <li>
                 <a data-toggle="collapse" href="#Informes" aria-expanded="false">
                     <i class="tim-icons icon-chart-bar-32"></i>

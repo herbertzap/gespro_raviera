@@ -14,15 +14,7 @@ class NvvPendientesController extends Controller
     {
         $this->cobranzaService = $cobranzaService;
         
-        // Restringir acceso solo a Super Admin, Supervisor, Compras, Picking, Picking Operativo y Vendedor
-        $this->middleware(function ($request, $next) {
-            $user = auth()->user();
-            if (!$user->hasRole('Super Admin') && !$user->hasRole('Supervisor') && !$user->hasRole('Compras') && 
-                !$user->hasRole('Picking') && !$user->hasRole('Picking Operativo') && !$user->hasRole('Vendedor')) {
-                abort(403, 'Acceso denegado. Solo Super Admin, Supervisor, Compras, Picking, Picking Operativo y Vendedor pueden acceder a esta vista.');
-            }
-            return $next($request);
-        });
+        $this->middleware('informes');
     }
 
     public function index(Request $request)

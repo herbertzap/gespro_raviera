@@ -42,6 +42,7 @@ class RoleSeeder extends Seeder
             // Permisos de finanzas
             'ver_cobranza',
             'ver_reportes',
+            'ver_informes',
             'gestionar_facturacion',
             'ver_dashboard_finanzas',
             
@@ -119,7 +120,13 @@ class RoleSeeder extends Seeder
                 'ver_dashboard',
                 'ver_perfil',
                 'editar_perfil',
-            ]
+            ],
+            'Consulta Informes' => [
+                'ver_dashboard',
+                'ver_perfil',
+                'editar_perfil',
+                'ver_informes',
+            ],
         ];
 
         foreach ($roles as $roleName => $rolePermissions) {

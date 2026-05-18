@@ -72,5 +72,6 @@ class Kernel extends HttpKernel
         'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
         'sincronizar.clientes' => \App\Http\Middleware\SincronizarClientesMiddleware::class,
         'handle.errors' => \App\Http\Middleware\HandleErrorsMiddleware::class,
+        'informes' => \App\Http\Middleware\EnsurePuedeAccederInformes::class,
     ];
 }

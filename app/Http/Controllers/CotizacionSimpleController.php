@@ -13,10 +13,25 @@ use Illuminate\Support\Facades\Auth;
 
 class CotizacionSimpleController extends Controller
 {
+    private const METODOS_SOLO_LECTURA = ['ver', 'generarPDF'];
+
     public function __construct()
     {
-        // Cotizaciones son más accesibles - solo requieren autenticación
         $this->middleware('auth');
+        $this->middleware(function ($request, $next) {
+            $metodo = $request->route()?->getActionMethod() ?? '';
+            $user = auth()->user();
+
+            if (in_array($metodo, self::METODOS_SOLO_LECTURA, true) && $user->puedeAccederInformes()) {
+                return $next($request);
+            }
+
+            if ($user->puedeGestionarCotizacionesVentas() || $user->hasRole('Super Admin')) {
+                return $next($request);
+            }
+
+            abort(403, 'Acceso denegado.');
+        });
     }
 
     public function nueva(Request $request)

@@ -17,15 +17,24 @@ use App\Services\StockConsultaService;
 
 class CotizacionController extends Controller
 {
+    /** Métodos de listado/export para el menú Informes (rol Consulta Informes incluido). */
+    private const METODOS_LECTURA_INFORMES = ['index', 'exportarExcel', 'historial'];
+
     public function __construct()
     {
-        // Restringir acceso solo a Super Admin, Supervisor, Compras y Picking
         $this->middleware(function ($request, $next) {
             $user = auth()->user();
-            if (!$user->hasRole('Super Admin') && !$user->hasRole('Supervisor') && !$user->hasRole('Compras') && !$user->hasRole('Picking') && !$user->hasRole('Picking Operativo') && !$user->hasRole('Vendedor')) {
-                abort(403, 'Acceso denegado. Solo Super Admin, Supervisor, Compras, Picking y Vendedor pueden acceder a esta vista.');
+            $metodo = $request->route()?->getActionMethod() ?? '';
+
+            if (in_array($metodo, self::METODOS_LECTURA_INFORMES, true) && $user->puedeAccederInformes()) {
+                return $next($request);
             }
-            return $next($request);
+
+            if ($user->puedeGestionarCotizacionesVentas()) {
+                return $next($request);
+            }
+
+            abort(403, 'Acceso denegado.');
         });
     }
 
@@ -1582,7 +1591,9 @@ class CotizacionController extends Controller
     {
         return $user->hasRole('Supervisor') || $user->hasRole('Super Admin')
             || $user->hasRole('Compras') || $user->hasRole('Picking')
-            || $user->hasRole('Picking Operativo');
+            || $user->hasRole('Picking Operativo')
+            || $user->hasRole('Consulta Informes')
+            || $user->can('ver_informes');
     }
 
     /**
