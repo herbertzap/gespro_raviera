@@ -1670,13 +1670,16 @@ function guardarNotaVenta() {
         alert('Ya se está procesando el documento, por favor espere...');
         return;
     }
+    guardandoNotaVenta = true;
 
     if (!window.__sucursalesClienteListo) {
+        guardandoNotaVenta = false;
         alert('Espere un momento, cargando datos del cliente...');
         return;
     }
 
     if (productosCotizacion.length === 0) {
+        guardandoNotaVenta = false;
         alert('Debes agregar al menos un producto');
         return;
     }
@@ -1701,6 +1704,7 @@ function guardarNotaVenta() {
             };
             console.log('✅ ClienteData reconstruido desde URL:', clienteData);
         } else {
+            guardandoNotaVenta = false;
             alert('No hay cliente seleccionado');
             return;
         }
@@ -1714,6 +1718,7 @@ function guardarNotaVenta() {
         clienteData.cliente_telefono_entrega = clienteData.telefono || '';
     }
     if (window.__requiereElegirSucursal && !window.__sucursalElegida) {
+        guardandoNotaVenta = false;
         alert('Seleccione la sucursal de entrega.');
         if (window.jQuery) jQuery('#modalSucursalCliente').modal('show');
         return;
@@ -1723,8 +1728,6 @@ function guardarNotaVenta() {
     const tipoDocumento = 'nota_venta';
     const esCotizacion = false;
     
-    // Marcar como procesando y deshabilitar botón
-    guardandoNotaVenta = true;
     const btn = document.getElementById('btnGuardarNotaVenta');
     const originalText = btn.innerHTML;
     btn.disabled = true;
@@ -1764,25 +1767,39 @@ function guardarNotaVenta() {
         body: JSON.stringify(cotizacionData)
     })
     .then(response => {
-        // Detectar error 419 (CSRF token expirado)
         if (response.status === 419) {
             alert('⚠️ Tu sesión ha expirado. La página se recargará automáticamente.');
             window.location.reload();
             return;
         }
-        return response.json();
+        return response.json().then(data => ({ status: response.status, data }));
     })
-    .then(data => {
-        if (!data) return; // Si hubo error 419, ya se manejó arriba
+    .then(result => {
+        if (!result) return;
+        const { status, data } = result;
+
+        if (status === 429 || status === 409) {
+            alert(data.message || 'Ya existe una nota de venta igual o se está guardando otra. Revise el listado.');
+            if (data.cotizacion_id) {
+                window.location.href = '/cotizaciones?tipo_documento=nota_venta';
+            } else {
+                guardandoNotaVenta = false;
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+            return;
+        }
         
         if (data.success) {
             const mensaje = 'Nota de venta guardada exitosamente';
             limpiarBorradorLocal(); // Limpiar borrador después de guardar exitosamente
             alert(mensaje);
             window.location.href = '/cotizaciones?tipo_documento=nota_venta';
+        } else if (data.duplicate && data.cotizacion_id) {
+            alert(data.message || 'Esta nota de venta ya fue registrada.');
+            window.location.href = '/cotizaciones?tipo_documento=nota_venta';
         } else {
-            alert('Error: ' + data.message);
-            // Restaurar botón en caso de error
+            alert('Error: ' + (data.message || 'No se pudo guardar'));
             guardandoNotaVenta = false;
             btn.disabled = false;
             btn.innerHTML = originalText;

@@ -1269,31 +1269,28 @@ function guardarCotizacion() {
 
 // Función para guardar como NVV
 function guardarComoNVV() {
-    // Verificar si ya se está procesando
     if (guardandoNotaVenta) {
         alert('Ya se está procesando una solicitud, por favor espere...');
         return;
     }
+    guardandoNotaVenta = true;
 
-    // Verificar que hay productos
     if (productosCotizacion.length === 0) {
+        guardandoNotaVenta = false;
         alert('Debe agregar al menos un producto antes de guardar como NVV');
         return;
     }
 
-    // Verificar que hay cliente
     if (!clienteData || !clienteData.codigo) {
+        guardandoNotaVenta = false;
         alert('No hay cliente seleccionado');
         return;
     }
 
-    // Confirmar conversión
     if (!confirm('¿Estás seguro de convertir esta cotización a Nota de Venta?\n\nUna vez convertida, entrará al flujo de aprobaciones (Supervisor, Compras, Picking).')) {
+        guardandoNotaVenta = false;
         return;
     }
-
-    // Marcar como procesando y deshabilitar botón
-    guardandoNotaVenta = true;
     const btn = document.getElementById('btnGuardarComoNVV');
     const originalText = btn.innerHTML;
     btn.disabled = true;
@@ -1323,24 +1320,38 @@ function guardarComoNVV() {
         body: JSON.stringify(cotizacionData)
     })
     .then(response => {
-        // Detectar error 419 (CSRF token expirado)
         if (response.status === 419) {
             alert('⚠️ Tu sesión ha expirado. La página se recargará automáticamente.');
             window.location.reload();
             return;
         }
-        return response.json();
+        return response.json().then(data => ({ status: response.status, data }));
     })
-    .then(data => {
-        if (!data) return; // Si hubo error 419, ya se manejó arriba
+    .then(result => {
+        if (!result) return;
+        const { status, data } = result;
+
+        if (status === 429 || status === 409) {
+            alert(data.message || 'Ya existe una nota de venta igual o se está guardando otra.');
+            if (data.cotizacion_id) {
+                window.location.href = '/cotizaciones?tipo_documento=nota_venta';
+            } else {
+                guardandoNotaVenta = false;
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+            return;
+        }
         
         if (data.success) {
             const mensaje = 'Cotización convertida exitosamente a Nota de Venta';
             alert(mensaje);
             window.location.href = '/cotizaciones?tipo_documento=nota_venta';
+        } else if (data.duplicate && data.cotizacion_id) {
+            alert(data.message || 'Esta nota de venta ya fue registrada.');
+            window.location.href = '/cotizaciones?tipo_documento=nota_venta';
         } else {
-            alert('Error: ' + data.message);
-            // Restaurar botón en caso de error
+            alert('Error: ' + (data.message || 'No se pudo guardar'));
             guardandoNotaVenta = false;
             btn.disabled = false;
             btn.innerHTML = originalText;

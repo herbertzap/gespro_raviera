@@ -901,7 +901,19 @@ class NotaVentaController extends Controller
         ]);
         
         \Log::info('✅ Validación de datos completada');
-        
+
+        $antiDuplicado = new \App\Services\NvvGuardadoAntiDuplicadoService();
+        $userLock = $antiDuplicado->acquireUserLock((int) auth()->id());
+        if (! $userLock) {
+            \Log::warning('NVV guardar bloqueado: ya hay un guardado en curso para el usuario '.auth()->id());
+
+            return response()->json([
+                'success' => false,
+                'duplicate' => true,
+                'message' => 'Ya hay una nota de venta guardándose. Espere a que termine (puede tardar 1–2 minutos) y revise el listado antes de volver a enviar.',
+            ], 429);
+        }
+
         try {
             \Log::info('🔄 INICIANDO TRANSACCIÓN DE BASE DE DATOS');
             DB::beginTransaction();
@@ -946,6 +958,23 @@ class NotaVentaController extends Controller
             // Total final con IVA
             $total = $subtotalNeto + $ivaTotal;
             \Log::info("💰 Subtotal sin descuentos: {$subtotalSinDescuentos}, Descuento total: {$descuentoTotal}, Subtotal neto: {$subtotalNeto}, IVA total: {$ivaTotal}, Total: {$total}");
+
+            $duplicadoReciente = $antiDuplicado->findRecentDuplicate((int) auth()->id(), $request, (float) $total);
+            if ($duplicadoReciente) {
+                DB::rollBack();
+                \Log::warning('NVV duplicada evitada (mismo pedido reciente)', [
+                    'usuario' => auth()->id(),
+                    'cotizacion_existente' => $duplicadoReciente['cotizacion_id'],
+                    'cliente' => $request->cliente_codigo,
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'duplicate' => true,
+                    'cotizacion_id' => $duplicadoReciente['cotizacion_id'],
+                    'message' => 'Ya se registró una nota de venta igual hace unos momentos (NVV #'.$duplicadoReciente['cotizacion_id'].'). Revise el listado; no vuelva a enviar el mismo pedido.',
+                ], 409);
+            }
             
             // 3. Crear cotización en base de datos local
             \Log::info('📝 CREANDO COTIZACIÓN EN TABLA cotizaciones');
@@ -1362,6 +1391,8 @@ class NotaVentaController extends Controller
             \Log::info('💾 CONFIRMANDO TRANSACCIÓN');
             DB::commit();
             \Log::info('✅ TRANSACCIÓN CONFIRMADA EXITOSAMENTE');
+
+            $antiDuplicado->registerSuccessfulSave((int) auth()->id(), $request, (float) $total, (int) $cotizacion->id);
             
             // Registrar en el historial
             \App\Services\HistorialCotizacionService::registrarCreacion($cotizacion);
@@ -1421,6 +1452,10 @@ class NotaVentaController extends Controller
             
             \Log::error('❌ RESPUESTA DE ERROR:', $errorResponse);
             return response()->json($errorResponse, 500);
+        } finally {
+            if (isset($userLock)) {
+                $userLock->release();
+            }
         }
     }
     
