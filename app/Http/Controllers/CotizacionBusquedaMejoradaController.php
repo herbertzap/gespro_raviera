@@ -62,9 +62,11 @@ class CotizacionBusquedaMejoradaController extends Controller
             // Excluir productos ocultos (TIPR = 'OCU')
             $query = DB::table('productos')
                 ->where('activo', true)
-                ->where(function($q) {
-                    $q->where('TIPR', '!=', 'OCU')
-                      ->orWhereNull('TIPR'); // Incluir productos sin TIPR definido
+                ->where(function ($q) {
+                    $q->where('TIPR', '!=', 'OCU')->orWhereNull('TIPR');
+                })
+                ->where(function ($q) {
+                    $q->where('atpr', '!=', 'OCU')->orWhereNull('atpr');
                 });
             
             if (count($terminos) > 1) {

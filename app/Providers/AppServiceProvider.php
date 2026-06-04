@@ -20,6 +20,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot()
     {
+        date_default_timezone_set(config('app.timezone'));
+
         // Configuración de la vista personalizada para la paginación
         Paginator::defaultView('vendor.pagination.custom');
     }

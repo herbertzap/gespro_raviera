@@ -45,6 +45,7 @@ class Producto extends Model
         'stock_comprometido',
         'stock_disponible',
         'activo',
+        'atpr',
         // Múltiplo de venta
         'multiplo_venta'
     ];
@@ -82,6 +83,25 @@ class Producto extends Model
             $q->where('TIPR', '!=', 'OCU')
               ->orWhereNull('TIPR');
         });
+    }
+
+    /**
+     * Productos que pueden mostrarse y agregarse en cotizaciones / NVV.
+     */
+    public function scopeVisibleParaVenta($query)
+    {
+        return $query->where('activo', true)
+            ->noOcultos()
+            ->where(function ($q) {
+                $q->whereNull('atpr')
+                    ->orWhere('atpr', '!=', 'OCU');
+            });
+    }
+
+    public function estaOcultoEnErp(): bool
+    {
+        return strtoupper(trim((string) ($this->atpr ?? ''))) === 'OCU'
+            || strtoupper(trim((string) ($this->TIPR ?? ''))) === 'OCU';
     }
 
     // Método para obtener precio según lista

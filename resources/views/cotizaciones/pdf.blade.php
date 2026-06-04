@@ -143,8 +143,7 @@
         $regionPdf = ($sEntrega && !empty($sEntrega->region)) ? $sEntrega->region : ($cliente ? ($cliente->region ?? null) : null);
         $comunaPdf = ($sEntrega && !empty($sEntrega->comuna)) ? $sEntrega->comuna : ($cliente ? ($cliente->comuna ?? null) : null);
         $tituloTipo = $cotizacion->tipo_documento === 'nota_venta' ? 'NOTA DE VENTA' : 'COTIZACIÓN';
-        $fechaRef = $cotizacion->fecha ?? $cotizacion->created_at;
-        $ts = $fechaRef ? strtotime($fechaRef) : time();
+        $fechaDoc = ($cotizacion->fecha ?? $cotizacion->created_at)?->timezone(config('app.timezone'));
 
         // Totales: subtotal_neto e iva no se persistían si faltaban en $fillable del modelo (corregido). Recalcular si vienen en 0.
         $subtotalBruto = (float) ($cotizacion->subtotal ?? 0);
@@ -183,8 +182,8 @@
                     <p><strong>R.U.T.:</strong> 76.426.104-6</p>
                     <h2>{{ $tituloTipo }}</h2>
                     <p><strong>Nro.:</strong> {{ str_pad((string) $cotizacion->id, 10, '0', STR_PAD_LEFT) }}</p>
-                    <p><strong>Fecha:</strong> {{ date('d/m/Y', $ts) }}</p>
-                    <p><strong>Hora:</strong> {{ date('H:i:s', strtotime($cotizacion->created_at)) }}</p>
+                    <p><strong>Fecha:</strong> {{ $fechaDoc ? $fechaDoc->format('d/m/Y') : '' }}</p>
+                    <p><strong>Hora:</strong> {{ $fechaDoc ? $fechaDoc->format('H:i:s') : '' }}</p>
                 </td>
             </tr>
         </table>
@@ -283,7 +282,7 @@
     @endif
 
     <div class="footer">
-        <p>Documento generado el {{ now()->format('d/m/Y H:i') }} — Comercial Higuera</p>
+        <p>Documento generado el {{ now()->timezone(config('app.timezone'))->format('d/m/Y H:i') }} — Comercial Higuera</p>
         @if($cotizacion->tipo_documento === 'cotizacion')
             <p class="footer-legal">Cotización válida por 30 días desde la fecha de creación del documento.</p>
         @endif

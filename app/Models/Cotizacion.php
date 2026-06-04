@@ -429,42 +429,41 @@ class Cotizacion extends Model
             \Log::info("📦 Producto {$productoCotizacion->codigo_producto}: Stock físico={$stockFisico}, Disponible={$stockDisponibleReal}, Cantidad pedida={$productoCotizacion->cantidad}");
             
             // Actualizar el stock en la tabla cotizacion_productos con el valor REAL
-            // Guardamos tanto stock_fisico como stock_disponible para referencia
+            $stockSuficiente = $stockDisponibleReal >= $productoCotizacion->cantidad;
             $updateData = [
                 'stock_disponible' => $stockDisponibleReal,
-                'stock_suficiente' => $stockFisico >= $productoCotizacion->cantidad
+                'stock_suficiente' => $stockSuficiente,
             ];
             
-            // También actualizar el stock_fisico si existe la columna
             if (Schema::hasColumn('cotizacion_productos', 'stock_fisico')) {
                 $updateData['stock_fisico'] = $stockFisico;
             }
             
             $productoCotizacion->update($updateData);
             
-            // Verificar si tiene stock FÍSICO suficiente (no stock disponible)
-            // Si stock físico >= cantidad pedida → tiene stock suficiente
-            if ($stockFisico >= $productoCotizacion->cantidad) {
+            // Compras y picking usan stock DISPONIBLE (físico menos comprometido), no solo físico
+            if ($stockSuficiente) {
                 $productosConStockSuficiente[] = $productoCotizacion->codigo_producto;
-                \Log::info("   ✓ Stock FÍSICO suficiente: {$stockFisico} >= {$productoCotizacion->cantidad}");
+                \Log::info("   ✓ Stock DISPONIBLE suficiente: {$stockDisponibleReal} >= {$productoCotizacion->cantidad} (físico={$stockFisico})");
             } else {
                 $productosSinStockSuficiente[] = [
                     'codigo' => $productoCotizacion->codigo_producto,
                     'nombre' => $productoCotizacion->nombre_producto,
                     'stock_fisico' => $stockFisico,
-                    'cantidad_pedida' => $productoCotizacion->cantidad
+                    'stock_disponible' => $stockDisponibleReal,
+                    'cantidad_pedida' => $productoCotizacion->cantidad,
                 ];
-                \Log::warning("   ⚠️ Stock FÍSICO insuficiente: {$stockFisico} < {$productoCotizacion->cantidad}");
+                \Log::warning("   ⚠️ Stock DISPONIBLE insuficiente: {$stockDisponibleReal} < {$productoCotizacion->cantidad} (físico={$stockFisico})");
             }
         }
         
-        // 3. Determinar estado de aprobación basado en stock REAL y problemas de crédito
+        // 3. Determinar estado de aprobación basado en stock disponible y problemas de crédito
         $tieneStockSuficiente = empty($productosSinStockSuficiente);
         $tieneProblemasCredito = $this->tiene_problemas_credito ?? false;
         
-        // Si stock físico >= cantidad pedida Y no hay problemas de crédito → pendiente_picking
-        // Si stock físico >= cantidad pedida PERO hay problemas de crédito → pendiente (supervisor)
-        // Si stock físico < cantidad pedida → pendiente (compras), o si hay crédito también → pendiente (supervisor primero)
+        // Si stock disponible >= cantidad Y no hay problemas de crédito → pendiente_picking
+        // Si stock disponible >= cantidad PERO hay problemas de crédito → pendiente (supervisor)
+        // Si stock disponible < cantidad → pendiente (compras)
         if ($tieneStockSuficiente && !$tieneProblemasCredito) {
             $estadoAprobacion = 'pendiente_picking'; // Pasa directo a picking
             $tieneProblemasStock = false;

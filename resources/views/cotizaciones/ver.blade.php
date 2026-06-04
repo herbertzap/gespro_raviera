@@ -827,15 +827,24 @@ function convertirANotaVenta(cotizacionId) {
     $('#modalConvertirNVV').modal('show');
 }
 
+let conversionNvvEnCurso = false;
+
 function confirmarConversionNVV() {
+    if (conversionNvvEnCurso) {
+        return;
+    }
     const cotizacionId = $('#modalConvertirNVV').data('cotizacion-id');
     const numeroOrdenCompra = $('#numero_orden_compra_nvv').val();
     const observacionVendedor = $('#observacion_vendedor_nvv').val();
     const solicitarDescuentoExtra = $('#solicitar_descuento_extra_nvv').is(':checked');
+    const $btn = $('#modalConvertirNVV .btn-primary').last();
+    conversionNvvEnCurso = true;
+    $btn.prop('disabled', true).text('Convirtiendo...');
     
     $.ajax({
         url: `/cotizacion/convertir-a-nota-venta/${cotizacionId}`,
         method: 'POST',
+        timeout: 120000,
         headers: {
             'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
         },
@@ -846,12 +855,17 @@ function confirmarConversionNVV() {
         },
         success: function(response) {
             $('#modalConvertirNVV').modal('hide');
-            alert('Cotización convertida exitosamente a Nota de Venta');
+            alert(response.message || 'Cotización convertida exitosamente a Nota de Venta');
             location.reload();
         },
         error: function(xhr) {
-            const errorMsg = xhr.responseJSON?.message || 'Error al convertir la cotización';
+            const data = xhr.responseJSON || {};
+            const errorMsg = data.error || data.message || (xhr.status === 0 ? 'Tiempo de espera agotado. Si la NVV ya apareció convertida, recargue la página.' : 'Error al convertir la cotización');
             alert('Error: ' + errorMsg);
+        },
+        complete: function() {
+            conversionNvvEnCurso = false;
+            $btn.prop('disabled', false).text('Convertir a Nota de Venta');
         }
     });
 }

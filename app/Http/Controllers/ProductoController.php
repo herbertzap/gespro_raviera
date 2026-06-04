@@ -61,14 +61,10 @@ class ProductoController extends Controller
             
             // Buscar en la tabla productos (MySQL) que tiene los datos sincronizados
             // Excluir productos ocultos (TIPR = 'OCU')
-            $productos = \App\Models\Producto::where(function($query) use ($termino) {
+            $productos = \App\Models\Producto::visibleParaVenta()
+                ->where(function ($query) use ($termino) {
                     $query->where('KOPR', 'LIKE', "%{$termino}%")
-                          ->orWhere('NOKOPR', 'LIKE', "%{$termino}%");
-                })
-                ->where('activo', true)
-                ->where(function($q) {
-                    $q->where('TIPR', '!=', 'OCU')
-                      ->orWhereNull('TIPR'); // Incluir productos sin TIPR definido
+                        ->orWhere('NOKOPR', 'LIKE', "%{$termino}%");
                 })
                 ->limit(20)
                 ->get()
@@ -111,14 +107,10 @@ class ProductoController extends Controller
             }
             
             // Buscar productos en MySQL
-            $productosMySQL = \App\Models\Producto::where(function($query) use ($termino) {
+            $productosMySQL = \App\Models\Producto::visibleParaVenta()
+                ->where(function ($query) use ($termino) {
                     $query->where('KOPR', 'LIKE', "%{$termino}%")
-                          ->orWhere('NOKOPR', 'LIKE', "%{$termino}%");
-                })
-                ->where('activo', true)
-                ->where(function($q) {
-                    $q->where('TIPR', '!=', 'OCU')
-                      ->orWhereNull('TIPR');
+                        ->orWhere('NOKOPR', 'LIKE', "%{$termino}%");
                 })
                 ->limit(50)
                 ->get();

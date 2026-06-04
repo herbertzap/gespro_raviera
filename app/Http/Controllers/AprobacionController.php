@@ -1227,6 +1227,99 @@ class AprobacionController extends Controller
     }
 
     /**
+     * Extrae el valor numérico de COUNT(*) desde la salida de tsql.
+     */
+    private function parsearCountDesdeTsql(?string $result): ?int
+    {
+        if ($result === null || trim($result) === '') {
+            return null;
+        }
+
+        $lines = explode("\n", $result);
+        $trasHeaderTotal = false;
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '' || str_contains($line, 'Setting ')
+                || str_contains($line, 'locale ')
+                || str_contains($line, 'rows affected')
+                || preg_match('/^\d+>$/', $line)) {
+                continue;
+            }
+
+            if (strcasecmp($line, 'total') === 0 || preg_match('/\btotal\b/i', $line)) {
+                $trasHeaderTotal = true;
+                continue;
+            }
+
+            if ($trasHeaderTotal && preg_match('/^(\d+)$/', $line, $m)) {
+                return (int) $m[1];
+            }
+        }
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if (preg_match('/^(\d+)$/', $line, $m) && ! preg_match('/^\d+>$/', $line)) {
+                return (int) $m[1];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Confirma que la NVV quedó en MAEEDO (por NUDO y, si aplica, por IDMAEEDO ±1).
+     */
+    private function verificarNvvInsertadaEnSqlServer(int $idMaeedo, string $nudoFormateado): bool
+    {
+        $nudo = str_replace("'", "''", trim($nudoFormateado));
+        $queryNudo = "SELECT COUNT(*) AS total FROM MAEEDO WHERE EMPRESA = '01' AND TIDO = 'NVV' AND RTRIM(LTRIM(NUDO)) = '{$nudo}'";
+        $resultNudo = $this->ejecutarConsultaTsql($queryNudo);
+        $countNudo = $this->parsearCountDesdeTsql($resultNudo);
+        if ($countNudo !== null && $countNudo > 0) {
+            Log::info("Verificación NVV OK por NUDO {$nudoFormateado} (COUNT={$countNudo})");
+
+            return true;
+        }
+
+        foreach ([$idMaeedo, $idMaeedo + 1] as $id) {
+            $queryId = "SELECT COUNT(*) AS total FROM MAEEDO WHERE IDMAEEDO = {$id} AND EMPRESA = '01' AND TIDO = 'NVV'";
+            $resultId = $this->ejecutarConsultaTsql($queryId);
+            $countId = $this->parsearCountDesdeTsql($resultId);
+            if ($countId !== null && $countId > 0) {
+                Log::info("Verificación NVV OK por IDMAEEDO {$id} (COUNT={$countId})");
+
+                return true;
+            }
+        }
+
+        Log::warning('Verificación NVV fallida', [
+            'nudo' => $nudoFormateado,
+            'id_maeedo' => $idMaeedo,
+            'count_nudo' => $countNudo,
+            'resultado_nudo' => substr($resultNudo ?? '', 0, 400),
+        ]);
+
+        return false;
+    }
+
+    private function ejecutarConsultaTsql(string $query): ?string
+    {
+        $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
+        file_put_contents($tempFile, $query."\ngo\nquit");
+        $command = 'tsql -H '.env('SQLSRV_EXTERNAL_HOST')
+            .' -p '.env('SQLSRV_EXTERNAL_PORT')
+            .' -U '.env('SQLSRV_EXTERNAL_USERNAME')
+            .' -P '.env('SQLSRV_EXTERNAL_PASSWORD')
+            .' -D '.env('SQLSRV_EXTERNAL_DATABASE')
+            ." < {$tempFile} 2>&1";
+        $result = shell_exec($command);
+        unlink($tempFile);
+
+        return $result;
+    }
+
+    /**
      * Insertar cotización (NVV) en SQL Server.
      *
      * Verificación de pasos y tablas:
@@ -2214,38 +2307,14 @@ class AprobacionController extends Controller
                 Log::info("⏭️ No hay líneas con descuento (% o valor) — no se inserta en MAEDTLI");
             }
             
-            // Verificar que la NVV realmente se insertó en SQL Server
-            $queryVerificacion = "SELECT COUNT(*) as total FROM MAEEDO WHERE IDMAEEDO = {$siguienteId} AND EMPRESA = '01' AND TIDO = 'NVV'";
-                
-                $tempFile = tempnam(sys_get_temp_dir(), 'sql_');
-            file_put_contents($tempFile, $queryVerificacion . "\ngo\nquit");
-            
-            $command = "tsql -H " . env('SQLSRV_EXTERNAL_HOST') . " -p " . env('SQLSRV_EXTERNAL_PORT') . " -U " . env('SQLSRV_EXTERNAL_USERNAME') . " -P " . env('SQLSRV_EXTERNAL_PASSWORD') . " -D " . env('SQLSRV_EXTERNAL_DATABASE') . " < {$tempFile} 2>&1";
-            $resultVerificacion = shell_exec($command);
-            
-            unlink($tempFile);
-            
-            // Log del resultado crudo para diagnóstico (si la NVV no aparece en el sistema)
-            Log::info("Verificación SQL Server - Cotización ID: {$cotizacion->id}, IDMAEEDO: {$siguienteId}, NUDO: {$nudoFormateado}. Resultado crudo (primeras 500 chars): " . substr($resultVerificacion ?? '', 0, 500));
-            
-            // Verificar si se encontró el registro (COUNT(*) devuelve 1)
-            $insertado = false;
-            if ($resultVerificacion) {
-                $lines = explode("\n", $resultVerificacion);
-                foreach ($lines as $line) {
-                    if (trim($line) === '1') {
-                        $insertado = true;
-                        break;
-                    }
-                }
+            Log::info("Verificación SQL Server - Cotización ID: {$cotizacion->id}, IDMAEEDO: {$siguienteId}, NUDO: {$nudoFormateado}");
+
+            if (! $this->verificarNvvInsertadaEnSqlServer($siguienteId, $nudoFormateado)) {
+                Log::error("NVV no verificada en MAEEDO tras insert. Cotización ID: {$cotizacion->id}, IDMAEEDO: {$siguienteId}, NUDO: {$nudoFormateado}");
+                throw new \Exception('No se pudo verificar que la NVV fue insertada correctamente en SQL Server');
             }
-            
-            if (!$insertado) {
-                Log::error("NVV {$siguienteId} no se encontró en SQL Server después del insert. Cotización ID: {$cotizacion->id}. Resultado verificación: " . substr($resultVerificacion ?? '', 0, 800));
-                throw new \Exception("No se pudo verificar que la NVV fue insertada correctamente en SQL Server");
-            }
-            
-            Log::info("NVV {$siguienteId} (NUDO {$nudoFormateado}) verificada exitosamente en SQL Server. Cotización ID: {$cotizacion->id}");
+
+            Log::info("NVV {$siguienteId} (NUDO {$nudoFormateado}) verificada en SQL Server. Cotización ID: {$cotizacion->id}");
             
             // Actualizar CONFIEST con el siguiente número NVV para evitar duplicados (ERP y app usan este correlativo)
             $siguientePorId = $siguienteId + 1;

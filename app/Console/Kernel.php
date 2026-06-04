@@ -20,6 +20,11 @@ class Kernel extends ConsoleKernel
                 ->dailyAt('02:00')
                 ->withoutOverlapping()
                 ->runInBackground();
+
+        $schedule->command('productos:actualizar-ocultos-erp')
+                ->dailyAt('02:30')
+                ->withoutOverlapping()
+                ->runInBackground();
         
         // Verificar cada hora si las NVV han sido facturadas
         $schedule->command('nvv:verificar-facturadas')

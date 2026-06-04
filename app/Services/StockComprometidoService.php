@@ -2,8 +2,9 @@
 
 namespace App\Services;
 
-use App\Models\StockComprometido;
 use App\Models\Cotizacion;
+use App\Models\Producto;
+use App\Models\StockComprometido;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -224,11 +225,17 @@ class StockComprometidoService
 
             $codigoEscapado = str_replace("'", "''", $trim);
 
-            // Consultar ATPR desde SQL Server
+            $productoLocal = Producto::findPorKopr($trim);
+            if ($productoLocal && $productoLocal->estaOcultoEnErp()) {
+                Log::warning("⚠️ Producto {$trim} está OCULTO (MySQL atpr/TIPR)");
+
+                return true;
+            }
+
             $query = "
-                SELECT TOP 1 ATPR
+                SELECT TOP 1 RTRIM(ATPR) AS ATPR
                 FROM MAEPR
-                WHERE KOPR = '{$codigoEscapado}'
+                WHERE RTRIM(KOPR) = '{$codigoEscapado}'
             ";
             
             $tempFile = tempnam(sys_get_temp_dir(), 'sql_oculto_');
@@ -274,30 +281,56 @@ class StockComprometidoService
                     continue;
                 }
 
-                // Tras el header ATPR: primera línea no vacía es el valor de la columna
                 if ($headerFound) {
                     $lineData = preg_replace('/^\d+>\s*/', '', $line);
                     $lineData = trim($lineData);
                     if ($lineData === '') {
                         continue;
                     }
-                    $isOculto = strtoupper($lineData) === 'OCU';
-                    if ($isOculto) {
-                        Log::warning("⚠️ Producto {$codigoProducto} está OCULTO (ATPR = 'OCU', tsql)");
-                    }
+                    $atpr = $this->extraerAtprDeLineaTsql($lineData);
+                    if ($atpr !== null) {
+                        $isOculto = strtoupper($atpr) === 'OCU';
+                        if ($isOculto) {
+                            Log::warning("⚠️ Producto {$codigoProducto} está OCULTO (ATPR = 'OCU', tsql)");
+                        }
 
-                    return $isOculto;
+                        return $isOculto;
+                    }
                 }
             }
-            
-            Log::info("✅ Producto {$codigoProducto} NO está oculto (no se encontró 'OCU' en ATPR)");
-            
+
+            Log::warning("No se pudo leer ATPR para {$codigoProducto}; se trata como no oculto en esta consulta");
+
             return false;
-            
+
         } catch (\Exception $e) {
             Log::error('Error verificando producto oculto: ' . $e->getMessage());
-            return false; // En caso de error, asumimos que no está oculto
+
+            return false;
         }
+    }
+
+    /**
+     * Parsea valor ATPR desde salida tsql (solo "OCU" o fila "KOPR\tOCU").
+     */
+    private function extraerAtprDeLineaTsql(string $lineData): ?string
+    {
+        if (strtoupper($lineData) === 'OCU') {
+            return 'OCU';
+        }
+
+        $parts = preg_split('/\s+/', $lineData);
+        if (count($parts) >= 2) {
+            return trim(end($parts));
+        }
+
+        if (strpos($lineData, "\t") !== false) {
+            $tabParts = explode("\t", $lineData);
+
+            return trim(end($tabParts));
+        }
+
+        return null;
     }
     
     /**

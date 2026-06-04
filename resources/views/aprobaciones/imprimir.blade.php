@@ -162,8 +162,11 @@
             <p><strong>R.U.T.:</strong> 76.426.104-6</p>
             <h2>GUÍA DE PICKING</h2>
             <p><strong>Nro.:</strong> {{ str_pad($cotizacion->id, 10, '0', STR_PAD_LEFT) }}</p>
-            <p><strong>Fecha:</strong> {{ date('d/m/Y', strtotime($cotizacion->created_at)) }}</p>
-            <p><strong>Hora:</strong> {{ date('H:i:s', strtotime($cotizacion->created_at)) }}</p>
+            @php
+                $fechaDoc = ($cotizacion->fecha ?? $cotizacion->created_at)?->timezone(config('app.timezone'));
+            @endphp
+            <p><strong>Fecha:</strong> {{ $fechaDoc ? $fechaDoc->format('d/m/Y') : '' }}</p>
+            <p><strong>Hora:</strong> {{ $fechaDoc ? $fechaDoc->format('H:i:s') : '' }}</p>
         </div>
     </div>
     
@@ -193,7 +196,7 @@
                 <td><strong>Vendedor:</strong> {{ $vendedor ? $vendedor->name . ' (' . $cliente->codigo_vendedor . ')' : ($cotizacion->vendedor_nombre ?? 'No especificado') }}</td>
             </tr>
             <tr>
-                <td><strong>Vencimiento:</strong> {{ date('d/m/Y', strtotime('+30 days', strtotime($cotizacion->created_at))) }}</td>
+                <td><strong>Vencimiento:</strong> {{ $fechaDoc ? $fechaDoc->copy()->addDays(30)->format('d/m/Y') : '' }}</td>
                 <td></td>
                 <td></td>
             </tr>
