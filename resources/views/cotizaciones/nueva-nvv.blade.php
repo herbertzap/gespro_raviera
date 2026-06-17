@@ -522,6 +522,28 @@
     </div>
 </div>
 
+<div class="modal fade" id="modalMorosidadCliente" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-white">
+                <h5 class="modal-title">
+                    <i class="material-icons" style="vertical-align:middle;">warning</i>
+                    Alerta de cobranza — Cliente con morosidad
+                </h5>
+                <button type="button" class="close text-white" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body" id="modalMorosidadClienteBody">
+                <p class="text-muted mb-0">Cargando información...</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                    <i class="material-icons" style="font-size:18px;vertical-align:middle;">close</i> Entendido
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="modalSucursalCliente" tabindex="-1" data-backdrop="static" data-keyboard="false">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -786,7 +808,7 @@ function mostrarResultadosProductosAjax(productos) {
                 <td><input type="checkbox" class="producto-checkbox" value="${producto.CODIGO_PRODUCTO}" 
                     data-multiplo="${multiploVenta}" 
                     data-descuento-maximo="${producto.DESCUENTO_MAXIMO || 0}"
-                    onchange="actualizarContadorSeleccionados()" ${checkboxDisabled}></td>
+                    onchange="onCheckboxProductoChange(this)" ${checkboxDisabled}></td>
                 <td><strong>${producto.CODIGO_PRODUCTO || ''}</strong></td>
                 <td>${producto.NOMBRE_PRODUCTO || ''}${multiploInfo}</td>
                 <td>
@@ -1494,14 +1516,96 @@ function eliminarProducto(index) {
 }
 
 // Funciones para selección múltiple de productos
+function extraerProductoDesdeFilaCheckbox(checkbox) {
+    const row = checkbox.closest('tr');
+    if (!row) return null;
+
+    const codigo = row.cells[1].textContent.trim();
+    const nombre = row.cells[2].textContent.trim();
+
+    let precio = 0;
+    const precioElement = row.cells[3].querySelector('[data-precio]');
+    if (precioElement) {
+        precio = parseFloat(precioElement.getAttribute('data-precio')) || 0;
+    } else {
+        const precioText = row.cells[3].textContent.trim();
+        const precioMatch = precioText.match(/[\d.]+/);
+        if (precioMatch) {
+            precio = parseFloat(precioMatch[0].replace(/\./g, '')) || 0;
+        }
+    }
+
+    const multiplo = parseInt(checkbox.getAttribute('data-multiplo')) || 1;
+    const descuentoMaximo = parseFloat(checkbox.getAttribute('data-descuento-maximo')) || 0;
+
+    return {
+        codigo: codigo,
+        nombre: nombre,
+        precio: precio,
+        stock: 0,
+        unidad: 'UN',
+        descuentoMaximo: descuentoMaximo,
+        multiplo: multiplo,
+        precioValido: precio > 0
+    };
+}
+
+function agregarProductoDesdeCheckbox(checkbox) {
+    if (!checkbox || checkbox.disabled) return false;
+
+    const producto = extraerProductoDesdeFilaCheckbox(checkbox);
+    if (!producto) return false;
+
+    if (!producto.precioValido) {
+        alert('El producto "' + producto.nombre + '" no tiene precio disponible y no se puede agregar.');
+        return false;
+    }
+
+    if (productosCotizacion.length >= 20) {
+        alert('No se pueden agregar más productos. Límite: 20 productos por nota de venta.');
+        return false;
+    }
+
+    if (productosCotizacion.find(p => p.codigo === producto.codigo)) {
+        return false;
+    }
+
+    agregarProductoDesdePHP(
+        producto.codigo,
+        producto.nombre,
+        producto.precio,
+        producto.stock,
+        producto.unidad,
+        producto.descuentoMaximo,
+        producto.multiplo
+    );
+    return true;
+}
+
+function onCheckboxProductoChange(checkbox) {
+    if (checkbox.checked) {
+        agregarProductoDesdeCheckbox(checkbox);
+        checkbox.checked = false;
+    }
+    actualizarContadorSeleccionados();
+}
+
 function toggleAllProductos() {
     const selectAll = document.getElementById('selectAllProductos');
-    const checkboxes = document.querySelectorAll('.producto-checkbox');
-    
-    checkboxes.forEach(checkbox => {
-        checkbox.checked = selectAll.checked;
-    });
-    
+    const checkboxes = document.querySelectorAll('.producto-checkbox:not(:disabled)');
+
+    if (selectAll.checked) {
+        checkboxes.forEach(checkbox => {
+            agregarProductoDesdeCheckbox(checkbox);
+            checkbox.checked = false;
+        });
+        selectAll.checked = false;
+    } else {
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = false;
+        });
+    }
+
     actualizarContadorSeleccionados();
 }
 
@@ -1923,6 +2027,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     inicializarSucursalesCliente();
+    mostrarModalMorosidadSiAplica();
     
     // Esta página es específica para Nota de Venta, no necesita cambio de tipo
     
@@ -2004,6 +2109,50 @@ function mostrarDetalleChequesProtestados() {
         console.error('Error obteniendo cheques protestados:', error);
         alert('Error al obtener información de cheques protestados');
     });
+}
+
+function mostrarModalMorosidadSiAplica() {
+    const alertasMorosidad = @json($alertas ?? []);
+    const validaciones = @json($validacionesAutomaticas ?? null);
+    const motivoRechazo = @json($motivoRechazo ?? '');
+    const nombreCliente = clienteData ? (clienteData.nombre_cliente || clienteData.nombre || '') : '';
+
+    const tieneAlertas = Array.isArray(alertasMorosidad) && alertasMorosidad.length > 0;
+    const requiereAutorizacion = validaciones && validaciones.requiere_autorizacion;
+    if (!tieneAlertas && !requiereAutorizacion) return;
+
+    let html = '<div class="alert alert-warning"><strong>Cliente:</strong> ' + (nombreCliente || '—') + '</div><ul class="list-unstyled mb-0">';
+
+    if (requiereAutorizacion && validaciones.validaciones) {
+        const v = validaciones.validaciones;
+        if (v.retraso && !v.retraso.valido) {
+            html += '<li class="mb-2"><i class="material-icons text-danger" style="font-size:18px;vertical-align:middle;">schedule</i> <strong>Facturas vencidas:</strong> ' + (v.retraso.motivo || '') + '</li>';
+        }
+        if (v.credito && !v.credito.valido) {
+            html += '<li class="mb-2"><i class="material-icons text-danger" style="font-size:18px;vertical-align:middle;">account_balance_wallet</i> <strong>Crédito:</strong> ' + (v.credito.motivo || '') + '</li>';
+        }
+        if (v.bloqueo && !v.bloqueo.valido) {
+            html += '<li class="mb-2"><i class="material-icons text-danger" style="font-size:18px;vertical-align:middle;">block</i> <strong>Bloqueo:</strong> ' + (v.bloqueo.motivo || '') + '</li>';
+        }
+    }
+
+    if (motivoRechazo) {
+        html += '<li class="mb-2 text-muted"><em>' + motivoRechazo + '</em></li>';
+    }
+
+    alertasMorosidad.forEach(function(alerta) {
+        const tipo = alerta.tipo === 'danger' ? 'danger' : (alerta.tipo === 'warning' ? 'warning' : 'info');
+        html += '<li class="mb-2"><span class="badge badge-' + tipo + '">' + (alerta.titulo || 'Alerta') + '</span> ' + (alerta.mensaje || '') + '</li>';
+    });
+
+    html += '</ul><p class="mt-3 mb-0 text-muted"><small>Puede continuar con la nota de venta; el documento podría requerir autorización del supervisor.</small></p>';
+
+    const body = document.getElementById('modalMorosidadClienteBody');
+    if (!body) return;
+    body.innerHTML = html;
+    if (window.jQuery) {
+        jQuery('#modalMorosidadCliente').modal('show');
+    }
 }
 
 console.log('🔍 Script cargado completamente');

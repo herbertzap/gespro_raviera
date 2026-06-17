@@ -173,7 +173,11 @@ class AprobacionController extends Controller
                 ->limit(300)
                 ->get();
             
-            $cotizaciones = $cotizacionesConProblemas->merge($cotizacionesSinProblemas)->merge($cotizacionesPendientesEntrega);
+            $cotizaciones = $cotizacionesConProblemas
+                ->merge($cotizacionesSinProblemas)
+                ->merge($cotizacionesPendientesEntrega)
+                ->sortByDesc('created_at')
+                ->values();
             $tipoAprobacion = 'picking';
         } else {
             return redirect()->route('dashboard')->with('error', 'No tienes permisos para aprobar notas de venta');

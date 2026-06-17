@@ -727,7 +727,7 @@ function mostrarResultadosProductosAjax(productos) {
                 <td><input type="checkbox" class="producto-checkbox" value="${producto.CODIGO_PRODUCTO}" 
                     data-multiplo="${multiploVenta}" 
                     data-descuento-maximo="${producto.DESCUENTO_MAXIMO || 0}"
-                    onchange="actualizarContadorSeleccionados()" ${checkboxDisabled}></td>
+                    onchange="onCheckboxProductoChange(this)" ${checkboxDisabled}></td>
                 <td><strong>${producto.CODIGO_PRODUCTO || ''}</strong></td>
                 <td>${producto.NOMBRE_PRODUCTO || ''}${multiploInfo}</td>
                 <td>
@@ -1366,14 +1366,96 @@ function eliminarProducto(index) {
 }
 
 // Funciones para selección múltiple de productos
+function extraerProductoDesdeFilaCheckbox(checkbox) {
+    const row = checkbox.closest('tr');
+    if (!row) return null;
+
+    const codigo = row.cells[1].textContent.trim();
+    const nombre = row.cells[2].textContent.trim();
+
+    let precio = 0;
+    const precioElement = row.cells[3].querySelector('[data-precio]');
+    if (precioElement) {
+        precio = parseFloat(precioElement.getAttribute('data-precio')) || 0;
+    } else {
+        const precioText = row.cells[3].textContent.trim();
+        const precioMatch = precioText.match(/[\d.]+/);
+        if (precioMatch) {
+            precio = parseFloat(precioMatch[0].replace(/\./g, '')) || 0;
+        }
+    }
+
+    const multiplo = parseInt(checkbox.getAttribute('data-multiplo')) || 1;
+    const descuentoMaximo = parseFloat(checkbox.getAttribute('data-descuento-maximo')) || 0;
+
+    return {
+        codigo: codigo,
+        nombre: nombre,
+        precio: precio,
+        stock: 0,
+        unidad: 'UN',
+        descuentoMaximo: descuentoMaximo,
+        multiplo: multiplo,
+        precioValido: precio > 0
+    };
+}
+
+function agregarProductoDesdeCheckbox(checkbox) {
+    if (!checkbox || checkbox.disabled) return false;
+
+    const producto = extraerProductoDesdeFilaCheckbox(checkbox);
+    if (!producto) return false;
+
+    if (!producto.precioValido) {
+        alert('El producto "' + producto.nombre + '" no tiene precio disponible y no se puede agregar.');
+        return false;
+    }
+
+    if (productosCotizacion.length >= 20) {
+        alert('No se pueden agregar más productos. Límite: 20 productos por documento.');
+        return false;
+    }
+
+    if (productosCotizacion.find(p => p.codigo === producto.codigo)) {
+        return false;
+    }
+
+    agregarProductoDesdePHP(
+        producto.codigo,
+        producto.nombre,
+        producto.precio,
+        producto.stock,
+        producto.unidad,
+        producto.descuentoMaximo,
+        producto.multiplo
+    );
+    return true;
+}
+
+function onCheckboxProductoChange(checkbox) {
+    if (checkbox.checked) {
+        agregarProductoDesdeCheckbox(checkbox);
+        checkbox.checked = false;
+    }
+    actualizarContadorSeleccionados();
+}
+
 function toggleAllProductos() {
     const selectAll = document.getElementById('selectAllProductos');
-    const checkboxes = document.querySelectorAll('.producto-checkbox');
-    
-    checkboxes.forEach(checkbox => {
-        checkbox.checked = selectAll.checked;
-    });
-    
+    const checkboxes = document.querySelectorAll('.producto-checkbox:not(:disabled)');
+
+    if (selectAll.checked) {
+        checkboxes.forEach(checkbox => {
+            agregarProductoDesdeCheckbox(checkbox);
+            checkbox.checked = false;
+        });
+        selectAll.checked = false;
+    } else {
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = false;
+        });
+    }
+
     actualizarContadorSeleccionados();
 }
 

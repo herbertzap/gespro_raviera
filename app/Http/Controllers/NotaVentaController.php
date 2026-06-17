@@ -54,6 +54,7 @@ class NotaVentaController extends Controller
         $alertas = [];
         $puedeGenerarNotaVenta = true;
         $motivoRechazo = '';
+        $validacionesAutomaticas = null;
         
         if ($clienteCodigo) {
             try {
@@ -198,6 +199,11 @@ class NotaVentaController extends Controller
                             'empresa_cliente' => $clienteData['EMPRESA_CLIENTE'] ?? '01'
                         ];
                         
+                        $validacionesAutomaticas = ClienteValidacionService::validarClienteParaNotaVenta($clienteCodigo, 0);
+                        if (isset($validacionesAutomaticas['requiere_autorizacion']) && $validacionesAutomaticas['requiere_autorizacion']) {
+                            $motivoRechazo = $validacionesAutomaticas['motivo'] ?? $motivoRechazo;
+                        }
+
                         // Verificar alertas adicionales de cobranza
                         $alertasAdicionales = $this->verificarAlertasCliente($clienteCodigo);
                         $alertas = array_merge($alertas, $alertasAdicionales);
@@ -221,8 +227,12 @@ class NotaVentaController extends Controller
         
         \Log::info('🎯 Retornando vista con cliente: ' . ($cliente ? 'EXISTS' : 'NULL'));
         \Log::info('🎯 Puede generar nota de venta: ' . ($puedeGenerarNotaVenta ? 'SÍ' : 'NO'));
+
+        if (is_array($validacionesAutomaticas) && isset($validacionesAutomaticas['cliente'])) {
+            unset($validacionesAutomaticas['cliente']);
+        }
         
-        return view('cotizaciones.nueva-nvv', compact('cliente', 'alertas', 'puedeGenerarNotaVenta'))->with('pageSlug', 'nueva-nota-venta');
+        return view('cotizaciones.nueva-nvv', compact('cliente', 'alertas', 'puedeGenerarNotaVenta', 'motivoRechazo', 'validacionesAutomaticas'))->with('pageSlug', 'nueva-nota-venta');
     }
     
     /**

@@ -360,6 +360,7 @@
                         <strong>Nombre:</strong> <span id="clienteNombre"></span>
                     </div>
                 </div>
+                <div id="alertaMorosidadNuevaVenta" class="mt-3" style="display:none;"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">
@@ -558,7 +559,51 @@ function nuevaVenta(codigoCliente, nombreCliente) {
     
     $('#clienteCodigo').text(codigoCliente);
     $('#clienteNombre').text(nombreCliente);
+    $('#alertaMorosidadNuevaVenta').hide().html('<div class="text-muted"><i class="material-icons" style="font-size:16px;vertical-align:middle;">hourglass_empty</i> Verificando cobranza...</div>').show();
     $('#modalNuevaVenta').modal('show');
+
+    fetch('/api/validar-cliente', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+            codigo_cliente: codigoCliente,
+            monto_nota_venta: 0
+        })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        const contenedor = $('#alertaMorosidadNuevaVenta');
+        if (!data.requiere_autorizacion) {
+            contenedor.hide().empty();
+            return;
+        }
+
+        let html = '<div class="alert alert-warning mb-0"><strong><i class="material-icons" style="font-size:18px;vertical-align:middle;">warning</i> Cliente con morosidad / crédito</strong><ul class="mb-0 mt-2 pl-3">';
+        if (data.validaciones) {
+            if (data.validaciones.retraso && !data.validaciones.retraso.valido) {
+                html += '<li>' + (data.validaciones.retraso.motivo || 'Facturas vencidas') + '</li>';
+            }
+            if (data.validaciones.credito && !data.validaciones.credito.valido) {
+                html += '<li>' + (data.validaciones.credito.motivo || 'Problema de crédito') + '</li>';
+            }
+            if (data.validaciones.bloqueo && !data.validaciones.bloqueo.valido) {
+                html += '<li>' + (data.validaciones.bloqueo.motivo || 'Cliente bloqueado') + '</li>';
+            }
+        } else if (data.motivo) {
+            html += '<li>' + data.motivo + '</li>';
+        }
+        html += '</ul><small class="d-block mt-2">La NVV podría requerir autorización del supervisor.</small></div>';
+        contenedor.html(html).show();
+    })
+    .catch(function() {
+        $('#alertaMorosidadNuevaVenta').hide().empty();
+    });
 }
 
 function confirmarNuevaVenta() {
