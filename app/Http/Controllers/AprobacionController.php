@@ -10,6 +10,8 @@ use App\Services\CobranzaService;
 use App\Services\StockService;
 use App\Services\StockConsultaService;
 use App\Services\ClienteValidacionService;
+use App\Services\NvvSqlInsertContext;
+use App\Services\NvvSqlInsertRollbackService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -1339,6 +1341,10 @@ class AprobacionController extends Controller
      */
     private function insertarEnSQLServer($cotizacion, $datosPicking = [])
     {
+        $ctx = new NvvSqlInsertContext();
+        $rollbackService = app(NvvSqlInsertRollbackService::class);
+        $numeroNvvMysqlOriginal = $cotizacion->numero_nvv;
+
         try {
             // Aumentar tiempo límite para proceso de inserción que puede tardar 60-120 segundos
             set_time_limit(600); // 10 minutos para asegurar que complete el proceso sin errores de timeout
@@ -1693,6 +1699,9 @@ class AprobacionController extends Controller
             }
             
             Log::info('Encabezado MAEEDO insertado correctamente' . ($nudoDuplicado ? ' (NUDO corregido)' : ''));
+            $ctx->maeedoInserted = true;
+            $ctx->idMaeedo = $siguienteId;
+            $ctx->nudo = $nudoFormateado;
             
             // OPTIMIZACIÓN: Obtener todos los precios mínimos en una sola consulta
             $tiempoPaso = microtime(true);
@@ -1869,6 +1878,7 @@ class AprobacionController extends Controller
             }
             
             Log::info('Detalles MAEDDO insertados correctamente');
+            $ctx->maeddoInserted = true;
             
             // OPTIMIZACIÓN: Combinar todos los UPDATEs en consultas masivas usando CASE WHEN
             $codigosProductosUpdate = [];
@@ -2108,6 +2118,11 @@ class AprobacionController extends Controller
                 
                 Log::info('Stock comprometido y STOCNV actualizados correctamente (consultas masivas)');
                 Log::info("⏱️ Paso 7 completado en " . round(microtime(true) - $tiempoPaso, 2) . " segundos");
+                $ctx->stockUpdated = true;
+                foreach ($cotizacion->productos as $productoStock) {
+                    $codigoStock = trim(substr($productoStock->codigo_producto, 0, 13));
+                    $ctx->productosCantidades[$codigoStock] = (float) $productoStock->cantidad;
+                }
             }
             
             $tiempoTotal = microtime(true) - $tiempoInicio;
@@ -2116,22 +2131,6 @@ class AprobacionController extends Controller
             Log::info("⏱️ ========================================");
             
             Log::info('Productos MAEPR actualizados correctamente');
-            
-            // Marcar stock comprometido local de esta cotización como "procesado" para no contarlo dos veces:
-            // Ya actualizamos STOCNV1 en SQL Server (MAEST, MAEPR, MAEPREM), por lo que ese compromiso
-            // se reflejará en MySQL cuando corra la sincronización. Si seguimos sumando estos registros
-            // en calcularStockComprometido(), estaríamos duplicando (local + SQL).
-            StockComprometido::porCotizacion($cotizacion->id)
-                ->activo()
-                ->get()
-                ->each(function ($stock) {
-                    $stock->procesar();
-                });
-            Log::info('Stock comprometido local marcado como procesado para cotización #' . $cotizacion->id . ' (ya reflejado en SQL Server STOCNV1).');
-            
-            // NOTA: El stock comprometido en MySQL (productos.stock_comprometido) se actualiza cuando
-            // se ejecuta la consulta/sincronización que obtiene STOCNV1 de SQL Server.
-            Log::info('Stock comprometido actualizado en SQL Server (MAEPR, MAEST, MAEPREM). MySQL se sincronizará con STOCNV1 en la próxima consulta de stock.');
             
             // INSERT MAEEDOOB - Observaciones, orden de compra y datos de picking
             $observacionVendedor = $cotizacion->observacion_vendedor ?? '';
@@ -2252,6 +2251,7 @@ class AprobacionController extends Controller
                     Log::info("✅ MAEEDOOB insertado (resultado: " . substr($resultLimpio, 0, 100) . ") - IDMAEEDO: {$siguienteId}");
                     Log::debug("Resultado completo MAEEDOOB: " . substr($result, 0, 500));
                 }
+                $ctx->maeedoobInserted = true;
             } else {
                 Log::error('❌ Error insertando MAEEDOOB: ' . $mensajeError);
                 Log::error('Resultado completo: ' . substr($result, 0, 1000));
@@ -2307,6 +2307,7 @@ class AprobacionController extends Controller
 
             if ($productosConDescuento > 0) {
                 Log::info("✅ {$productosConDescuento} líneas con descuento procesadas para MAEDTLI");
+                $ctx->maedtliInserted = true;
             } else {
                 Log::info("⏭️ No hay líneas con descuento (% o valor) — no se inserta en MAEDTLI");
             }
@@ -2321,6 +2322,7 @@ class AprobacionController extends Controller
             Log::info("NVV {$siguienteId} (NUDO {$nudoFormateado}) verificada en SQL Server. Cotización ID: {$cotizacion->id}");
             
             // Actualizar CONFIEST con el siguiente número NVV para evitar duplicados (ERP y app usan este correlativo)
+            $ctx->confiestNvvAnterior = $rollbackService->leerConfiestNvvActual();
             $siguientePorId = $siguienteId + 1;
             $siguientePorNudo = (int) $nudoFormateado + 1;
             $siguienteNvv = max($siguientePorId, $siguientePorNudo);
@@ -2335,7 +2337,11 @@ class AprobacionController extends Controller
             if ($resultConfiest && (stripos($resultConfiest, 'Msg ') !== false || stripos($resultConfiest, 'error') !== false)) {
                 if (preg_match('/Msg \d+, Level (1[1-9]|2\d)/', $resultConfiest)) {
                     Log::warning('CONFIEST UPDATE puede haber fallado: ' . substr($resultConfiest, 0, 300));
+                } else {
+                    $ctx->confiestUpdated = true;
                 }
+            } else {
+                $ctx->confiestUpdated = true;
             }
             
             // Guardar el número correlativo (NUDO) en la cotización
@@ -2343,6 +2349,14 @@ class AprobacionController extends Controller
             $cotizacion->save();
             
             Log::info("✅ Número NVV guardado en cotización: {$nudoFormateado}");
+
+            StockComprometido::porCotizacion($cotizacion->id)
+                ->activo()
+                ->get()
+                ->each(function ($stock) {
+                    $stock->procesar();
+                });
+            Log::info('Stock comprometido local marcado como procesado para cotización #' . $cotizacion->id);
             
             return [
                 'success' => true,
@@ -2353,7 +2367,18 @@ class AprobacionController extends Controller
             
         } catch (\Exception $e) {
             Log::error('Error en insertarEnSQLServer: ' . $e->getMessage());
-            throw $e;
+            $rollback = $rollbackService->ejecutarRollback($ctx, $cotizacion, $numeroNvvMysqlOriginal);
+
+            $mensaje = $e->getMessage();
+            if ($ctx->tieneDatosEnErp()) {
+                $mensaje .= ' Se revirtió el insert parcial en SQL Server; la NVV sigue pendiente en la aplicación.';
+            }
+
+            return [
+                'success' => false,
+                'message' => $mensaje,
+                'rollback' => $rollback,
+            ];
         }
     }
 

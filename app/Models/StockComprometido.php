@@ -132,4 +132,15 @@ class StockComprometido extends Model
             'observaciones' => $this->observaciones . "\n\n✅ Procesado en SQL Server"
         ]);
     }
+
+    /**
+     * Revertir marca de procesado tras rollback de insert NVV en SQL Server.
+     */
+    public function revertirProcesado()
+    {
+        $this->update([
+            'estado' => 'activo',
+            'observaciones' => trim(($this->observaciones ?? '')."\n\n↩️ Revertido: rollback insert NVV en SQL Server"),
+        ]);
+    }
 }

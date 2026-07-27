@@ -708,6 +708,7 @@ function buscarProductosAjax() {
 
     document.getElementById('contenidoResultados').innerHTML = '<div class="alert alert-info"><i class="material-icons">search</i> Buscando productos...</div>';
     document.getElementById('resultadosBusqueda').style.display = 'block';
+    window.lastSearchStart = Date.now();
 
     // Usar la ruta AJAX
     const url = '/cotizacion/buscar-productos?busqueda=' + encodeURIComponent(busqueda) + '&lista_precios=' + encodeURIComponent(listaPrecios);
@@ -831,7 +832,7 @@ function mostrarResultadosProductosAjax(productos) {
     contenido += '</tbody></table></div>';
     
     // Agregar información de búsqueda rápida
-    const searchTime = Date.now() - window.lastSearchStart;
+    const searchTime = window.lastSearchStart ? (Date.now() - window.lastSearchStart) : 0;
     contenido += `<div class="alert alert-success mt-2">
         <i class="material-icons">speed</i> 
         Búsqueda en ${searchTime}ms - ${productos.length} productos
@@ -1199,7 +1200,7 @@ function agregarProductoDesdePHP(codigo, nombre, precio, stock, unidad, descuent
     console.log('Agregando producto desde PHP:', { codigo, nombre, precio, stock, unidad, descuentoMaximo, multiplo });
     
     // Consultar stock actualizado del producto antes de agregarlo
-    fetch(`/cotizaciones/stock-producto/${codigo}`)
+    fetch(`/cotizaciones/stock-producto/${encodeURIComponent(codigo)}`)
         .then(response => response.json())
         .then(data => {
             // Verificar si el producto está oculto
