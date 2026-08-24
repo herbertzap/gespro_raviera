@@ -620,12 +620,17 @@ class ProductoController extends Controller
             ->with('cotizacion')
             ->get()
             ->map(function ($c) {
+                $cot = $c->cotizacion;
+                $tipo = $cot->tipo_documento ?? null;
+
                 return [
                     'cotizacion_id' => $c->cotizacion_id,
-                    'numero_nvv_local' => $c->cotizacion->numero_nvv ?? null,
+                    'tipo_documento' => $tipo,
+                    'documento_label' => $tipo === 'nota_venta' ? 'NVV' : 'Cotización',
+                    'numero_nvv_local' => $cot->numero_nvv ?? null,
                     'cliente' => $c->cliente_nombre,
                     'cantidad' => $c->cantidad_comprometida,
-                    'estado' => $c->cotizacion_estado,
+                    'estado' => $cot->estado_aprobacion ?? $c->cotizacion_estado,
                 ];
             })
             ->values()

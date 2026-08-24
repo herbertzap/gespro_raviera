@@ -3402,7 +3402,8 @@ class CotizacionController extends Controller
                 ]);
             }
             
-            // Usar tsql para consultar directamente a MAEST con KOBO='LIB' (servidor antiguo sin TLS)
+            // Intentar refrescar stock desde MAEST/LIB vía tsql, pero NUNCA pisar MySQL con 0
+            // si la consulta falla o no se puede parsear (caso típico: SSL/N/D en SQL → "sin stock" falso).
             $host = env('SQLSRV_EXTERNAL_HOST');
             $port = env('SQLSRV_EXTERNAL_PORT', '1433');
             $database = env('SQLSRV_EXTERNAL_DATABASE');
@@ -3428,127 +3429,93 @@ class CotizacionController extends Controller
 
             unlink($tempFile);
 
-            // Log para debugging - mostrar output completo si no se encuentra stock
-            if (empty($output)) {
-                \Log::error("Output vacío de tsql para producto {$codigoConsulta}");
-            } else {
-                \Log::info("Output tsql completo para producto {$codigoConsulta}: " . $output);
-            }
-
-            // Parsear resultado de tsql
             $stockFisico = 0;
             $stockComprometido = 0;
+            $stockParseadoOk = false;
+            $outputLower = strtolower((string) $output);
 
-            $lines = explode("\n", $output);
-            $headerFound = false;
+            if (empty($output) || str_contains($outputLower, 'ssl provider') || str_contains($outputLower, 'login failed') || str_contains($outputLower, 'unable to connect')) {
+                \Log::warning("⚠️ tsql LIB no usable para {$codigoConsulta}; se mantiene stock MySQL y se usa disponible real. Output: " . substr((string) $output, 0, 300));
+            } else {
+                \Log::info("Output tsql completo para producto {$codigoConsulta}: " . $output);
 
-            foreach ($lines as $line) {
-                $line = trim($line);
+                $lines = explode("\n", (string) $output);
+                $headerFound = false;
 
-                // Saltar líneas de configuración
-                if (empty($line) || strpos($line, 'locale') !== false || 
-                    strpos($line, 'Setting') !== false || strpos($line, 'rows affected') !== false ||
-                    strpos($line, 'Msg ') !== false || strpos($line, 'Warning:') !== false ||
-                    preg_match('/^\d+>$/', $line) || preg_match('/^\d+>\s+\d+>\s+\d+>/', $line)) {
-                    continue;
-                }
-
-                // Buscar header
-                if (stripos($line, 'STOCK_FISICO') !== false || stripos($line, 'STOCK_COMPROMETIDO') !== false) {
-                    $headerFound = true;
-                    \Log::info("Header encontrado: {$line}");
-                    continue;
-                }
-
-                // Si no hay header pero hay una línea con números, intentar parsear directamente
-                // Esto puede pasar cuando SUM devuelve solo números
-                if (preg_match('/^\s*(-?[0-9.]+)\s+(-?[0-9.]+)\s*$/', $line, $matches)) {
-                    $stockFisico = (float)str_replace(',', '.', $matches[1]);
-                    $stockComprometido = (float)str_replace(',', '.', $matches[2]);
-                    \Log::info("Stock parseado sin header: Físico={$stockFisico}, Comprometido={$stockComprometido}");
-                    break;
-                }
-
-                // Parsear línea de datos - puede haber espacios múltiples
-                if ($headerFound) {
-                    // Intentar parsear con espacios múltiples
-                    $parts = preg_split('/\s+/', $line);
-                    if (count($parts) >= 2 && is_numeric($parts[0]) && is_numeric($parts[1])) {
-                        // El primer número es stock_fisico, el segundo es stock_comprometido
-                        $stockFisico = (float)$parts[0];
-                        $stockComprometido = (float)$parts[1];
-                        \Log::info("Stock parseado con header: Físico={$stockFisico}, Comprometido={$stockComprometido}");
-                        break;
-                    }
-                }
-            }
-
-            // Si no se encontraron datos, intentar parsear cualquier línea con números
-            if ($stockFisico == 0 && $stockComprometido == 0) {
                 foreach ($lines as $line) {
                     $line = trim($line);
-                    // Buscar cualquier línea con dos números separados por espacios
+
+                    if ($line === '' || strpos($line, 'locale') !== false ||
+                        strpos($line, 'Setting') !== false || strpos($line, 'rows affected') !== false ||
+                        strpos($line, 'Msg ') !== false || strpos($line, 'Warning:') !== false ||
+                        preg_match('/^\d+>$/', $line) || preg_match('/^\d+>\s+\d+>\s+\d+>/', $line)) {
+                        continue;
+                    }
+
+                    if (stripos($line, 'STOCK_FISICO') !== false || stripos($line, 'STOCK_COMPROMETIDO') !== false) {
+                        $headerFound = true;
+                        continue;
+                    }
+
                     if (preg_match('/^\s*(-?[0-9.]+)\s+(-?[0-9.]+)\s*$/', $line, $matches)) {
-                        $stockFisico = (float)str_replace(',', '.', $matches[1]);
-                        $stockComprometido = (float)str_replace(',', '.', $matches[2]);
-                        \Log::info("Stock parseado en segunda pasada: Físico={$stockFisico}, Comprometido={$stockComprometido}");
+                        $stockFisico = (float) str_replace(',', '.', $matches[1]);
+                        $stockComprometido = abs((float) str_replace(',', '.', $matches[2]));
+                        $stockParseadoOk = true;
                         break;
+                    }
+
+                    if ($headerFound) {
+                        $parts = preg_split('/\s+/', $line);
+                        if (count($parts) >= 2 && is_numeric($parts[0]) && is_numeric($parts[1])) {
+                            $stockFisico = (float) $parts[0];
+                            $stockComprometido = abs((float) $parts[1]);
+                            $stockParseadoOk = true;
+                            break;
+                        }
                     }
                 }
             }
 
-            // SQL Server puede retornar STOCNV1 como negativo; para el modelo local guardamos "comprometido" positivo.
-            $stockComprometido = abs((float)$stockComprometido);
-            
-            // SIEMPRE ACTUALIZAR MySQL con los valores obtenidos de SQL Server
-            // Esto asegura que la tabla productos tenga los datos actualizados
-            try {
-                $stockConsultaService = new \App\Services\StockConsultaService();
-                $stockConsultaService->actualizarStockSiEsDiferente(
-                    $codigoConsulta,
-                    $stockFisico,
-                    $stockComprometido
-                );
-                \Log::info("✅ Stock ACTUALIZADO en MySQL para {$codigoConsulta}: Físico={$stockFisico}, Comprometido={$stockComprometido}");
-            } catch (\Exception $e) {
-                \Log::error("❌ Error actualizando MySQL para {$codigoConsulta}: " . $e->getMessage());
-                // Continuar aunque falle la actualización, pero loguear el error
+            // Solo actualizar MySQL si el ERP respondió datos parseables (incluye físico=0 legítimo).
+            if ($stockParseadoOk) {
+                try {
+                    $stockConsultaService = new \App\Services\StockConsultaService();
+                    $stockConsultaService->actualizarStockSiEsDiferente(
+                        $codigoConsulta,
+                        $stockFisico,
+                        $stockComprometido
+                    );
+                    \Log::info("✅ Stock ACTUALIZADO en MySQL para {$codigoConsulta}: Físico={$stockFisico}, Comprometido={$stockComprometido}");
+                } catch (\Exception $e) {
+                    \Log::error("❌ Error actualizando MySQL para {$codigoConsulta}: " . $e->getMessage());
+                }
+            } else {
+                \Log::warning("⚠️ No se actualiza MySQL para {$codigoConsulta}: tsql LIB sin datos válidos (evita falso stock 0)");
             }
 
-            // 2. VALIDACIÓN DE PRECIOS: Consultar y actualizar precios desde SQL Server si son diferentes
+            // Precios: best-effort
             try {
                 $this->consultarYActualizarPreciosProducto($codigoConsulta);
             } catch (\Exception $e) {
                 \Log::warning("⚠️ Error consultando/actualizando precios para {$codigoConsulta}: " . $e->getMessage());
-                // Continuar aunque falle la actualización de precios
             }
 
-            // Obtener stock comprometido local adicional (por cotizaciones/NVV pendientes)
             $stockComprometidoLocal = \App\Models\StockComprometido::calcularStockComprometido($codigoConsulta);
-
-            // Obtener datos del producto ACTUALIZADO desde tabla local
             $producto = \App\Models\Producto::findPorKopr($codigoConsulta);
-            
-            // Usar los valores ACTUALIZADOS de MySQL (pueden haber cambiado si se actualizó)
-            $stockFisicoMySQL = $producto ? ($producto->stock_fisico ?? $stockFisico) : $stockFisico;
-            $stockComprometidoMySQL = $producto ? ($producto->stock_comprometido ?? $stockComprometido) : $stockComprometido;
-            
-            // Stock disponible = Stock físico MySQL - Stock comprometido SQL - Stock comprometido local
-            $stockDisponible = max(0, $stockFisicoMySQL - $stockComprometidoMySQL - $stockComprometidoLocal);
 
-            \Log::info("📦 Stock final para {$codigoConsulta}: Físico MySQL={$stockFisicoMySQL}, Comprometido SQL={$stockComprometidoMySQL}, Comprometido Local={$stockComprometidoLocal}, Disponible={$stockDisponible}");
+            // Fuente de verdad para la UI del vendedor: misma lógica que manejo-stock / aprobaciones
+            $stockDisponible = (float) $stockService->obtenerStockDisponibleReal($codigoConsulta);
+            $stockFisicoMySQL = $producto ? (float) ($producto->stock_fisico ?? 0) : (float) $stockFisico;
+            $stockComprometidoMySQL = $producto ? (float) ($producto->stock_comprometido ?? 0) : (float) $stockComprometido;
 
-            // Si no se encontró stock, log adicional
-            if ($stockFisico == 0 && $stockComprometido == 0 && (!$producto || ($producto->stock_fisico ?? 0) == 0)) {
-                \Log::warning("⚠️ No se encontró stock para producto {$codigoConsulta}. Output completo de tsql: " . substr($output, 0, 1000));
-            }
+            \Log::info("📦 Stock final para {$codigoConsulta}: Físico MySQL={$stockFisicoMySQL}, Comprometido SQL={$stockComprometidoMySQL}, Comprometido Local={$stockComprometidoLocal}, Disponible={$stockDisponible}, parse_ok=" . ($stockParseadoOk ? '1' : '0'));
 
             return response()->json([
                 'success' => true,
-                'es_oculto' => false, // Producto no está oculto (ya se verificó arriba)
+                'es_oculto' => false,
                 'stock_disponible' => $stockDisponible,
-                'stock_fisico' => $stockFisicoMySQL, // Retornar el valor actualizado de MySQL
-                'stock_comprometido' => $stockComprometidoMySQL, // Retornar el valor actualizado de MySQL
+                'stock_fisico' => $stockFisicoMySQL,
+                'stock_comprometido' => $stockComprometidoMySQL,
                 'stock_comprometido_local' => $stockComprometidoLocal,
                 'producto' => [
                     'codigo' => $codigoConsulta,

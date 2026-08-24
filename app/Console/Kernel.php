@@ -37,6 +37,13 @@ class Kernel extends ConsoleKernel
                 ->dailyAt('03:00')
                 ->withoutOverlapping()
                 ->runInBackground();
+
+        // Cerrar stock comprometido local de NVV que ya tienen numero_nvv
+        // (evita que sigan restando en la app; el compromiso queda en SQL STOCNV1)
+        $schedule->command('stock:cerrar-comprometidos-nvv')
+                ->dailyAt('01:15')
+                ->withoutOverlapping()
+                ->runInBackground();
     }
 
     /**

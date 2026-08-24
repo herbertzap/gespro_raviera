@@ -565,7 +565,7 @@ function cargarDetalleProducto(codigo) {
 
             // Compromisos locales en la app (stock_comprometidos)
             const compromisosLocales = response.compromisos_locales || [];
-            html += `<hr><h5><i class="material-icons">assignment_ind</i> Cotizaciones con stock comprometido en la app</h5>`;
+            html += `<hr><h5><i class="material-icons">assignment_ind</i> Documentos con stock comprometido en la app</h5>`;
             if (compromisosLocales.length === 0) {
                 html += `<p class="text-muted">No hay stock comprometido local para este producto.</p>`;
             } else {
@@ -574,7 +574,7 @@ function cargarDetalleProducto(codigo) {
                         <table class="table table-sm">
                             <thead>
                                 <tr>
-                                    <th>Cotización</th>
+                                    <th>Documento</th>
                                     <th>NVV local</th>
                                     <th>Cliente</th>
                                     <th>Cantidad comprometida</th>
@@ -584,9 +584,10 @@ function cargarDetalleProducto(codigo) {
                             <tbody>
                 `;
                 compromisosLocales.forEach(function(c) {
+                    const tipoLabel = c.documento_label || (c.tipo_documento === 'nota_venta' ? 'NVV' : 'Cotización');
                     html += `
                         <tr>
-                            <td>${c.cotizacion_id || ''}</td>
+                            <td>${tipoLabel} #${c.cotizacion_id || ''}</td>
                             <td>${c.numero_nvv_local || '-'}</td>
                             <td>${c.cliente || ''}</td>
                             <td>${Number(c.cantidad || 0).toLocaleString('es-CL')}</td>
